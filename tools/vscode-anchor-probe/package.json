@@ -1,0 +1,20 @@
+{
+  "name": "char-vscode-anchor-probe",
+  "version": "0.0.1",
+  "private": true,
+  "main": "./extension.js",
+  "engines": { "vscode": "^1.85.0" },
+  "activationEvents": [
+    "onCommand:charProbe.captureEditor",
+    "onCommand:charProbe.captureTerminal",
+    "onCommand:charProbe.returnToAnchor"
+  ],
+  "contributes": {
+    "commands": [
+      { "command": "charProbe.captureEditor", "title": "Char Probe: Capture Editor Tab" },
+      { "command": "charProbe.captureTerminal", "title": "Char Probe: Capture Terminal Tab" },
+      { "command": "charProbe.returnToAnchor", "title": "Char Probe: Return to Captured Tab" }
+    ]
+  },
+  "scripts": { "test": "node --test" }
+}
