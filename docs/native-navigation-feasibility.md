@@ -1,6 +1,6 @@
 # Native navigation feasibility probe (issue #3)
 
-2026-10-03, macOS 26, Apple Silicon. This note records **partial evidence**, not the live acceptance result required by issue #3. The probe reads installed app metadata and Accessibility trust, and uses its own temporary tmux server. It does not activate applications, inspect private tabs/chats, request permissions, or change a user's tmux server.
+2026-10-03, macOS 26, Apple Silicon. This note records **partial evidence**, not the live acceptance result required by issue #3. The Swift probe reads installed app metadata and Accessibility trust, and uses its own temporary tmux server. It does not activate applications, inspect private tabs/chats, request permissions, or change a user's tmux server. The later VS Code prototype has only been mock-tested, not installed or run in VS Code.
 
 ## Reproduce the observed checks
 
@@ -12,7 +12,7 @@ swiftc -o /tmp/char-native-probe tools/native-probe.swift
 /tmp/char-native-probe --tmux-fixture
 ```
 
-Observed output on this machine:
+Observed output from the initial run (Warp 0.2026.09.02.08.27.01):
 
 ```text
 Accessibility trusted: false
@@ -34,20 +34,22 @@ This does not focus a Warp tab or establish reattachment after tab closure.
 
 The pane IDs are allocated by the temporary tmux server and may differ on another run. The fixture starts a detached session with two `sleep 30` panes, selects the second pane by its ID, verifies the active pane ID, then kills only that isolated server. No existing Agent pane is used.
 
+After Warp updated to Stable 0.2026.09.30.08.29.01, the same `swiftc` and `--report` commands showed `Accessibility trusted: true`, `warpctrl executable: absent`, and the new Warp version. A read-only `tmux list-sessions` showed `warp-test: 3 windows (attached)`; live tmux panes now exist, but their existence does not provide Warp pane focus. The user reported that this Stable build has no Warp Control wrapper, no **Settings > Scripting** toggle, and no local-control endpoint. None of these observations proves an exact native navigation path.
+
 ## Required live paths
 
 | Path | Observed exact outcome | Observed fallback outcome | Next live test and necessary integration |
 | --- | --- | --- | --- |
-| Warp + tmux Agent pane | **Unverified.** Isolated tmux `select-pane` works; no live Agent pane was targeted. | Unverified. | Install/enable Warp Control in Warp Stable **Settings > Scripting**, then use its installed CLI help and `pane list` / `pane focus` against a disposable Warp + tmux Agent pane. Record the Warp pane ID, tmux pane ID, pre/post focused pane IDs, and whether selection reaches the correct native session. Close its Warp tab only after arranging a disposable fixture; test a new tab attaching to the surviving tmux pane. The bundled `/Applications/Warp.app/Contents/Resources/bundled/skills/warpctrl/SKILL.md` describes a CLI but `warpctrl` is not on PATH here. |
-| Codex Desktop chat | **Unverified.** The installed app registers `codex://`. | Unverified. | Create/use a disposable local chat, navigate away, open `codex://threads/<chat-id>`, and verify the app's selected chat ID, not merely foreground app activation. Repeat after moving the chat between windows if that behavior is required. A registered URL scheme alone does not prove this route. |
+| Warp + tmux Agent pane | **Not available on the tested Stable build.** Isolated tmux `select-pane` works, and a live tmux session exists, but no Warp pane control route was established. | **First-release requirement:** activate Warp's recent location, show graphical degradation, and leave the attention item unviewed. The product fallback itself still needs live verification. | Exact Warp pane focus and automatic reattachment after a Warp tab closes are deferred. Reconsider only when a working Warp control path or another exact method is available and verified against a disposable native session. The bundled Warp Control skill describes a different capability from what this Stable installation exposes. |
+| Codex Desktop chat | **Unverified.** The installed app registers `codex://`. | Unverified. | Create/use a disposable local chat, navigate away, open `codex://threads/<chat-id>`, and verify the selected chat ID rather than merely app activation. A browser attempt to open the custom-scheme URL was blocked by browser URL security policy; no alternative route was retried. The registered scheme alone does not pass the gate. |
 | Tabbit tab return | **Unverified.** A bundled scripting dictionary exposes window IDs, `active tab`, and `active tab index`. | Unverified. | With a disposable tab, capture its identity through Apple Events, move it to another window, navigate it, then select the same tab and verify its identity. macOS Automation consent for controlling Tabbit may be requested on first use. |
-| WeChat chat return | **Unverified.** No scripting dictionary or chat-specific URI was established. | Unverified. | With a disposable chat and Accessibility permission, capture a stable chat identity, switch chats, reselect the original, and verify the selected chat. If no stable identity/focus action exists, revise the first-release exact-return requirement. |
+| WeChat chat return | **Unverified.** No scripting dictionary or chat-specific URI was established. A permitted Accessibility view exposed no chat rows or stable chat identifiers. | Unverified. | With a disposable chat and Accessibility permission, find a stable chat identity through another supported path, switch chats, reselect the original, and verify the selected chat. If none exists, revise the first-release exact-return requirement. |
 | VS Code editor/terminal tab return | **Live path unverified.** A local extension prototype captures a live text editor `Tab` or `Terminal` object, rejects a closed object, requests focus, then compares the active object. Four mocked tests pass. | Unverified. | Run the prototype in an isolated Extension Development Host with disposable editor and terminal tabs; follow the steps below. Existing editor-area terminal tabs, external activation, and cross-window return remain open. |
-| Warp pane return anchor | **Unverified.** | Unverified. | Using Warp Control as above, capture the originating Warp pane ID, visit another pane, focus the original pane, and verify its ID. Separately test the product's allowed fallback to Warp's recent position when that pane no longer exists. |
+| Warp pane return anchor | **Not established on the tested Stable build.** | App activation alone cannot form an accurate Hold anchor. | First release does not create Hold when a Warp source is known only at app level. Exact Warp pane capture/return is deferred. If a future exact anchor later becomes unavailable, Warp recent-location fallback may end Hold with graphical degradation. |
 
-`AXIsProcessTrusted()` returned `false` for this probe process. A real Accessibility implementation needs user authorization in macOS Privacy & Security > Accessibility; another executable's authorization is not automatically inherited. Apple Events/Automation authorization is separate for Tabbit. Warp Control needs its one-time command installation and enabled Scripting setting in this Stable build. These permissions and integrations must be tested with the eventual char executable, not inferred from this probe.
+`AXIsProcessTrusted()` returned `false` on the first probe and `true` on the later run. Trust alone did not expose WeChat chat identity or Warp pane control. A real Accessibility implementation still needs authorization for the eventual char executable in macOS Privacy & Security > Accessibility; another executable's authorization is not automatically inherited. Apple Events/Automation authorization is separate for Tabbit. The previously assumed Warp Control installation/Scripting path is absent on the tested Stable build.
 
-**Gate status:** open. No exact native focus, exact return, or fallback outcome has been observed on live app content. `docs/spec.md` requires proof before full implementation; paths that fail after live testing need an explicit first-release constraint change before dependent implementation begins.
+**Gate status:** open. The first-release Warp requirement has been narrowed to graphical recent-location fallback; that fallback still needs live verification. Codex Desktop exact chat, Tabbit tab, WeChat chat, and VS Code editor/terminal exact return remain required and unverified on live app content. No exact native focus, exact return, or fallback outcome has been observed on live app content for these paths. `docs/spec.md` requires the remaining proof before dependent full implementation begins.
 
 ## VS Code extension prototype
 
