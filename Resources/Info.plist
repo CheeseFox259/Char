@@ -12,5 +12,6 @@
     <key>LSMinimumSystemVersion</key><string>13.0</string>
     <key>LSUIElement</key><true/>
     <key>NSHighResolutionCapable</key><true/>
+    <key>NSAppleEventsUsageDescription</key><string>Char uses Tabbit tab IDs to return to the existing tab you left.</string>
 </dict>
 </plist>
