@@ -67,7 +67,8 @@ public enum HomeShortcutStatus: Equatable, Sendable {
         if hotKey != nil { self.action = action; return noErr }
         self.action = action
         var event = EventTypeSpec(eventClass: OSType(kEventClassKeyboard), eventKind: UInt32(kEventHotKeyPressed))
-        let handlerResult = InstallEventHandler(GetApplicationEventTarget(), { _, event, context in
+        // Register and receive at the toolbox dispatcher; success alone does not prove physical key delivery.
+        let handlerResult = InstallEventHandler(GetEventDispatcherTarget(), { _, event, context in
             guard let event, let context else { return OSStatus(eventNotHandledErr) }
             var identifier = EventHotKeyID()
             let result = GetEventParameter(event, EventParamName(kEventParamDirectObject), EventParamType(typeEventHotKeyID),
@@ -79,7 +80,7 @@ public enum HomeShortcutStatus: Equatable, Sendable {
         }, 1, &event, Unmanaged.passUnretained(self).toOpaque(), &eventHandler)
         guard handlerResult == noErr else { self.action = nil; return handlerResult }
         let result = RegisterEventHotKey(UInt32(kVK_ANSI_B), UInt32(controlKey),
-            EventHotKeyID(signature: Self.signature, id: 1), GetApplicationEventTarget(), OptionBits(kEventHotKeyExclusive), &hotKey)
+            EventHotKeyID(signature: Self.signature, id: 1), GetEventDispatcherTarget(), OptionBits(kEventHotKeyExclusive), &hotKey)
         if result != noErr { removeHandler(); self.action = nil }
         return result
     }

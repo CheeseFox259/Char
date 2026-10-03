@@ -60,6 +60,11 @@ import Foundation
 
 @main struct PlatformChecks {
     @MainActor static func main() async {
+        if ProcessInfo.processInfo.environment["CHAR_NATIVE_HOTKEY_CHECK"] == "1" {
+            do { try nativeHomeDispatchCheck() }
+            catch { print("Native Carbon contract failed: \(error)"); exit(1) }
+            return
+        }
         let apps = MockApps()
         let tabbit = MockTabbit()
         let vscode = MockVSCode()

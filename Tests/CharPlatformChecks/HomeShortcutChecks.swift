@@ -1,4 +1,6 @@
 import Foundation
+import AppKit
+import Carbon
 import CharCore
 import CharPlatform
 
@@ -72,4 +74,49 @@ enum HomeCheckFailure: Error { case failed(String) }
         try checkHome(platform.focusContext(for: nil).isAgent, "Agent app pauses Hold grace for \(end)")
     }
     print("CharPlatform: seven work-end destinations passed without tmux or user app activation")
+}
+
+// Explicit opt-in native contract. A real Carbon callback must clear a saved source through the controller.
+// Creates application events only; it neither synthesizes physical keyboard input nor activates user apps.
+// Both the previous application-target implementation and dispatcher routing pass these checks.
+// This seam verifies callback-to-return wiring, not OS physical-key delivery; validate the latter in the packaged app.
+@MainActor func nativeHomeDispatchCheck() throws {
+    let app = NSApplication.shared
+    app.setActivationPolicy(.accessory)
+    let now = Date()
+    let router = AttentionRouter(startedAt: now, settings: CharSettings(filterSeconds: 0))
+    let key = SessionKey(workEnd: .codexCLI, nativeID: "carbon-callback-fixture")
+    let anchor = ReturnAnchor(id: "carbon-source", bundleIdentifier: MacOSPlatform.tabbitBundleID, token: "fixture", accuracy: .exact)
+    router.ingest([ObservationEvent(key: key, target: SessionTarget(bundleIdentifier: MacOSPlatform.warpBundleID), timestamp: now, state: .stopped(.question))])
+    router.advance(to: now)
+    router.completeVisit(key: key, outcome: .fallback, sourceAnchor: anchor, at: now)
+    var callbacks = 0
+    let shortcut = HomeShortcutController {
+        callbacks += 1
+        router.completeReturn(outcome: .exact)
+    }
+    shortcut.updateHold(true)
+    defer { shortcut.updateHold(false) }
+    try checkHome(shortcut.status == .registered, "native registration must succeed; close other Char Hold first")
+    var event: EventRef?
+    let created = CreateEvent(nil, OSType(kEventClassKeyboard), UInt32(kEventHotKeyPressed), GetCurrentEventTime(), 0, &event)
+    try checkHome(created == noErr && event != nil, "create Carbon hotkey event")
+    guard let event else { throw HomeCheckFailure.failed("missing native event") }
+    defer { ReleaseEvent(event) }
+    var identifier = EventHotKeyID(signature: 0x43686172, id: 1)
+    let parameter = SetEventParameter(event, EventParamName(kEventParamDirectObject), EventParamType(typeEventHotKeyID), MemoryLayout<EventHotKeyID>.size, &identifier)
+    try checkHome(parameter == noErr, "attach native hotkey identity")
+    let target = GetEventDispatcherTarget()
+    let delivered: OSStatus
+    if ProcessInfo.processInfo.environment["CHAR_NATIVE_ROUTING"] == "queue" {
+        delivered = PostEventToQueue(GetMainEventQueue(), event, EventPriority(kEventPriorityHigh))
+        let deadline = Date().addingTimeInterval(0.25)
+        while Date() < deadline && callbacks == 0 {
+            if let appEvent = app.nextEvent(matching: .any, until: deadline, inMode: .default, dequeue: true) {
+                app.sendEvent(appEvent)
+            }
+        }
+    } else { delivered = SendEventToEventTarget(event, target) }
+    print("Native Carbon contract: dispatchStatus=\(delivered), callbacks=\(callbacks), hold=\(router.snapshot.hold != nil)")
+    try checkHome(callbacks == 1 && router.snapshot.hold == nil, "native callback must perform 回城 and clear Hold")
 }
