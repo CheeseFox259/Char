@@ -145,6 +145,8 @@ import Foundation
         assert(try! controller.setEnabled(true) == .requiresApproval)
         assert(login.changes == 1)
         assert(try! controller.setEnabled(false) == .disabled)
+        try! homeShortcutChecks()
+        try! await workEndDestinationChecks()
         print("CharPlatform: 8 contract groups passed without controlling user apps")
     }
 }

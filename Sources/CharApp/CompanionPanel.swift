@@ -5,7 +5,7 @@ import CharCore
     let surface: CompanionSurface
     init(runtime: CompanionRuntime) {
         surface = CompanionSurface(runtime: runtime)
-        super.init(contentRect: NSRect(x: 0, y: 0, width: 290, height: 96),
+        super.init(contentRect: NSRect(x: 0, y: 0, width: 362, height: 164),
                    styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
         isOpaque = false; backgroundColor = .clear; hasShadow = false
         level = .floating; hidesOnDeactivate = false; isMovableByWindowBackground = false
@@ -24,7 +24,7 @@ import CharCore
         self.runtime = runtime
         pet = GraphicButton(kind: .pet, runtime: runtime)
         buttons = WorkEnd.allCases.map { GraphicButton(kind: .bubble($0), runtime: runtime) }
-        super.init(frame: NSRect(x: 0, y: 0, width: 290, height: 96))
+        super.init(frame: NSRect(x: 0, y: 0, width: 362, height: 164))
         pet.frame = NSRect(x: 0, y: 10, width: 76, height: 76)
         addSubview(pet)
         for (index, button) in buttons.enumerated() {
@@ -35,7 +35,8 @@ import CharCore
     }
     required init?(coder: NSCoder) { nil }
     func refresh() {
-        pet.setAccessibilityLabel(runtime.snapshot.hold == nil ? "Char companion, no return saved" : "Return to saved source\(runtime.snapshot.hold?.anchor.accuracy == .application ? ", application fallback" : "")")
+        layoutVisibleBubbles()
+        pet.setAccessibilityLabel(runtime.snapshot.hold == nil ? "Char 桌宠，当前不可回城" : "回城，返回最初来源，Control+B\(runtime.snapshot.hold?.anchor.accuracy == .application ? "，应用级降级" : "")")
         pet.needsDisplay = true
         for button in buttons {
             guard case let .bubble(end) = button.kind else { continue }
@@ -43,6 +44,30 @@ import CharCore
             button.isHidden = bubble == nil
             button.setAccessibilityLabel("\(end.title): \(bubble?.count ?? 0) unviewed, \(bubble?.runningCount ?? 0) running\(bubble?.head.map { ", \($0.reason.title)\($0.isPast ? ", past" : "")\($0.navigationOutcome == .fallback ? ", application fallback" : "")" } ?? "")")
             button.needsDisplay = true
+        }
+    }
+    private func layoutVisibleBubbles() {
+        let visible = buttons.filter { button in
+            guard case let .bubble(end) = button.kind else { return false }
+            return runtime.snapshot.bubbles.contains { $0.workEnd == end }
+        }
+        let columns = min(4, visible.count)
+        let rows = max(1, (visible.count + 3) / 4)
+        let size = NSSize(width: 82 + CGFloat(columns) * 68 + 8, height: max(96, CGFloat(rows) * 68 + 28))
+        if let window, window.frame.size != size {
+            var frame = window.frame
+            frame.origin.x = frame.maxX - size.width
+            frame.size = size
+            if let area = window.screen?.visibleFrame {
+                frame.origin.x = min(max(frame.origin.x, area.minX), area.maxX - frame.width)
+                frame.origin.y = min(max(frame.origin.y, area.minY), area.maxY - frame.height)
+            }
+            window.setFrame(frame, display: true)
+        }
+        frame.size = size
+        pet.frame = NSRect(x: 0, y: (size.height - 76) / 2, width: 76, height: 76)
+        for (index, button) in visible.enumerated() {
+            button.frame = NSRect(x: 82 + (index % 4) * 68, y: Int(size.height) - 14 - 62 - (index / 4) * 68, width: 62, height: 62)
         }
     }
 }
@@ -65,7 +90,7 @@ import CharCore
             setAccessibilityCustomActions([
                 NSAccessibilityCustomAction(name: "Open Settings", target: self, selector: #selector(accessibleSettings)),
                 NSAccessibilityCustomAction(name: "Toggle Mute", target: self, selector: #selector(accessibleMute)),
-                NSAccessibilityCustomAction(name: "End Hold", target: self, selector: #selector(accessibleEnd))])
+                NSAccessibilityCustomAction(name: "结束回城", target: self, selector: #selector(accessibleEnd))])
         case .bubble:
             setAccessibilityCustomActions([NSAccessibilityCustomAction(name: "Ignore first attention item", target: self, selector: #selector(accessibleIgnore))])
         }
@@ -94,11 +119,11 @@ import CharCore
     override func rightMouseDown(with event: NSEvent) {
         if case let .bubble(end) = kind { runtime.ignore(end); return }
         let menu = NSMenu()
-        for (title, selector) in [("Settings…", #selector(settingsAction)),
+        for (title, selector) in [("回城 (Ctrl+B)", #selector(homeAction)), ("Settings…", #selector(settingsAction)),
                                   (runtime.settings.soundEnabled ? "Mute" : "Unmute", #selector(muteAction)),
-                                  ("End Hold", #selector(endAction)), ("Quit Char", #selector(quitAction))] {
+                                  ("结束回城", #selector(endAction)), ("Quit Char", #selector(quitAction))] {
             let item = NSMenuItem(title: title, action: selector, keyEquivalent: ""); item.target = self
-            if selector == #selector(endAction) { item.isEnabled = runtime.snapshot.hold != nil }
+            if selector == #selector(endAction) || selector == #selector(homeAction) { item.isEnabled = runtime.snapshot.hold != nil }
             menu.addItem(item)
         }
         menu.autoenablesItems = false
@@ -111,6 +136,7 @@ import CharCore
         if case let .bubble(end) = kind { runtime.ignore(end); return true }
         return false
     }
+    @objc private func homeAction() { runtime.returnHome() }
     @objc private func settingsAction() { runtime.showSettings() }
     @objc private func muteAction() { runtime.toggleMute() }
     @objc private func endAction() { runtime.endHold() }
@@ -185,8 +211,8 @@ import CharCore
 }
 
 extension WorkEnd {
-    var title: String { switch self { case .claudeCode: return "Claude Code"; case .codexCLI: return "Codex CLI"; case .codexDesktop: return "Codex Desktop" } }
-    var symbol: String { switch self { case .claudeCode: return "terminal.fill"; case .codexCLI: return "chevron.left.forwardslash.chevron.right"; case .codexDesktop: return "macwindow" } }
+    var title: String { switch self { case .claudeCode: return "Claude Code"; case .codexCLI: return "Codex CLI"; case .codexDesktop: return "Codex Desktop"; case .deepseekDesktop: return "DeepSeek Harness"; case .kimiCLI: return "Kimi Code CLI"; case .kimiDesktop: return "Kimi Code Desktop"; case .pi: return "pi" } }
+    var symbol: String { switch self { case .claudeCode: return "terminal.fill"; case .codexCLI: return "chevron.left.forwardslash.chevron.right"; case .codexDesktop: return "macwindow"; case .deepseekDesktop: return "bolt.horizontal.circle.fill"; case .kimiCLI: return "keyboard.fill"; case .kimiDesktop: return "square.grid.2x2.fill"; case .pi: return "circle.grid.2x2.fill" } }
 }
 extension StopReason {
     var title: String { switch self { case .question: return "Question"; case .approval: return "Approval"; case .turnEnded: return "Turn ended"; case .failure: return "Failure"; case .rateLimit: return "Rate limit"; case .contextExhausted: return "Context exhausted"; case .unclassified: return "Unclassified stop" } }

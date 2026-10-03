@@ -43,6 +43,8 @@ public struct ForegroundSnapshot: Equatable, Sendable {
 @MainActor public final class MacOSPlatform {
     public static let warpBundleID = "dev.warp.Warp-Stable"
     public static let codexBundleID = "com.openai.codex"
+    public static let deepseekBundleID = "com.deepseek.dsh"
+    public static let kimiBundleID = "com.kimi.code.desktop"
     public static let tabbitBundleID = "com.tabbit-ai.Tabbit"
     public static let wechatBundleID = "com.tencent.xinWeChat"
     public static let vscodeBundleID = "com.microsoft.VSCode"
@@ -81,7 +83,13 @@ public struct ForegroundSnapshot: Equatable, Sendable {
 
     /// A visit never opens a native session URI or selects a Warp pane.
     public func activate(workEnd: WorkEnd, target: SessionTarget) async -> NavigationOutcome {
-        let bundleID = workEnd == .codexDesktop ? Self.codexBundleID : Self.warpBundleID
+        let bundleID: String
+        switch workEnd {
+        case .codexDesktop: bundleID = Self.codexBundleID
+        case .deepseekDesktop: bundleID = Self.deepseekBundleID
+        case .kimiDesktop: bundleID = Self.kimiBundleID
+        case .claudeCode, .codexCLI, .kimiCLI, .pi: bundleID = Self.warpBundleID
+        }
         return await apps.activate(bundleID: bundleID, preferredProcessID: nil) ? .fallback : .unavailable
     }
 
@@ -131,7 +139,7 @@ public struct ForegroundSnapshot: Equatable, Sendable {
 
     public func focusContext(for anchor: ReturnAnchor?) -> FocusContext {
         let current = apps.foreground()
-        let isAgent = current.map { [Self.warpBundleID, Self.codexBundleID].contains($0.bundleIdentifier) } ?? false
+        let isAgent = current.map { [Self.warpBundleID, Self.codexBundleID, Self.deepseekBundleID, Self.kimiBundleID].contains($0.bundleIdentifier) } ?? false
         guard let anchor, let current, isAnchorValid(anchor) == true, let captured = anchors[anchor.id] else {
             return FocusContext(isAgent: isAgent)
         }

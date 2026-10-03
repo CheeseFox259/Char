@@ -10,16 +10,25 @@ struct SettingsView: View {
                     Text("Filter threshold (seconds)")
                     Spacer()
                     TextField("Seconds", value: $runtime.settings.filterSeconds, format: .number)
+                        .labelsHidden().accessibilityLabel("过滤阈值，秒")
                         .frame(width: 90).onSubmit { runtime.saveSettings() }
                 }
                 HStack {
                     Text("Hold grace (seconds)")
                     Spacer()
                     TextField("Seconds", value: $runtime.settings.graceSeconds, format: .number)
+                        .labelsHidden().accessibilityLabel("回城宽限期，秒")
                         .frame(width: 90).onSubmit { runtime.saveSettings() }
                 }
                 Text("Hold grace accumulates while you are away from Agent apps. Returning to an Agent pauses it.")
                     .font(.caption).foregroundStyle(.secondary)
+            }
+            Section("回城") {
+                Text(runtime.homeShortcutStatus)
+                Text("Hold 中按 Ctrl+B 或点击桌宠，返回首次离开前的来源。没有 Hold 时不注册快捷键。")
+                    .font(.caption).foregroundStyle(.secondary)
+                Button("重试 Ctrl+B 注册") { runtime.retryHomeShortcut() }
+                    .disabled(runtime.snapshot.hold == nil)
             }
             Section("Sound") {
                 Toggle("Play one sound for a batch of new attention", isOn: $runtime.settings.soundEnabled)
@@ -45,7 +54,7 @@ struct SettingsView: View {
                 Button("Refresh Status") { runtime.refreshStatus() }
             }
             Section("Graphical legend") {
-                HStack(spacing: 18) {
+                LazyVGrid(columns: [GridItem(.flexible(), alignment: .leading), GridItem(.flexible(), alignment: .leading)], alignment: .leading, spacing: 9) {
                     ForEach(WorkEnd.allCases, id: \.self) { end in
                         Label(end.title, systemImage: end.symbol).font(.caption)
                     }
@@ -58,7 +67,7 @@ struct SettingsView: View {
                     Label("Application fallback", systemImage: "arrow.triangle.turn.up.right.diamond.fill")
                     Label("Unavailable", systemImage: "exclamationmark.circle.fill")
                 }.font(.caption)
-                Text("The large number is unviewed attention; the small mint number is running sessions. Click a bubble to visit; right-click to ignore its first item. Drag the spark to place it. Its source badge means click to return; right-click for controls.")
+                Text("The large number is unviewed attention; the small mint number is running sessions. Click a bubble to visit; right-click to ignore its first item. Drag the spark to place it. Its source badge means click or Ctrl+B to 回城; right-click for controls.")
                     .font(.caption).foregroundStyle(.secondary)
             }
             if !runtime.setupMessage.isEmpty {
