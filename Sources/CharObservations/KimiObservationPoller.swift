@@ -8,6 +8,7 @@ public final class KimiObservationPoller {
     private let hooks: URL
     private var cursors: [String: Cursor] = [:]
     private var bindings: [String: KimiHookRecord] = [:]
+    private var closedAt: [String: Date] = [:]
     private var resolvedApprovals: Set<String> = []
     private var endedTurns: [String: Int] = [:]
     private var pendingQuestions: [String: Set<String>] = [:]
@@ -20,6 +21,7 @@ public final class KimiObservationPoller {
     public func start() {
         cursors.removeAll()
         bindings.removeAll()
+        closedAt.removeAll()
         pendingQuestions.removeAll()
         endedTurns.removeAll()
         resolvedApprovals.removeAll()
@@ -47,8 +49,11 @@ public final class KimiObservationPoller {
         }
         for file in files() {
             let id = sessionID(for: file)
+            // The hook reader can run just before SessionStart is appended. Leave unbound bytes
+            // on disk until their owning client is known; startup cursors still skip old content.
+            guard let binding = bindings[id] else { continue }
             let lines = read(file)
-            guard let binding = bindings[id], binding.phase != "SessionEnd" else { continue }
+            guard binding.phase != "SessionEnd" else { continue }
             for line in lines {
                 guard let event = classify(line, binding: binding, sourcePath: file.path) else { continue }
                 result.append(event)
@@ -76,10 +81,10 @@ public final class KimiObservationPoller {
         return record
     }
 
-    private func makeEvent(_ record: KimiHookRecord, state: SessionState, sourcePath: String? = nil) -> ObservationEvent {
+    private func makeEvent(_ record: KimiHookRecord, state: SessionState, timestamp: Date? = nil, sourcePath: String? = nil) -> ObservationEvent {
         ObservationEvent(key: SessionKey(workEnd: record.workEnd, nativeID: record.sessionID),
                          target: SessionTarget(bundleIdentifier: record.workEnd == .kimiDesktop ? "com.kimi.code.desktop" : "dev.warp.Warp-Stable", sourcePath: sourcePath),
-                         timestamp: record.timestamp, state: state)
+                         timestamp: timestamp ?? record.timestamp, state: state)
     }
 
     private func consumeBindings(_ lines: [Data]) {
@@ -87,6 +92,7 @@ public final class KimiObservationPoller {
             guard let record = decodeHook(line), ["SessionStart", "SessionEnd"].contains(record.phase) else { continue }
             if let previous = bindings[record.sessionID], previous.timestamp > record.timestamp { continue }
             if record.timestamp != bindings[record.sessionID]?.timestamp { pendingQuestions[record.sessionID] = [] }
+            if record.phase == "SessionEnd" { closedAt[record.sessionID] = record.timestamp }
             bindings[record.sessionID] = record
         }
     }
@@ -96,8 +102,11 @@ public final class KimiObservationPoller {
               record["agentId"] as? String == "main",
               let time = record["time"] as? Double, time.isFinite, time >= 0 else { return nil }
         let timestamp = Date(timeIntervalSince1970: time / 1000)
-        guard timestamp >= binding.timestamp else { return nil }
+        // SessionStart is stamped on hook receipt, possibly after this native event. Byte
+        // baselines skip startup history; the local poller/router enforce event-time watermarks.
+        // A known close also rejects the previous generation when a client switch changes WorkEnd.
         let id = binding.sessionID
+        if let end = closedAt[id], timestamp <= end { return nil }
         let state: SessionState
         switch record["type"] as? String {
         case "turn.prompt", "turn.steer": state = .running
@@ -121,9 +130,7 @@ public final class KimiObservationPoller {
         case "context.append_loop_event":
             guard let event = record["event"] as? [String: Any] else { return nil }
             if event["type"] as? String == "step.begin" {
-                return ObservationEvent(key: SessionKey(workEnd: binding.workEnd, nativeID: binding.sessionID),
-                                        target: SessionTarget(bundleIdentifier: binding.workEnd == .kimiDesktop ? "com.kimi.code.desktop" : "dev.warp.Warp-Stable", sourcePath: sourcePath),
-                                        timestamp: timestamp, state: .running)
+                return makeEvent(binding, state: .running, timestamp: timestamp, sourcePath: sourcePath)
             }
             guard let callID = event["toolCallId"] as? String else { return nil }
             if event["type"] as? String == "tool.call", event["name"] as? String == "AskUserQuestion" {
@@ -136,9 +143,7 @@ public final class KimiObservationPoller {
             } else { return nil }
         default: return nil
         }
-        return ObservationEvent(key: SessionKey(workEnd: binding.workEnd, nativeID: binding.sessionID),
-                                target: SessionTarget(bundleIdentifier: binding.workEnd == .kimiDesktop ? "com.kimi.code.desktop" : "dev.warp.Warp-Stable", sourcePath: sourcePath),
-                                timestamp: timestamp, state: state)
+        return makeEvent(binding, state: state, timestamp: timestamp, sourcePath: sourcePath)
     }
 
     private func sessionID(for file: URL) -> String {
