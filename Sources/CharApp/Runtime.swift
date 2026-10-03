@@ -44,6 +44,9 @@ actor ObservationWorker {
     @Published var accessibilityStatus = ""
     @Published var automationStatus = ""
     @Published var busy = false
+    @Published var homeShortcutStatus = "回城仅在 Hold 中可用"
+    private var homeShortcut: HomeShortcutController!
+    private var fixtureHotKey: FixtureHomeHotKeyService?
     private var timer: Timer?
     private var polling = false
     private var retainedAnchor: ReturnAnchor?
@@ -80,6 +83,13 @@ actor ObservationWorker {
         login = demo ? nil : LoginItemController()
         worker = demo ? nil : ObservationWorker()
         super.init()
+        if smoke {
+            let service = FixtureHomeHotKeyService()
+            fixtureHotKey = service
+            homeShortcut = HomeShortcutController(service: service) { [weak self] in self?.returnHome() }
+        } else {
+            homeShortcut = HomeShortcutController { [weak self] in self?.returnHome() }
+        }
         setupMessage = loadMessage
         if !demo, let data = try? Data(contentsOf: positionURL),
            let saved = try? JSONDecoder().decode([String: [Double]].self, from: data) { positions = saved }
@@ -117,7 +127,7 @@ actor ObservationWorker {
         for (index, end) in WorkEnd.allCases.enumerated() {
             for number in 0..<2 {
                 events.append(ObservationEvent(key: SessionKey(workEnd: end, nativeID: "fixture-\(index)-\(number)"),
-                    target: SessionTarget(bundleIdentifier: end == .codexDesktop ? "com.openai.codex" : "dev.warp.Warp-Stable"),
+                    target: SessionTarget(bundleIdentifier: "fixture-only"),
                     timestamp: now, state: .stopped(number == 0 ? (end == .codexDesktop ? .approval : .question) : .turnEnded)))
             }
         }
@@ -166,6 +176,18 @@ actor ObservationWorker {
 
     func ignore(_ workEnd: WorkEnd) { router.ignoreNext(for: workEnd); publish() }
 
+    func returnHome() {
+        guard router.snapshot.hold != nil else { return }
+        petClicked()
+    }
+    func retryHomeShortcut() { homeShortcut.retry(); refreshHomeShortcutStatus() }
+    private func refreshHomeShortcutStatus() {
+        switch homeShortcut.status {
+        case .inactive: homeShortcutStatus = "Ctrl+B 未注册；保存来源后启用回城"
+        case .registered: homeShortcutStatus = smoke ? "Fixture：模拟 Ctrl+B 回城" : "Ctrl+B 已注册，可回城"
+        case let .failed(code): homeShortcutStatus = "Ctrl+B 注册失败（系统错误 \(code)）。可能与其他应用冲突；可重试，或点击桌宠回城。"
+        }
+    }
     func petClicked() {
         guard !busy else { return }
         guard let anchor = router.snapshot.hold?.anchor else {
@@ -280,6 +302,8 @@ actor ObservationWorker {
         }
         retainedAnchor = next.hold?.anchor
         snapshot = next
+        homeShortcut.updateHold(next.hold != nil)
+        refreshHomeShortcutStatus()
         panel?.surface.refresh()
         for effect in router.drainEffects() {
             if effect == .playSound {
@@ -350,7 +374,7 @@ actor ObservationWorker {
         func fail(_ message: String) -> Never {
             FileHandle.standardError.write(Data("Char fixture smoke failed: \(message)\n".utf8)); exit(1)
         }
-        guard snapshot.bubbles.count == 3, snapshot.bubbles.allSatisfy({ $0.count == 2 }) else { fail("initial bubbles") }
+        guard snapshot.bubbles.count == WorkEnd.allCases.count, snapshot.bubbles.allSatisfy({ $0.count == 2 }) else { fail("initial bubbles") }
         guard snapshot.bubbles.first(where: { $0.workEnd == .codexCLI })?.head?.isPast == true else { fail("visible past head marker") }
         visit(.claudeCode)
         try? await Task.sleep(nanoseconds: 100_000_000)
@@ -362,15 +386,24 @@ actor ObservationWorker {
         ignore(.claudeCode)
         guard snapshot.bubbles.first(where: { $0.workEnd == .claudeCode })?.count == 1 else { fail("head-only ignore") }
         let soundBeforeReturn = demoSoundCount
-        petClicked()
+        guard homeShortcut.status == .registered else { fail("Hold shortcut registration") }
+        fixtureHotKey?.fire()
         try? await Task.sleep(nanoseconds: 100_000_000)
-        guard snapshot.hold == nil, snapshot.navigationFeedback == .fallback else { fail("degraded return") }
+        guard snapshot.hold == nil, snapshot.navigationFeedback == .fallback, homeShortcut.status == .inactive else { fail("degraded return") }
         guard sourceBadgeAnchor != nil, sourceBadgeOpacity > 0, sourceBadgeOpacity < 1 else { fail("source badge fade") }
         petClicked() // The actual Hold is already gone; controls remain available during the graphic fade.
         try? await Task.sleep(nanoseconds: 150_000_000)
         guard sourceBadgeAnchor == nil, demoSoundCount == soundBeforeReturn else { fail("quiet fade completion") }
-        guard panel.surface.buttons.allSatisfy({ $0.frame.width >= 44 && $0.frame.height >= 44 }) else { fail("hit target size") }
-        print("Char fixture smoke passed: 3 work ends, past/fallback, first anchor, ignore, return, hit targets; no real integrations")
+        guard panel.surface.buttons.allSatisfy({ $0.frame.width >= 44 && $0.frame.height >= 44 && panel.surface.bounds.contains($0.frame) }) else { fail("visible hit target size") }
+        print("Char fixture smoke passed: \(WorkEnd.allCases.count) work ends, Ctrl+B 回城, past/fallback, first anchor, ignore, return, hit targets; no real integrations")
         NSApp.terminate(nil)
     }
+}
+
+
+@MainActor final class FixtureHomeHotKeyService: HomeHotKeyService {
+    private var action: (@MainActor () -> Void)?
+    func register(_ action: @escaping @MainActor () -> Void) -> Int32 { self.action = action; return 0 }
+    func unregister() -> Int32 { action = nil; return 0 }
+    func fire() { action?() }
 }
