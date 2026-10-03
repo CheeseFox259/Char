@@ -15,14 +15,18 @@ A、B、C 各自独立 worktree；共享枚举由 A 提供，合并代理顺序�
 
 ## 实施与检查
 
-- [ ] A：增加 DeepSeek Harness Desktop、Kimi 工作端和 pi；应用级目的地、Agent 焦点宽限暂停规则、图例、动态面板及 fixture 全部更新。回城按钮和快捷键共用处理路径。使用 Carbon 原生热键，在 Hold 创建时注册 Ctrl+B，解除时注销；冲突报告、重复操作保护及失败重试保持现有 Hold 规则。修复时间输入重复标签。
+- [x] A：增加 DeepSeek Harness Desktop、Kimi 工作端和 pi；应用级目的地、Agent 焦点宽限暂停规则、图例、动态面板及 fixture 全部更新。回城按钮和快捷键共用处理路径。使用 Carbon 原生热键，在 Hold 创建时注册 Ctrl+B，解除时注销；冲突报告、重复操作保护及失败重试保持现有 Hold 规则。修复时间输入重复标签。
 - [x] B：检查已安装 pi 扩展 API 和结构化会话日志，实现根会话的真实停顿/恢复映射；需要扩展时提供显式安装方式及隔离检查，不代用户安装。证明直跑 Warp 与 Warp+tmux 均无观察前置差异。
-- [ ] C：从已安装 DeepSeek Harness/Kimi 源码或官方协议证明本地事件来源、会话身份、CLI/Desktop 区分；实现可靠类别、恢复、启动基线与子会话排除。能力矩阵标明未提供类别，不能以枚举或任意文本推断宣称已支持。
-- [ ] D：正常 Runtime 接入新的被动观察器；去重和延迟时间边界复用现有逻辑，整批事件先于时间推进。`scripts/check.sh` 纳入真实协议契约；保持 private metadata only。
-- [ ] P：更新 CONTEXT“回城”、spec、行为文档；修复 AGENTS 技能引用（writing-for-agents）及过时测试说明。保留用户验收报告，提交时明确记录其为基线报告。
+- [x] C：从已安装 DeepSeek Harness/Kimi 源码或官方协议证明本地事件来源、会话身份、CLI/Desktop 区分；实现可靠类别、恢复、启动基线与子会话排除。能力矩阵标明未提供类别，不能以枚举或任意文本推断宣称已支持。
+- [x] D：正常 Runtime 接入新的被动观察器；去重和延迟时间边界复用现有逻辑，整批事件先于时间推进。`scripts/check.sh` 纳入真实协议契约；保持 private metadata only。
+- [x] P：更新 CONTEXT“回城”、spec、行为文档；修复 AGENTS 技能引用（writing-for-agents）及过时测试说明。保留用户验收报告，提交时明确记录其为基线报告。
 - [ ] E：依次运行 `scripts/check.sh`、`scripts/build-app.sh`、`codesign --verify --deep --strict --verbose=2 build/Char.app`、实际包 `--smoke`、`git diff --check`。检查七类气泡全部可点击且无裁切、时间设置默认宽度、Ctrl+B 在有效 Hold 执行回城、结束 Hold 后释放。隔离源数据与真实会话证据分列。
 - [ ] E：执行 Standards/Spec 双轴审查，单一修复代理处理发现，再复查受影响路径。更新 PR 能力/检查/剩余项。只在要求确实完成后标记 ready；原始 #5 必需类别缺口仍保持开放。
 
 ## 原验收工作
 
 原生三工作端的缺失信号仍需可靠来源或用户明确范围决定。Tabbit 授权、VS Code 单实例、微信逐步返回、多显示器、睡眠/唤醒、实际听音及登录中断窗口继续按 2026-10-03 计划推进；不能把环境未运行写成通过。本轮默认不安装用户 Hook、授予权限、退出其他应用或发布应用。
+
+## 实机复测反馈
+
+用户已批准 Tabbit Automation，并确认 Ctrl+B 回到原标签、清除来源徽标；反馈过程有 2–3 秒卡顿。E 包含该性能问题的测量、修复及原路径复测。Kimi/DeepSeek 实际客户端生命周期与原完整桌面验收仍须独立记录。
