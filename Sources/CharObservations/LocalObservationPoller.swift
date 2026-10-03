@@ -13,15 +13,17 @@ public final class LocalObservationPoller {
 
     private let claudeProjectsRoot: URL
     private let codexSessionsRoot: URL
+    private let kimiPoller: KimiObservationPoller?
     private let hookEventsFile: URL?
     private var cursors: [String: Cursor] = [:]
     private var lastEvents: [SessionKey: ObservationEvent] = [:]
     private var started = false
 
-    public init(claudeProjectsRoot: URL, codexSessionsRoot: URL, hookEventsFile: URL? = nil) {
+    public init(claudeProjectsRoot: URL, codexSessionsRoot: URL, hookEventsFile: URL? = nil, kimiSessionsRoot: URL? = nil) {
         self.claudeProjectsRoot = claudeProjectsRoot
         self.codexSessionsRoot = codexSessionsRoot
         self.hookEventsFile = hookEventsFile
+        self.kimiPoller = kimiSessionsRoot.flatMap { root in hookEventsFile.map { KimiObservationPoller(kimiSessionsRoot: root, hookEventsFile: $0) } }
     }
 
     public func start() {
@@ -34,6 +36,7 @@ public final class LocalObservationPoller {
             let session = source == .codex ? ObservationClassifier.codexMetadata(in: url) : nil
             cursors[url.path] = Cursor(offset: size, identity: identity, codexSession: session)
         }
+        kimiPoller?.start()
         started = true
     }
 
@@ -82,6 +85,7 @@ public final class LocalObservationPoller {
             } catch { /* Retry unread bytes on the next poll. */ }
             cursors[url.path] = cursor
         }
+        events.append(contentsOf: kimiPoller?.poll() ?? [])
         // A sleep/wake read is one batch. Ordering by recorded time keeps state transitions stable.
         let ordered = events.enumerated().sorted { left, right in
             left.element.timestamp == right.element.timestamp ? left.offset < right.offset : left.element.timestamp < right.element.timestamp

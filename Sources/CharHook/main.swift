@@ -4,13 +4,18 @@ import CharCore
 import CharObservations
 
 let input = FileHandle.standardInput.readDataToEndOfFile()
-let event = CommandLine.arguments.contains("--pi")
-    ? PiObservationClassifier.hook(input)
-    : CommandLine.arguments.contains("--codex")
-    ? ObservationClassifier.codexHook(input)
-    : ObservationClassifier.claudeHook(input)
-guard let event,
-      let encoded = try? JSONEncoder().encode(event) else { exit(0) }
+let encoded: Data?
+if CommandLine.arguments.contains("--kimi") {
+    encoded = NewAgentHooks.kimi(input).flatMap { try? JSONEncoder().encode($0) }
+} else {
+    let event: ObservationEvent?
+    if CommandLine.arguments.contains("--deepseek") { event = NewAgentHooks.deepseek(input) }
+    else if CommandLine.arguments.contains("--pi") { event = PiObservationClassifier.hook(input) }
+    else if CommandLine.arguments.contains("--codex") { event = ObservationClassifier.codexHook(input) }
+    else { event = ObservationClassifier.claudeHook(input) }
+    encoded = event.flatMap { try? JSONEncoder().encode($0) }
+}
+guard let encoded else { exit(0) }
 
 let environment = ProcessInfo.processInfo.environment
 let defaultPath = FileManager.default.homeDirectoryForCurrentUser
