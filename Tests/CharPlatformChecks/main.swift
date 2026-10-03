@@ -26,8 +26,9 @@ import Foundation
     var live: Set<String> = []
     var activeID: String?
     var focusSucceeds = true
+    var queryAvailable = true
     func captureActiveTabID() -> String? { capturedID }
-    func contains(tabID: String) -> Bool { live.contains(tabID) }
+    func contains(tabID: String) -> Bool? { queryAvailable ? live.contains(tabID) : nil }
     func focus(tabID: String) -> Bool {
         if focusSucceeds { activeID = tabID }
         return focusSucceeds
@@ -40,8 +41,9 @@ import Foundation
     var live: Set<String> = []
     var activeToken: String?
     var focusSucceeds = true
+    var queryAvailable = true
     func captureFocusedTab() -> String? { capturedToken }
-    func contains(token: String) -> Bool { live.contains(token) }
+    func contains(token: String) -> Bool? { queryAvailable ? live.contains(token) : nil }
     func focus(token: String) -> Bool {
         if focusSucceeds { activeToken = token }
         return focusSucceeds
@@ -90,14 +92,20 @@ import Foundation
         apps.uniqueInstance = true
         let tabbitAnchor = platform.captureSource()!
         assert(tabbitAnchor.accuracy == .exact)
-        assert(platform.isAnchorValid(tabbitAnchor))
+        assert(platform.isAnchorValid(tabbitAnchor) == true)
         tabbit.activeID = "opaque-tab"
         assert(platform.focusContext(for: tabbitAnchor).sourceAnchorID == tabbitAnchor.id)
         tabbit.activeID = nil
         let tabbitReturn = await platform.returnToSource(tabbitAnchor)
         assert(tabbitReturn == .exact)
+        tabbit.queryAvailable = false
+        assert(platform.isAnchorValid(tabbitAnchor) != false, "Temporary Tabbit query failure invalidated a live source")
+        let unavailableTabbitReturn = await platform.returnToSource(tabbitAnchor)
+        assert(unavailableTabbitReturn == .unavailable)
+        tabbit.queryAvailable = true
+        assert(platform.isAnchorValid(tabbitAnchor) == true)
         tabbit.live = []
-        assert(!platform.isAnchorValid(tabbitAnchor))
+        assert(platform.isAnchorValid(tabbitAnchor) == false)
         let closedTabReturn = await platform.returnToSource(tabbitAnchor)
         assert(closedTabReturn == .unavailable)
 
@@ -107,6 +115,12 @@ import Foundation
         vscode.live = ["live-token"]
         let vscodeAnchor = platform.captureSource()!
         assert(vscodeAnchor.accuracy == .exact)
+        vscode.queryAvailable = false
+        assert(platform.isAnchorValid(vscodeAnchor) != false, "Temporary VS Code query failure invalidated a live source")
+        let unavailableVSCodeReturn = await platform.returnToSource(vscodeAnchor)
+        assert(unavailableVSCodeReturn == .unavailable)
+        vscode.queryAvailable = true
+        assert(platform.isAnchorValid(vscodeAnchor) == true)
         vscode.focusSucceeds = false
         let vscodeFallback = await platform.returnToSource(vscodeAnchor)
         assert(vscodeFallback == .fallback)
@@ -121,7 +135,7 @@ import Foundation
         let wechatReturn = await platform.returnToSource(wechatAnchor)
         assert(wechatReturn == .fallback)
         apps.live.remove(30)
-        assert(!platform.isAnchorValid(wechatAnchor))
+        assert(platform.isAnchorValid(wechatAnchor) == false)
         platform.release(wechatAnchor)
 
         let login = MockLogin()
@@ -131,6 +145,6 @@ import Foundation
         assert(try! controller.setEnabled(true) == .requiresApproval)
         assert(login.changes == 1)
         assert(try! controller.setEnabled(false) == .disabled)
-        print("CharPlatform: 7 contract groups passed without controlling user apps")
+        print("CharPlatform: 8 contract groups passed without controlling user apps")
     }
 }

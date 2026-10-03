@@ -25,7 +25,8 @@ public struct ForegroundSnapshot: Equatable, Sendable {
 @MainActor public protocol TabbitControlling {
     /// Returns only an opaque tab ID; never URL, title, or page content.
     func captureActiveTabID() -> String?
-    func contains(tabID: String) -> Bool
+    /// nil means the integration could not verify source lifetime.
+    func contains(tabID: String) -> Bool?
     func focus(tabID: String) -> Bool
     func isActive(tabID: String) -> Bool
 }
@@ -33,7 +34,8 @@ public struct ForegroundSnapshot: Equatable, Sendable {
 @MainActor public protocol VSCodeControlling {
     /// Returns a token only when the extension can identify one active live tab.
     func captureFocusedTab() -> String?
-    func contains(token: String) -> Bool
+    /// nil means the integration could not verify source lifetime.
+    func contains(token: String) -> Bool?
     func focus(token: String) -> Bool
     func isActive(token: String) -> Bool
 }
@@ -109,15 +111,18 @@ public struct ForegroundSnapshot: Equatable, Sendable {
         return ReturnAnchor(id: id, bundleIdentifier: source.bundleIdentifier, token: id, accuracy: accuracy)
     }
 
-    public func isAnchorValid(_ anchor: ReturnAnchor) -> Bool {
+    /// false confirms invalidation; nil preserves an anchor through a temporary query failure.
+    public func isAnchorValid(_ anchor: ReturnAnchor) -> Bool? {
         guard let captured = anchors[anchor.id], anchor.token == anchor.id else { return false }
         switch captured {
         case let .tabbit(pid, tabID):
-            return anchor.accuracy == .exact && anchor.bundleIdentifier == Self.tabbitBundleID &&
-                apps.isRunning(bundleID: Self.tabbitBundleID, processID: pid) && tabbit.contains(tabID: tabID)
+            guard anchor.accuracy == .exact, anchor.bundleIdentifier == Self.tabbitBundleID,
+                  apps.isRunning(bundleID: Self.tabbitBundleID, processID: pid) else { return false }
+            return tabbit.contains(tabID: tabID)
         case let .vscode(pid, token):
-            return anchor.accuracy == .exact && anchor.bundleIdentifier == Self.vscodeBundleID &&
-                apps.isRunning(bundleID: Self.vscodeBundleID, processID: pid) && vscode.contains(token: token)
+            guard anchor.accuracy == .exact, anchor.bundleIdentifier == Self.vscodeBundleID,
+                  apps.isRunning(bundleID: Self.vscodeBundleID, processID: pid) else { return false }
+            return vscode.contains(token: token)
         case let .wechat(pid):
             return anchor.accuracy == .application && anchor.bundleIdentifier == Self.wechatBundleID &&
                 apps.isRunning(bundleID: Self.wechatBundleID, processID: pid)
@@ -127,7 +132,7 @@ public struct ForegroundSnapshot: Equatable, Sendable {
     public func focusContext(for anchor: ReturnAnchor?) -> FocusContext {
         let current = apps.foreground()
         let isAgent = current.map { [Self.warpBundleID, Self.codexBundleID].contains($0.bundleIdentifier) } ?? false
-        guard let anchor, let current, isAnchorValid(anchor), let captured = anchors[anchor.id] else {
+        guard let anchor, let current, isAnchorValid(anchor) == true, let captured = anchors[anchor.id] else {
             return FocusContext(isAgent: isAgent)
         }
         let matched: Bool
@@ -143,7 +148,7 @@ public struct ForegroundSnapshot: Equatable, Sendable {
     }
 
     public func returnToSource(_ anchor: ReturnAnchor) async -> NavigationOutcome {
-        guard isAnchorValid(anchor), let captured = anchors[anchor.id] else { return .unavailable }
+        guard isAnchorValid(anchor) == true, let captured = anchors[anchor.id] else { return .unavailable }
         switch captured {
         case let .tabbit(pid, tabID):
             guard await apps.activate(bundleID: Self.tabbitBundleID, preferredProcessID: pid) else { return .unavailable }

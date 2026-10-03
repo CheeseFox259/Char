@@ -107,6 +107,38 @@ func testHookBaselineAndDuplicateStop() throws {
     }
 }
 
+func testDelayedStopDoesNotSuppressNewAttention() throws {
+    try inTemporaryDirectory { root in
+        let hookFile = root.appendingPathComponent("hooks.jsonl")
+        let poller = LocalObservationPoller(claudeProjectsRoot: root.appendingPathComponent("claude"),
+            codexSessionsRoot: root.appendingPathComponent("codex"), hookEventsFile: hookFile)
+        let router = AttentionRouter(startedAt: Date(timeIntervalSince1970: 0), settings: CharSettings(filterSeconds: 0))
+        let key = SessionKey(workEnd: .claudeCode, nativeID: "delayed-stream")
+        poller.start()
+        func ingest(_ state: SessionState, at seconds: TimeInterval) throws {
+            let event = ObservationEvent(key: key, target: SessionTarget(bundleIdentifier: "dev.warp.Warp-Stable"),
+                timestamp: Date(timeIntervalSince1970: seconds), state: state)
+            try append(String(decoding: JSONEncoder().encode(event), as: UTF8.self) + "\n", to: hookFile)
+            router.ingest(poller.poll())
+            router.advance(to: Date(timeIntervalSince1970: seconds))
+        }
+        try ingest(.running, at: 10)
+        try ingest(.stopped(.turnEnded), at: 5) // Delayed data from another stream.
+        try check(router.nextVisit(for: .claudeCode) == nil, "a stale stop produced attention")
+        try ingest(.stopped(.turnEnded), at: 15)
+        try check(router.nextVisit(for: .claudeCode)?.stoppedAt == Date(timeIntervalSince1970: 15),
+            "a delayed old stop suppressed the new attention item")
+        router.ignoreNext(for: .claudeCode)
+        try ingest(.running, at: 20)
+        try ingest(.running, at: 30) // Duplicate state must still advance the observer's timestamp.
+        try ingest(.stopped(.turnEnded), at: 25)
+        try check(router.nextVisit(for: .claudeCode) == nil, "a stale stop after duplicate running produced attention")
+        try ingest(.stopped(.turnEnded), at: 35)
+        try check(router.nextVisit(for: .claudeCode)?.stoppedAt == Date(timeIntervalSince1970: 35),
+            "the new stop after duplicate running was lost")
+    }
+}
+
 func testCodexHooksPreserveWorkEnd() throws {
     try inTemporaryDirectory { root in
         for (origin, expected) in [("Codex Desktop", WorkEnd.codexDesktop), ("codex_cli", WorkEnd.codexCLI)] {
@@ -153,6 +185,7 @@ try testStartupAndAppends()
 try testCodexIdentityAndBatch()
 try testCodexQuestionResumesOnMatchingOutput()
 try testHookBaselineAndDuplicateStop()
+try testDelayedStopDoesNotSuppressNewAttention()
 try testCodexHooksPreserveWorkEnd()
 try testStructuredClassificationAndSuppression()
-print("CharObservations: 6 contract checks passed")
+print("CharObservations: 7 contract checks passed")

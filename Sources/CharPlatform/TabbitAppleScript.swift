@@ -59,15 +59,16 @@ private func tabbitAutomationStatus(askUser: Bool) -> TabbitAutomationStatus {
         evaluate("return id of active tab of front window as text")
     }
 
-    public func contains(tabID: String) -> Bool {
-        evaluate("""
+    public func contains(tabID: String) -> Bool? {
+        guard let result = evaluate("""
         repeat with w in windows
             repeat with t in tabs of w
                 if (id of t as text) is \(literal(tabID)) then return "yes"
             end repeat
         end repeat
         return "no"
-        """) == "yes"
+        """), ["yes", "no"].contains(result) else { return nil }
+        return result == "yes"
     }
 
     public func focus(tabID: String) -> Bool {

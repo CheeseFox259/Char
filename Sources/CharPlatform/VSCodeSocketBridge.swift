@@ -88,9 +88,12 @@ import Foundation
         return candidates.count == 1 ? candidates[0] : nil
     }
 
-    public func contains(token: String) -> Bool {
+    public func contains(token: String) -> Bool? {
         guard let (socketURL, id) = decode(token) else { return false }
-        return request(Request(op: "contains", token: id), at: socketURL)?.ok == true
+        // A removed socket confirms that this extension instance ended. A timeout does not.
+        var info = stat()
+        if lstat(socketURL.path, &info) != 0 && errno == ENOENT { return false }
+        return request(Request(op: "contains", token: id), at: socketURL)?.ok
     }
 
     public func focus(token: String) -> Bool {

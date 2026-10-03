@@ -4,6 +4,8 @@
 
 The observer stores only `ObservationEvent` metadata in memory: work end, native session ID, event time, state, and target path/process/pane when a source actually provides it. It does not retain prompt, command, or response text. It never starts or controls an Agent. `SessionTarget`'s pane ID is usually absent from the native journals; this first release uses application fallback navigation.
 
+The poller retains the newest event timestamp per native session even when adjacent states are duplicates. Delayed records from a second stream cannot move that timestamp backwards or suppress a later valid stop. One contract check drives the real poller and attention router through late-stop and duplicate-running sequences.
+
 ## Signals currently confirmed
 
 | Source | Structured signal | Event |

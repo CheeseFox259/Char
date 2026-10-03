@@ -26,6 +26,8 @@ Normal startup reconciles an enabled launch-at-login preference through `LoginIt
 
 The custom buttons expose native press actions and descriptive accessibility labels; custom actions provide ignore, Settings, mute and End Hold. Daily drawing contains native symbols and counts, with separate past, fallback, unavailable and source-icon graphics. It contains no prompt or command text.
 
+Source lifetime queries distinguish a confirmed closure from an unavailable integration. A Tabbit query error or VS Code bridge timeout preserves Hold and refuses an unverified return; a later successful query permits retry. A confirmed missing source, ended app instance, or removed VS Code extension socket still invalidates the anchor.
+
 ## Evidence
 
 Verified during implementation: Swift build, release app packaging/signing, and fixture smoke on the local macOS host. The implementation worker did not use CUA or manipulate user apps.

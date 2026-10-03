@@ -15,7 +15,7 @@ public final class LocalObservationPoller {
     private let codexSessionsRoot: URL
     private let hookEventsFile: URL?
     private var cursors: [String: Cursor] = [:]
-    private var lastStates: [SessionKey: SessionState] = [:]
+    private var lastEvents: [SessionKey: ObservationEvent] = [:]
     private var started = false
 
     public init(claudeProjectsRoot: URL, codexSessionsRoot: URL, hookEventsFile: URL? = nil) {
@@ -26,7 +26,7 @@ public final class LocalObservationPoller {
 
     public func start() {
         cursors.removeAll()
-        lastStates.removeAll()
+        lastEvents.removeAll()
         for (url, source) in files() {
             let attributes = try? FileManager.default.attributesOfItem(atPath: url.path)
             let size = (attributes?[.size] as? NSNumber)?.uint64Value ?? 0
@@ -87,9 +87,11 @@ public final class LocalObservationPoller {
             left.element.timestamp == right.element.timestamp ? left.offset < right.offset : left.element.timestamp < right.element.timestamp
         }.map(\.element)
         return ordered.filter { event in
-            if lastStates[event.key] == event.state { return false }
-            lastStates[event.key] = event.state
-            return true
+            let previous = lastEvents[event.key]
+            if let previous, event.timestamp < previous.timestamp { return false }
+            // Even a duplicate state advances the watermark: delayed records must not undo it.
+            lastEvents[event.key] = event
+            return previous?.state != event.state
         }
     }
 

@@ -138,7 +138,7 @@ actor ObservationWorker {
         let events = await worker?.poll() ?? []
         router.ingest(events) // A complete sleep/wake batch precedes any focus or time advancement.
         if let platform {
-            if let anchor = router.snapshot.hold?.anchor, !platform.isAnchorValid(anchor) { router.invalidateAnchor(id: anchor.id) }
+            if let anchor = router.snapshot.hold?.anchor, platform.isAnchorValid(anchor) == false { router.invalidateAnchor(id: anchor.id) }
             router.updateFocus(platform.focusContext(for: router.snapshot.hold?.anchor), at: Date())
             if let id = platform.foreground()?.displayID,
                let screen = NSScreen.screens.first(where: { ($0.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber)?.uint32Value == id }) {
