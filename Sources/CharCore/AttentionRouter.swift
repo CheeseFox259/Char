@@ -96,7 +96,10 @@ public final class AttentionRouter {
             if event.state == .closed {
                 // Keep the closing timestamp so a late poll cannot resurrect an obsolete stop.
                 sessions[event.key] = Session(event: event, stoppedAt: nil, acknowledged: true)
-                removeItem(event.key)
+                if var item = items[event.key] {
+                    item.isPast = true
+                    items[event.key] = item
+                }
                 continue
             }
             var session = old ?? Session(event: event)
