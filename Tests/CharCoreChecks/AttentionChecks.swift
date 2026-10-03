@@ -268,4 +268,30 @@ struct AttentionChecks {
         try check(r.snapshot.bubbles.isEmpty)
     }
 
+
+    func testFailedReturnsKeepRetryableOriginalAnchor() throws {
+        for bundle in ["com.tabbit-ai.Tabbit", "com.microsoft.VSCode"] {
+            let r = router()
+            waiting(r)
+            let original = anchor("retryable", bundle: bundle)
+            r.completeVisit(key: key("a"), outcome: .fallback, sourceAnchor: original, at: time(10))
+            r.completeReturn(outcome: .unavailable)
+            try checkEqual(r.snapshot.hold?.anchor, original)
+            try checkEqual(r.snapshot.navigationFeedback, .unavailable)
+            r.completeReturn(outcome: .fallback)
+            try checkEqual(r.snapshot.hold?.anchor, original)
+            try checkEqual(r.snapshot.navigationFeedback, .fallback)
+            r.completeReturn(outcome: .exact)
+            try check(r.snapshot.hold == nil)
+        }
+        let wechat = router()
+        waiting(wechat)
+        let source = anchor("wechat", accuracy: .application, bundle: "com.tencent.xinWeChat")
+        wechat.completeVisit(key: key("a"), outcome: .fallback, sourceAnchor: source, at: time(10))
+        wechat.completeReturn(outcome: .unavailable)
+        try checkEqual(wechat.snapshot.hold?.anchor, source)
+        wechat.completeReturn(outcome: .fallback)
+        try check(wechat.snapshot.hold == nil)
+    }
+
 }
