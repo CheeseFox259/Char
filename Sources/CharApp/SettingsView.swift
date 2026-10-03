@@ -42,6 +42,8 @@ struct SettingsView: View {
                 }
             }
             Section("Startup & integrations") {
+                Text("pi、Kimi CLI/App 与 DeepSeek Desktop 需显式安装本地观察集成。步骤见项目 README；未启用时这些工作端不会产生原生提醒。")
+                    .font(.caption).foregroundStyle(.secondary)
                 Toggle("Launch at login", isOn: Binding(get: { runtime.settings.launchAtLogin }, set: { runtime.setLogin($0) }))
                     .disabled(runtime.demo)
                 LabeledContent("Actual login status", value: runtime.loginStatus)

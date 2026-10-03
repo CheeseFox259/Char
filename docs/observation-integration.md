@@ -67,3 +67,9 @@ python3 integrations/codex/install.py \
 ```
 
 The app observes this shared file for both harnesses. Give both installers this same `--events-file` path; `LocalObservationPoller` accepts one normalized hook stream. Codex may require hook trust review before it runs non-managed handlers. `char-hook --codex` returns no model-visible output and does not approve, deny, rewrite, or interrupt tools. It only emits when the hook's session ID matches a local root journal's `session_meta` ID.
+
+## Additional native work ends
+
+Pi, Kimi CLI/App and DeepSeek Desktop are integrated through explicit passive native integrations. See [Pi](../integrations/pi/README.md), [Kimi](../integrations/kimi/README.md), [DeepSeek](../integrations/deepseek/README.md) and [source/coverage evidence](new-agent-observation.md). The normal worker reads Kimi root wires from `${KIMI_CODE_HOME:-~/.kimi-code}/sessions` only after an authoritative client binding; CLI and App stay separate. All integrations share the private hook stream, selected with `CHAR_HOOK_EVENTS` for both Char and the native integration.
+
+None of the CLI observers requires tmux; Claude Code, Codex CLI and Pi running directly in Warp use the same observation and application fallback as their tmux sessions. New work ends do not resolve the original Claude/Codex signal gaps.
