@@ -4,15 +4,17 @@
 
 ## Verified
 
-- `scripts/check.sh`: 4 persisted-settings checks, 15 attention/Hold checks, 6 local observation contract groups, 7 platform contract groups, and 4 VS Code extension tests pass. Swift checks throw and exit nonzero on failure; no XCTest installation is required.
+- `scripts/check.sh`: 4 persisted-settings checks, 16 attention/Hold checks, 6 local observation contract groups, 7 platform contract groups, and 4 VS Code extension tests pass. Swift checks throw and exit nonzero on failure; no XCTest installation is required.
 - The same command runs both actual Python hook installers against disposable settings with an existing hook and an unrelated preference. Repeated installation is idempotent. Executing their generated commands produces a shared normalized stream with correct Claude/Codex Desktop identity, no harness-facing output, no prompt/command sentinel text, and file mode 0600. No user harness configuration is changed.
-- `swift build` compiles the integrated core, observer and platform modules. The foundation release bundle was locally signed and verified; the final companion bundle and UI paths are recorded below when run.
+- `swift build` compiles the integrated core, observer and platform modules. `scripts/build-app.sh` produces the final release bundle, and `codesign --verify --deep --strict --verbose=2 build/Char.app` passes.
 - Local record shapes were inspected for structured keys and enums only. Codex Desktop question call/output and turn markers have representative contracts. Historical records are baselined, incomplete lines wait for completion, child/remote records are skipped, and a complete sleep/wake batch precedes attention-clock advancement.
 - Platform mocks verify owning-app visits return fallback, preserve unviewed attention, refuse missing/ambiguous exact sources, validate source lifetime and degrade WeChat application return. These mocks do not prove a real app switched.
 
 ## Runtime evidence
 
-Companion runtime checks are pending integration. This section will name the exact fixture launch, actual UI actions and observations; fixture navigation must not be presented as native Warp/Codex/WeChat activation.
+`build/Char.app/Contents/MacOS/Char --smoke` opens the actual native companion and exits zero after fixture visit/ignore/return checks. It checks three work ends, visible past head, fallback with unviewed retention, first-source preservation, degraded return, hit areas, quiet 180 ms source-badge fade and click availability during that fade. The final post-review package passed this check. Navigation is synthetic; this is not native Warp/Codex/WeChat activation evidence.
+
+`build/Char.app/Contents/MacOS/Char --demo` was launched for native-size visual and physical-input acceptance. CUA could not inspect it because the Mac was locked and automatic unlock failed. The test fixture was stopped through its own terminal; no user app or harness was changed. Screenshot, mouse/right-click/drag, and settings-layout acceptance are **Blocked pending manual unlock**, not passed.
 
 ## Not run
 
@@ -24,6 +26,8 @@ Companion runtime checks are pending integration. This section will name the exa
 - Runtime packet capture. Source inspection and local stream checks establish the implemented local data path; they are not a packet-level audit.
 
 ## Blocked / deferred
+
+- Native visual/input acceptance is blocked by the locked Mac. Manual unlock is requested; no alternate screenshot or UI-control route was attempted.
 
 - Exact Warp pane navigation/reattachment and exact Warp source capture are outside the approved first-release scope ([#10](https://github.com/CheeseFox259/Char/issues/10)); no usable Warp Control endpoint was established on the installed Stable build.
 - Exact Codex chat and WeChat chat return are outside the approved first-release scope ([#11](https://github.com/CheeseFox259/Char/issues/11), [#12](https://github.com/CheeseFox259/Char/issues/12)). A browser security rejection of a custom Codex URI was not bypassed.
