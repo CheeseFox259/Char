@@ -12,7 +12,7 @@ guard let event,
 
 let environment = ProcessInfo.processInfo.environment
 let defaultPath = FileManager.default.homeDirectoryForCurrentUser
-    .appendingPathComponent("Library/Application Support/Char/claude-hooks.jsonl")
+    .appendingPathComponent("Library/Application Support/Char/harness-hooks.jsonl")
 let destination = environment["CHAR_HOOK_EVENTS"].map { URL(fileURLWithPath: $0) } ?? defaultPath
 do {
     try FileManager.default.createDirectory(at: destination.deletingLastPathComponent(),

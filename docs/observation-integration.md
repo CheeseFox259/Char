@@ -42,13 +42,13 @@ Claude's observed transcript alone did not expose approval, question, or API fai
 
 ## Optional Claude hook
 
-The `char-hook` executable consumes one official hook JSON object on stdin and appends a normalized JSONL event to `~/Library/Application Support/Char/claude-hooks.jsonl` (or `CHAR_HOOK_EVENTS`). It writes no model-facing output and does not change the hook's decision. Build with `swift build -c release`. To opt in, explicitly run:
+The `char-hook` executable consumes one official hook JSON object on stdin and appends a normalized JSONL event to `~/Library/Application Support/Char/harness-hooks.jsonl` (or `CHAR_HOOK_EVENTS`). It writes no model-facing output and does not change the hook's decision. Build with `swift build -c release`. To opt in, explicitly run:
 
 ```sh
 python3 integrations/claude/install.py \
   --settings "$HOME/.claude/settings.json" \
   --hook-binary "/absolute/path/to/.build/release/char-hook" \
-  --events-file "$HOME/Library/Application Support/Char/claude-hooks.jsonl"
+  --events-file "$HOME/Library/Application Support/Char/harness-hooks.jsonl"
 ```
 
 The installer merges command handlers into existing hook arrays and leaves other settings and hook entries in place. Repeating the same command is idempotent. This repository does not install the hook automatically. Review the settings file and grant its normal local write permissions before opting in. The poller should receive the same `hookEventsFile` path. Existing hook records at `start()` are baselined like transcript records.
@@ -61,7 +61,7 @@ Codex documents command hooks in `~/.codex/hooks.json`, including `PermissionReq
 python3 integrations/codex/install.py \
   --hooks "$HOME/.codex/hooks.json" \
   --hook-binary "/absolute/path/to/.build/release/char-hook" \
-  --events-file "$HOME/Library/Application Support/Char/codex-hooks.jsonl"
+  --events-file "$HOME/Library/Application Support/Char/harness-hooks.jsonl"
 ```
 
-Pass that file as another poller input when Codex hooks are enabled. Current `LocalObservationPoller` accepts one hook file; deployments using both harness hooks should give them a shared `--events-file` path. Codex may require hook trust review before it runs non-managed handlers. `char-hook --codex` returns no model-visible output and does not approve, deny, rewrite, or interrupt tools. It only emits when the hook's session ID matches a local root journal's `session_meta` ID.
+The app observes this shared file for both harnesses. Give both installers this same `--events-file` path; `LocalObservationPoller` accepts one normalized hook stream. Codex may require hook trust review before it runs non-managed handlers. `char-hook --codex` returns no model-visible output and does not approve, deny, rewrite, or interrupt tools. It only emits when the hook's session ID matches a local root journal's `session_meta` ID.
