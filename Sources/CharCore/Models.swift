@@ -1,7 +1,7 @@
 import Foundation
 
 public enum WorkEnd: String, CaseIterable, Codable, Sendable {
-    case claudeCode, codexCLI, codexDesktop
+    case claudeCode, codexCLI, codexDesktop, deepseekDesktop, kimiCLI, kimiDesktop, pi
 }
 
 public enum StopReason: String, CaseIterable, Codable, Sendable {
