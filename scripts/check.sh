@@ -10,3 +10,4 @@ python3 Tests/check_hook_contracts.py "$(swift build --show-bin-path)/char-hook"
 if [[ -f "$repo_root/integrations/vscode/package.json" ]]; then
     npm --prefix "$repo_root/integrations/vscode" test
 fi
+node "$repo_root/integrations/pi/observer.test.mjs"
