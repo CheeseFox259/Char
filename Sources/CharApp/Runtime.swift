@@ -12,9 +12,11 @@ actor ObservationWorker {
         let home = FileManager.default.homeDirectoryForCurrentUser
         let codexHome = ProcessInfo.processInfo.environment["CODEX_HOME"].map { URL(fileURLWithPath: $0) }
             ?? home.appendingPathComponent(".codex")
+        let hookEvents = ProcessInfo.processInfo.environment["CHAR_HOOK_EVENTS"].map { URL(fileURLWithPath: $0) }
+            ?? home.appendingPathComponent("Library/Application Support/Char/harness-hooks.jsonl")
         poller = LocalObservationPoller(claudeProjectsRoot: home.appendingPathComponent(".claude/projects"),
             codexSessionsRoot: codexHome.appendingPathComponent("sessions"),
-            hookEventsFile: home.appendingPathComponent("Library/Application Support/Char/harness-hooks.jsonl"))
+            hookEventsFile: hookEvents)
     }
     func start() { poller.start() }
     func poll() -> [ObservationEvent] { poller.poll() }
