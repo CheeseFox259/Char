@@ -2,7 +2,7 @@
 
 ## 入口
 
-- 首版在 macOS 单机运行，登录后默认自动启动，监视 Claude Code TUI、Codex CLI、Codex Desktop、DeepSeek Harness Desktop、Kimi Code、pi 的本机会话。CLI 直接在这台 Mac 上的 Warp 或 Warp + tmux 中运行；char 不接管原生会话的启动。
+- 首版在 macOS 单机运行，登录后默认自动启动，监视 Claude Code TUI、Codex CLI、Codex Desktop、DeepSeek Harness Desktop、Kimi CLI、Kimi Code App、pi 的本机会话。CLI 直接在这台 Mac 上的 Warp 或 Warp + tmux 中运行；char 不接管原生会话的启动。
 - 启动时不回放已有等待；启动前创建、启动后才停下的 CLI 会话仍需被观察并提醒。Mac 睡眠期间发生且唤醒后仍有效的新事件需显示。
 - 会话连续停下达到全局过滤阈值后才产生注意力项，默认 10 秒，设置中可调整；能够验证准确会话已获得键盘焦点时只记录状态，不弹气泡。Warp 当前无法可靠判定 pane 焦点时不得据此压下提醒或清除注意力项；目标 pane 即使在分屏中可见，也不等于已获焦点。
 - 桌宠旁按工作端显示气泡；每个气泡显示最紧急原因的图形及未查看数量。运行中会话只显示计数。气泡不显示任意提问或命令原文。
