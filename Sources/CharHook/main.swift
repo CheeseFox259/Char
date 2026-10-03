@@ -4,7 +4,9 @@ import CharCore
 import CharObservations
 
 let input = FileHandle.standardInput.readDataToEndOfFile()
-let event = CommandLine.arguments.contains("--codex")
+let event = CommandLine.arguments.contains("--pi")
+    ? PiObservationClassifier.hook(input)
+    : CommandLine.arguments.contains("--codex")
     ? ObservationClassifier.codexHook(input)
     : ObservationClassifier.claudeHook(input)
 guard let event,
