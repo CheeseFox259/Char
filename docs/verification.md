@@ -1,5 +1,7 @@
 # Product verification
 
+最新一轮用户请求的验收记录见 [2026-10-03 当前完成部分验收](acceptance-2026-10-03.md)。本次补充了实际 CUA 输入、设置图例、正常应用的 Warp/Codex 激活，以及正常设置退出/重启保留和本地音频选择。使用者反馈“可以正常使用”，临时运行数据已清理。完整验收仍受原生状态信号缺口及未完成的实机检查影响。下文为此前记录，其中锁定阻塞和部分未运行项已被本次续验更新；请以最新报告为准。
+
 2026-10-03, macOS 26, Apple Silicon, Swift 6.3.2 Command Line Tools. This note distinguishes deterministic contracts, fixture application paths, native integrations and distribution checks. Review readiness does not mean every release acceptance path has been run.
 
 ## Verified
