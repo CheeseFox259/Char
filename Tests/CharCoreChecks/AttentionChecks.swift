@@ -245,10 +245,27 @@ struct AttentionChecks {
         try checkEqual(r.nextVisit(for: .claudeCode)?.reason, .rateLimit)
         r.ingest([event("a", 5, .closed)])
         r.advance(to: time(5))
-        try check(r.snapshot.bubbles.isEmpty)
-        try check(r.drainEffects().isEmpty)
+        try checkEqual(r.nextVisit(for: .claudeCode)?.isPast, true)
         r.ingest([event("a", 4, .stopped(.rateLimit))])
         r.advance(to: time(20))
+        try checkEqual(r.nextVisit(for: .claudeCode)?.isPast, true)
+        try checkEqual(r.snapshot.bubbles.first?.count, 1)
+        r.ignoreNext(for: .claudeCode)
+        r.advance(to: time(30))
         try check(r.snapshot.bubbles.isEmpty)
     }
+
+    func testClosureRetainsVisibleAttentionOnly() throws {
+        let r = router()
+        r.ingest([event("visible", 0, .stopped(.question)), event("unseen", 9, .stopped(.approval))])
+        r.advance(to: time(10))
+        r.ingest([event("visible", 11, .closed), event("unseen", 11, .closed)])
+        r.advance(to: time(30))
+        try checkEqual(r.snapshot.bubbles.first?.count, 1)
+        try checkEqual(r.nextVisit(for: .claudeCode)?.key, key("visible"))
+        try checkEqual(r.nextVisit(for: .claudeCode)?.isPast, true)
+        r.updateFocus(FocusContext(exactSession: key("visible"), isAgent: true), at: time(31))
+        try check(r.snapshot.bubbles.isEmpty)
+    }
+
 }
