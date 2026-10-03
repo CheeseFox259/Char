@@ -205,9 +205,13 @@ public final class AttentionRouter {
     }
 
     public func completeReturn(outcome: NavigationOutcome) {
-        guard hold != nil else { return }
+        guard let hold else { return }
         navigationFeedback = outcome
-        endHold()
+        // A still-live exact source remains retryable when activation or exact focus fails.
+        if outcome == .exact || (outcome == .fallback &&
+            (hold.anchor.accuracy == .application || hold.anchor.bundleIdentifier == "dev.warp.Warp-Stable")) {
+            endHold()
+        }
     }
 
     public func invalidateAnchor(id: String) {

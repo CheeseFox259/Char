@@ -47,6 +47,10 @@ actor ObservationWorker {
     private var timer: Timer?
     private var polling = false
     private var retainedAnchor: ReturnAnchor?
+    private(set) var sourceBadgeAnchor: ReturnAnchor?
+    private(set) var sourceBadgeOpacity: CGFloat = 0
+    private var badgeFadeTimer: Timer?
+    private var badgeFadeGeneration = 0
     private var panel: CompanionPanel!
     private var settingsWindow: NSWindow?
     private var currentDisplay: String?
@@ -267,6 +271,13 @@ actor ObservationWorker {
     private func publish() {
         let next = router.snapshot
         if let old = retainedAnchor, old.id != next.hold?.anchor.id { platform?.release(old) }
+        if let anchor = next.hold?.anchor {
+            badgeFadeGeneration += 1
+            badgeFadeTimer?.invalidate(); badgeFadeTimer = nil
+            sourceBadgeAnchor = anchor; sourceBadgeOpacity = 1
+        } else if let old = retainedAnchor {
+            fadeSourceBadge(old)
+        }
         retainedAnchor = next.hold?.anchor
         snapshot = next
         panel?.surface.refresh()
@@ -278,6 +289,25 @@ actor ObservationWorker {
             }
         }
     }
+    private func fadeSourceBadge(_ anchor: ReturnAnchor) {
+        badgeFadeTimer?.invalidate()
+        sourceBadgeAnchor = anchor; sourceBadgeOpacity = 1
+        let began = Date()
+        badgeFadeGeneration += 1
+        let generation = badgeFadeGeneration
+        badgeFadeTimer = Timer.scheduledTimer(withTimeInterval: 1.0 / 60, repeats: true) { [weak self] timer in
+            Task { @MainActor in
+                guard let self, generation == self.badgeFadeGeneration else { timer.invalidate(); return }
+                let fraction = Date().timeIntervalSince(began) / 0.18
+                self.sourceBadgeOpacity = CGFloat(max(0, 1 - fraction))
+                if fraction >= 1 {
+                    timer.invalidate(); self.badgeFadeTimer = nil; self.sourceBadgeAnchor = nil
+                }
+                self.panel.surface.pet.needsDisplay = true
+            }
+        }
+    }
+
     private func scheduleFeedbackClear() {
         feedbackGeneration += 1
         let generation = feedbackGeneration
@@ -331,9 +361,14 @@ actor ObservationWorker {
         guard snapshot.hold?.anchor.id == "fixture-wechat" else { fail("original anchor") }
         ignore(.claudeCode)
         guard snapshot.bubbles.first(where: { $0.workEnd == .claudeCode })?.count == 1 else { fail("head-only ignore") }
+        let soundBeforeReturn = demoSoundCount
         petClicked()
         try? await Task.sleep(nanoseconds: 100_000_000)
         guard snapshot.hold == nil, snapshot.navigationFeedback == .fallback else { fail("degraded return") }
+        guard sourceBadgeAnchor != nil, sourceBadgeOpacity > 0, sourceBadgeOpacity < 1 else { fail("source badge fade") }
+        petClicked() // The actual Hold is already gone; controls remain available during the graphic fade.
+        try? await Task.sleep(nanoseconds: 150_000_000)
+        guard sourceBadgeAnchor == nil, demoSoundCount == soundBeforeReturn else { fail("quiet fade completion") }
         guard panel.surface.buttons.allSatisfy({ $0.frame.width >= 44 && $0.frame.height >= 44 }) else { fail("hit target size") }
         print("Char fixture smoke passed: 3 work ends, past/fallback, first anchor, ignore, return, hit targets; no real integrations")
         NSApp.terminate(nil)

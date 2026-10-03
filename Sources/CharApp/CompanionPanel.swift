@@ -138,12 +138,15 @@ import CharCore
         NSBezierPath(roundedRect: NSRect(x: 19, y: 26 + shift, width: 37, height: 23), xRadius: 11, yRadius: 11).fill()
         NSColor(calibratedRed: 0.87, green: 1, blue: 0.98, alpha: 1).setFill()
         for x in [29.0, 44.0] { NSBezierPath(roundedRect: NSRect(x: x, y: 33 + shift, width: 4, height: responding ? 3 : 7), xRadius: 2, yRadius: 2).fill() }
-        if let anchor = runtime.snapshot.hold?.anchor {
+        if let anchor = runtime.sourceBadgeAnchor {
+            NSGraphicsContext.saveGraphicsState()
+            NSGraphicsContext.current?.cgContext.setAlpha(runtime.sourceBadgeOpacity)
             NSColor.white.setFill(); NSBezierPath(ovalIn: NSRect(x: 51, y: 8, width: 23, height: 23)).fill()
             let icon = runtime.demo ? NSImage(systemSymbolName: "bubble.left.and.bubble.right.fill", accessibilityDescription: nil)
                 : NSWorkspace.shared.urlForApplication(withBundleIdentifier: anchor.bundleIdentifier).map { NSWorkspace.shared.icon(forFile: $0.path) }
             icon?.draw(in: NSRect(x: 54, y: 11, width: 17, height: 17))
             if anchor.accuracy == .application { symbol("arrow.triangle.turn.up.right.diamond.fill", in: NSRect(x: 5, y: 8, width: 16, height: 16), color: .systemOrange) }
+            NSGraphicsContext.restoreGraphicsState()
         }
         if runtime.snapshot.navigationFeedback == .fallback {
             symbol("arrow.triangle.turn.up.right.diamond.fill", in: NSRect(x: 55, y: 53, width: 18, height: 18), color: .systemOrange)
