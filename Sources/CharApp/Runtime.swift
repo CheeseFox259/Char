@@ -83,7 +83,7 @@ actor ObservationWorker {
         login = demo ? nil : LoginItemController()
         worker = demo ? nil : ObservationWorker()
         super.init()
-        if demo {
+        if smoke {
             let service = FixtureHomeHotKeyService()
             fixtureHotKey = service
             homeShortcut = HomeShortcutController(service: service) { [weak self] in self?.returnHome() }
@@ -184,7 +184,7 @@ actor ObservationWorker {
     private func refreshHomeShortcutStatus() {
         switch homeShortcut.status {
         case .inactive: homeShortcutStatus = "Ctrl+B 未注册；保存来源后启用回城"
-        case .registered: homeShortcutStatus = demo ? "Fixture：模拟 Ctrl+B 回城" : "Ctrl+B 已注册，可回城"
+        case .registered: homeShortcutStatus = smoke ? "Fixture：模拟 Ctrl+B 回城" : "Ctrl+B 已注册，可回城"
         case let .failed(code): homeShortcutStatus = "Ctrl+B 注册失败（系统错误 \(code)）。可能与其他应用冲突；可重试，或点击桌宠回城。"
         }
     }
