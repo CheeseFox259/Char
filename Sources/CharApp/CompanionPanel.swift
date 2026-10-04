@@ -156,6 +156,7 @@ import CharCore
     }
     func dispose() {
         clock?.invalidate(); clock = nil
+        wheelDiagnostics.stopMonitoring()
         if let displayOptionsObserver { workspaceNotifications.removeObserver(displayOptionsObserver) }
         displayOptionsObserver = nil
         if let occlusionObserver { NotificationCenter.default.removeObserver(occlusionObserver) }
@@ -163,6 +164,7 @@ import CharCore
     }
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
+        wheelDiagnostics.monitor(self)
         if let occlusionObserver { NotificationCenter.default.removeObserver(occlusionObserver) }
         guard let window else { return }
         occlusionObserver = NotificationCenter.default.addObserver(forName: NSWindow.didChangeOcclusionStateNotification,
@@ -410,6 +412,7 @@ import CharCore
         // AppKit hitTest alone does not forward events through a transparent NSWindow.
         if let window {
             let local = convert(window.convertPoint(fromScreen: NSEvent.mouseLocation), from: nil)
+            wheelDiagnostics.route(self, point: local, accepts: !window.ignoresMouseEvents)
             let orbitActive = now < orbitUntil
             if local != lastPointer || orbitActive || orbitActive != lastOrbitActive {
                 let desired = hitTest(local) == nil

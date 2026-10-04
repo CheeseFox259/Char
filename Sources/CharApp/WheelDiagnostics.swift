@@ -6,6 +6,45 @@ import QuartzCore
     private let enabled = ProcessInfo.processInfo.environment["CHAR_WHEEL_DIAGNOSTICS"] == "1"
     private var sequence = 0
     private var active: (sequence: Int, until: TimeInterval, layer: CALayer)?
+    private var monitors: [Any] = []
+    private var lastRoute: String?
+    // [DEBUG-char-wheel-deep] Passive input boundaries; never consume or repost events.
+    func monitor(_ surface: CompanionSurface) {
+        stopMonitoring()
+        guard enabled else { return }
+        if let token = NSEvent.addLocalMonitorForEvents(matching: .scrollWheel, handler: { [weak self, weak surface] event in
+            MainActor.assumeIsolated {
+                if let surface, event.window === surface.window { self?.ingress(event, surface: surface, kind: "ingressLocal") }
+            }
+            return event
+        }) { monitors.append(token) }
+        if let token = NSEvent.addGlobalMonitorForEvents(matching: .scrollWheel, handler: { [weak self, weak surface] event in
+            MainActor.assumeIsolated {
+                if let surface, surface.window?.frame.contains(NSEvent.mouseLocation) == true {
+                    self?.ingress(event, surface: surface, kind: "ingressGlobal")
+                }
+            }
+        }) { monitors.append(token) }
+        write(["kind": "monitorInstalled", "now": ProcessInfo.processInfo.systemUptime, "count": monitors.count])
+    }
+    func stopMonitoring() { for token in monitors { NSEvent.removeMonitor(token) }; monitors.removeAll() }
+    func route(_ surface: CompanionSurface, point: NSPoint, accepts: Bool) {
+        guard enabled else { return }
+        let target = (surface.hitTest(point) as? GraphicButton)?.renderedWorkEnd?.rawValue ?? "surface/none"
+        let key = "\(accepts):\(target)"
+        guard key != lastRoute else { return }; lastRoute = key
+        write(["kind": "route", "now": ProcessInfo.processInfo.systemUptime, "accepts": accepts,
+               "target": target, "point": [point.x,point.y], "appActive": NSApp.isActive])
+    }
+    private func ingress(_ event: NSEvent, surface: CompanionSurface, kind: String) {
+        guard let window = surface.window else { return }
+        let point = surface.convert(window.convertPoint(fromScreen: NSEvent.mouseLocation), from: nil)
+        write(["kind": kind, "now": ProcessInfo.processInfo.systemUptime, "eventTime": event.timestamp,
+               "dy": event.scrollingDeltaY, "dx": event.scrollingDeltaX, "point": [point.x,point.y],
+               "accepts": !window.ignoresMouseEvents, "eventWindow": event.windowNumber,
+               "panelWindow": window.windowNumber, "appActive": NSApp.isActive,
+               "sourcePID": event.cgEvent?.getIntegerValueField(.eventSourceUnixProcessID) ?? -1])
+    }
     func input(_ event: NSEvent, offset: Int) -> Int {
         guard enabled else { return 0 }
         sequence += 1

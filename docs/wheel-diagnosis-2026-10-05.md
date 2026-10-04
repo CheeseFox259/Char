@@ -54,3 +54,13 @@ Apple区分AppKit管理的backing layer与自主管理的hosting layer；后者�
 ### 第二组：仅切换hosting
 
 同一`27b27a8`二进制的hosted完整smoke在解锁状态通过（`/tmp/char-wheel-hosted-smoke.log`），包含无视图子项的hosting归属检查及原有产品路径。随后启动正常私有fixture，保留第一组48 pt/right/20 pt与七个气泡，仅启用`CHAR_HOSTED_SCENE=1`，CUA确认气泡可见。已发起相同步骤的实体采集问题，等待用户完成后才读取并分析采集段。日志`/tmp/char-wheel-hosted.log`，边界`/tmp/char-wheel-hosted.capture-start.json`。
+
+第二组用户完成后反馈“问题没有任何变化”。边界后的16个输入均接受为16次切换，输入延迟平均11.33 ms、最高22.90 ms；普通图层起动约7–23 ms、约178–194 ms到位。折叠压缩有预期的约60 ms位置保持。实际方向检查没有发现新的可见反向路径，但用户仍看到旧方向一步及整体滞后。日志`/tmp/char-wheel-hosted-capture.log`。此次hosting变体没有解决问题，不能据此选为交付修正。
+
+接下来收紧到单格静止鼠标：先保存画面，要求用户只滚一格并用键盘回复，再核对这一段实际事件、呈现位置与CUA截图。输入计数/屏幕像素之间尚缺少能自动判红的完整闭环，已有CALayer检查不能替代用户所见的滞后。
+
+### 单格停住与只移开：输入边界红灯
+
+用户按约定只滚一格并停住，回复“单格已停”后，采集段无任何`input`或`accepted`；CUA画面保留offset0的Claude/Codex排列。对该实际采集执行“单格应收到一次input”断言，输出`expected=1 received=0`并exit1。日志`/tmp/char-wheel-held-capture.log`。随后单独要求只移开、不滚轮；用户确认有补滚，日志此时才收到sequence17、dy=-30并接受-1，输入到handler约10.5 ms，动画约187 ms到位（`/tmp/char-wheel-exit-capture.log`）。事件时间也接近移开阶段。这次直接证据把调查边界提前到输入送达，不能继续将全部延迟解释为绘制。
+
+临时增加不消费、不重发事件的NSEvent local/global scroll monitors，比较App入口、气泡入口和`ignoresMouseEvents`/指针目标转换；全局观察仅记录指针位于Char画布时的滚轮数值和坐标，没有键盘/内容监控。按[Apple事件监控说明](https://developer.apple.com/library/archive/documentation/Cocoa/Conceptual/EventOverview/MonitoringEvents/MonitoringEvents.html)，local对应本App派发前，global对应其他App。当前保留相同hosting路径以隔离诊断改动，未修改滚动策略。release编译/打包通过；七个私有气泡经CUA确认，入口采集问题已发出，等待完成回复后分析。
