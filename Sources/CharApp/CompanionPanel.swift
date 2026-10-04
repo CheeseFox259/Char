@@ -1,4 +1,5 @@
 import AppKit
+import QuartzCore
 import CharCore
 
 @MainActor private enum BubbleDrawing {
@@ -20,14 +21,10 @@ import CharCore
         draw()
         let image = NSImage(size: size); image.addRepresentation(rep); return image
     }
-    static func pose(in rect: NSRect, elapsed: TimeInterval) {
+    static func layerTransform(elapsed: TimeInterval) -> CGAffineTransform {
         let wobble = NSWorkspace.shared.accessibilityDisplayShouldReduceMotion ? 0 : sin(elapsed * 1.2) * sin(elapsed * 0.37)
-        let pose = NSAffineTransform()
-        pose.translateX(by: rect.midX, yBy: rect.midY)
-        pose.rotate(byDegrees: CGFloat(wobble * 2.5))
-        pose.scaleX(by: CGFloat(1 + wobble * 0.035), yBy: CGFloat(1 - wobble * 0.035))
-        pose.translateX(by: -rect.midX, yBy: -rect.midY)
-        pose.concat()
+        return CGAffineTransform(rotationAngle: CGFloat(wobble * 2.5 * .pi / 180))
+            .scaledBy(x: CGFloat(1 + wobble * 0.035), y: CGFloat(1 - wobble * 0.035))
     }
     static func shell(in bounds: NSRect, tint: NSColor) {
         let rect = bounds.insetBy(dx: 2, dy: 2)
@@ -66,7 +63,7 @@ import CharCore
     unowned let runtime: CompanionRuntime
     let pet: GraphicButton
     let buttons: [GraphicButton]
-    private let overflow = NSView(frame: .zero)
+    private let overflow = NSImageView(frame: .zero)
     private var offset = 0
     private var overflowArtwork: NSImage?
     private var overflowCount = -1
@@ -91,6 +88,11 @@ import CharCore
         pet = GraphicButton(kind: .pet, runtime: runtime)
         buttons = WorkEnd.allCases.map { GraphicButton(kind: .bubble($0), runtime: runtime) }
         super.init(frame: NSRect(origin: .zero, size: CompanionGeometry.canvasSize))
+        wantsLayer = true
+        overflow.wantsLayer = true
+        overflow.layerContentsRedrawPolicy = .onSetNeedsDisplay
+        overflow.imageScaling = .scaleAxesIndependently
+        overflow.setAccessibilityElement(false)
         addSubview(pet)
         addSubview(overflow)
         for button in buttons { addSubview(button) }
@@ -112,10 +114,7 @@ import CharCore
             let bubble = runtime.snapshot.bubbles.first { $0.workEnd == end }
             button.setAccessibilityLabel("\(end.title): \(bubble?.count ?? 0) unviewed, \(bubble?.runningCount ?? 0) running\(bubble?.head.map { ", \($0.reason.title)\($0.isPast ? ", past" : "")\($0.navigationOutcome == .fallback ? ", application fallback" : "")" } ?? "")")
             button.refreshArtwork()
-            button.needsDisplay = true
         }
-        let count = max(0, runtime.snapshot.bubbles.count - 5)
-        if overflowCount != count { overflowCount = count; overflowArtwork = nil }
         pet.needsDisplay = true
         ensureClock()
     }
@@ -124,24 +123,32 @@ import CharCore
             guard case let .bubble(end) = button.kind else { return false }
             return runtime.snapshot.bubbles.contains { $0.workEnd == end }
         }
-        buttons.forEach { $0.isHidden = true; $0.miniature = false }
+        var presented = Set<GraphicButton>()
         pet.placement = placement
-        pet.frame = CompanionGeometry.petFrame(placement: placement)
+        let petFrame = CompanionGeometry.petFrame(placement: placement)
+        if pet.frame != petFrame { pet.frame = petFrame }
         let slots = CompanionGeometry.layout(count: visible.count, offset: offset, placement: placement)
-        overflow.isHidden = true
+        let hasOverflow = slots.contains { $0.primaryIndex == nil }
+        overflow.isHidden = !hasOverflow
         for slot in slots {
             if let index = slot.primaryIndex {
-                visible[index].frame = slot.frame; visible[index].isHidden = false
+                if visible[index].frame != slot.frame { visible[index].frame = slot.frame }
+                visible[index].miniature = false; presented.insert(visible[index])
             } else {
-                overflow.frame = slot.frame; overflow.isHidden = false
+                if overflow.frame != slot.frame { overflow.frame = slot.frame }
+                overflow.isHidden = false
                 for (index, frame) in zip(slot.overflowIndices, slot.miniFrames) {
-                    visible[index].frame = frame; visible[index].miniature = true; visible[index].isHidden = false
+                    if visible[index].frame != frame { visible[index].frame = frame }
+                    visible[index].miniature = true; presented.insert(visible[index])
                 }
             }
         }
-        for button in buttons where !button.isHidden { button.refreshArtwork() }
+        for button in buttons {
+            button.isHidden = !presented.contains(button)
+            if !button.isHidden { button.refreshArtwork() }
+        }
+        updateOverflowArtwork()
         setAccessibilityChildren([pet] + buttons.filter { !$0.isHidden })
-        needsDisplay = true
     }
     override func hitTest(_ point: NSPoint) -> NSView? {
         let local = convert(point, from: superview)
@@ -225,31 +232,35 @@ import CharCore
         let redraw = !reduce || lastReduced != reduce || wasAnimating
         if redraw {
             pet.needsDisplay = true
+            CATransaction.begin()
+            CATransaction.setDisableActions(true)
             for button in buttons where !button.isHidden {
-                button.elapsed = reduce ? 0 : now - epoch
-                button.needsDisplay = true
+                guard case let .bubble(end) = button.kind else { continue }
+                let phase = (reduce ? 0 : now - epoch) + Double(WorkEnd.allCases.firstIndex(of: end) ?? 0) * 0.7
+                button.layer?.setAffineTransform(BubbleDrawing.layerTransform(elapsed: phase))
             }
-            if !overflow.isHidden { needsDisplay = true }
+            if !overflow.isHidden {
+                overflow.layer?.setAffineTransform(BubbleDrawing.layerTransform(elapsed: reduce ? 0 : now - epoch))
+            }
+            CATransaction.commit()
         }
         lastReduced = reduce
         // Keep the single lightweight clock for pointer passthrough; Reduce Motion freezes drawing.
     }
-    override func draw(_ dirtyRect: NSRect) {
+    private func updateOverflowArtwork() {
         guard !overflow.isHidden else { return }
-        NSGraphicsContext.saveGraphicsState()
-        defer { NSGraphicsContext.restoreGraphicsState() }
-        BubbleDrawing.pose(in: overflow.frame, elapsed: ProcessInfo.processInfo.systemUptime - epoch)
-        if overflowArtwork == nil {
-            overflowArtwork = BubbleDrawing.raster(size: overflow.frame.size) {
-                let rect = NSRect(origin: .zero, size: overflow.frame.size)
-                BubbleDrawing.shell(in: rect, tint: .systemBlue)
-                let style = NSMutableParagraphStyle(); style.alignment = .center
-                "+\(overflowCount)".draw(in: NSRect(x: rect.midX - 11, y: rect.midY - 3, width: 22, height: 12),
-                                        withAttributes: [.font: NSFont.systemFont(ofSize: 9, weight: .bold),
-                                                         .foregroundColor: NSColor.labelColor, .paragraphStyle: style])
-            }
+        let count = max(0, runtime.snapshot.bubbles.count - 5)
+        if overflowCount == count, overflowArtwork != nil { return }
+        overflowCount = count
+        overflowArtwork = BubbleDrawing.raster(size: overflow.frame.size) {
+            let rect = NSRect(origin: .zero, size: overflow.frame.size)
+            BubbleDrawing.shell(in: rect, tint: .systemBlue)
+            let style = NSMutableParagraphStyle(); style.alignment = .center
+            "+\(count)".draw(in: NSRect(x: rect.midX - 11, y: rect.midY - 3, width: 22, height: 12),
+                            withAttributes: [.font: NSFont.systemFont(ofSize: 9, weight: .bold),
+                                             .foregroundColor: NSColor.labelColor, .paragraphStyle: style])
         }
-        overflowArtwork?.draw(in: overflow.frame)
+        overflow.image = overflowArtwork
     }
 }
 
@@ -274,7 +285,7 @@ import CharCore
         guard case let .bubble(end) = kind else { return }
         let next = ArtworkKey(bubble: runtime.snapshot.bubbles.first { $0.workEnd == end },
                               icon: runtime.agentIcon(for: end).map(ObjectIdentifier.init), miniature: miniature, size: bounds.size)
-        if next != artworkKey { artworkKey = next; artwork = nil }
+        if next != artworkKey { artworkKey = next; artwork = nil; needsDisplay = true }
     }
     var responding = false
     var miniature = false
@@ -300,6 +311,8 @@ import CharCore
     init(kind: Kind, runtime: CompanionRuntime) {
         self.kind = kind; self.runtime = runtime
         super.init(frame: .zero)
+        wantsLayer = true
+        layerContentsRedrawPolicy = .onSetNeedsDisplay
         isBordered = false; title = ""; target = self; action = #selector(performClickAction)
         setAccessibilityRole(.button)
         switch kind {
@@ -454,10 +467,6 @@ import CharCore
         if artwork == nil {
             artwork = BubbleDrawing.raster(size: bounds.size) { drawBubbleContent(end) }
         }
-        NSGraphicsContext.saveGraphicsState()
-        defer { NSGraphicsContext.restoreGraphicsState() }
-        let phase = elapsed + Double(WorkEnd.allCases.firstIndex(of: end) ?? 0) * 0.7
-        BubbleDrawing.pose(in: bounds, elapsed: phase)
         artwork?.draw(in: bounds)
     }
     private func drawBubbleContent(_ end: WorkEnd) {
