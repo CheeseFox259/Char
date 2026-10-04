@@ -252,7 +252,7 @@ import CharCore
             OrbitTrace.record("input sequence=\(OrbitTrace.sequence) eventTime=\(event.timestamp) dx=\(event.scrollingDeltaX) dy=\(event.scrollingDeltaY) precise=\(event.hasPreciseScrollingDeltas) phase=\(event.phase.rawValue) momentum=\(event.momentumPhase.rawValue) offset=\(offset)")
         }
         let step = scrollPolicy.step(delta: Double(event.scrollingDeltaY + event.scrollingDeltaX),
-                                     precise: event.hasPreciseScrollingDeltas, momentum: event.momentumPhase != [],
+                                     precise: event.hasPreciseScrollingDeltas, hasGesturePhase: event.phase != [], momentum: event.momentumPhase != [],
                                      count: runtime.snapshot.bubbles.count, now: ProcessInfo.processInfo.systemUptime)
         OrbitTrace.record("policy sequence=\(OrbitTrace.sequence) step=\(step) count=\(runtime.snapshot.bubbles.count)")
         if step != 0 {

@@ -40,6 +40,19 @@ struct CompanionGeometryChecks {
         try checkEqual(wheel.step(delta: -35, precise: true, momentum: false, count: 7, now: 0.20), 0)
         try checkEqual(wheel.step(delta: -1, precise: true, momentum: false, count: 7, now: 0.21), -1)
         try checkEqual(wheel.step(delta: 6, precise: true, momentum: false, count: 7, now: 0.5), 1)
+        // Captured from one physical detent on2026-10-04: a phase-less precise
+        // driver emits a183ms decaying burst, not a trackpad gesture.
+        var burstWheel = CompanionScrollPolicy()
+        let detent: [(Double, Double)] = [
+            (0, -10), (0.0165, -10), (0.0332, -10), (0.0499, -10),
+            (0.0665, -8), (0.0832, -8), (0.0999, -7), (0.1166, -5),
+            (0.1333, -5), (0.1500, -3), (0.1666, -2), (0.1833, -2)]
+        let firstSteps = detent.map { burstWheel.step(delta: $0.1, precise: true, hasGesturePhase: false, momentum: false, count: 7, now: $0.0) }
+        try checkEqual(firstSteps.first, -1)
+        try checkEqual(firstSteps.filter { $0 != 0 }.count, 1)
+        let secondSteps = detent.prefix(6).map { burstWheel.step(delta: $0.1, precise: true, hasGesturePhase: false, momentum: false, count: 7, now: 1.5834 + $0.0) }
+        try checkEqual(secondSteps.first, -1)
+        try checkEqual(secondSteps.filter { $0 != 0 }.count, 1)
         var mouseWheel = CompanionScrollPolicy()
         try checkEqual(mouseWheel.step(delta: 1, precise: false, momentum: false, count: 7, now: 0), 1)
         try checkEqual(mouseWheel.step(delta: 1, precise: false, momentum: false, count: 7, now: 0.05), 0)
