@@ -3,8 +3,7 @@
 Scope: DeepSeek Harness Desktop, Kimi Code CLI in Warp, and Kimi Code App.
 Baseline Char 905a012. Read-only source inspection used these installed versions:
 DeepSeek Harness 0.2.0-rc.2 (`com.deepseek.dsh`), Kimi Code App 1.0.4
-(`com.kimi.code.desktop`), Kimi CLI 2.1.1. No user-profile hook/plugin was installed,
-no conversation contents were printed, and no external provider was called.
+(`com.kimi.code.desktop`), Kimi CLI 2.1.1. Initial source inspection did not install user-profile hooks/plugins or print conversation contents. On 2026-10-04 the user explicitly approved the three integrations; installation and backup evidence is in `native-integration-activation.md`. No external provider was called by this work.
 
 ## Source boundary
 
@@ -43,7 +42,7 @@ whole-batch time ordering and watermark filter.
 
 ## Evidence and remaining acceptance
 
-- L1: eight Swift observation contract groups include Kimi baseline, interface
+- L1: eleven Swift observation contract groups include Kimi baseline, late binding, interface
   identity, root-only wire, question pairing, and structured resource reasons.
 - L1/L2: three DeepSeek Node contract groups cover real subprocess metadata writes,
   Desktop process provenance, child suppression, structured reasons, and pending timed questions.
@@ -51,10 +50,9 @@ whole-batch time ordering and watermark filter.
   actual built `char-hook`; Swift date/state encoding was verified in its output.
 - L3: `swift build --product char-hook`; installed `kimi doctor config` accepted
   the generated native TOML.
-- Actual Kimi CLI/App and DeepSeek Desktop lifecycle acceptance: USER_RUN_REQUIRED
-  after explicit native integration installation. No provider or GUI run is
-  inferred from fixture, configuration-validation, or Cordis seam checks.
-- Original Claude/Codex missing signal categories remain unchanged blockers.
+- Actual installed Kimi CLI 2.1.1 ran an isolated turn with a localhost SSE provider: SessionStart → native main wire turn ended. Its process exited normally without SessionEnd; the diagnostic closure assertion failed, so closure is not claimed. Details are in `acceptance-2026-10-04.md`.
+- After user-approved installation, native Kimi App SessionStart metadata and a real Turn ended bubble were observed in normal Char; Pi likewise produced native running → turnEnded and its bubble. The user reported normal functionality. Full Kimi App interactions/closure and DeepSeek Desktop lifecycle remain USER_RUN_REQUIRED; no DeepSeek event has yet been independently observed. No GUI run is inferred from fixture, configuration-validation, or Cordis seam checks.
+- The user approved confirmed-signal delivery on 2026-10-04. Missing Claude/Codex/Pi categories remain unavailable and are tracked as later work in #5.
 
 Canonical sources: `integrations/deepseek/index.js`, `integrations/kimi/install.py`,
 `Sources/CharObservations/NewAgentHooks.swift`, and `KimiObservationPoller.swift`.

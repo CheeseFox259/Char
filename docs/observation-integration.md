@@ -73,3 +73,7 @@ The app observes this shared file for both harnesses. Give both installers this 
 Pi, Kimi CLI/App and DeepSeek Desktop are integrated through explicit passive native integrations. See [Pi](../integrations/pi/README.md), [Kimi](../integrations/kimi/README.md), [DeepSeek](../integrations/deepseek/README.md) and [source/coverage evidence](new-agent-observation.md). The normal worker reads Kimi root wires from `${KIMI_CODE_HOME:-~/.kimi-code}/sessions` only after an authoritative client binding; CLI and App stay separate. All integrations share the private hook stream, selected with `CHAR_HOOK_EVENTS` for both Char and the native integration.
 
 None of the CLI observers requires tmux; Claude Code, Codex CLI and Pi running directly in Warp use the same observation and application fallback as their tmux sessions. New work ends do not resolve the original Claude/Codex signal gaps.
+
+## Approved first-release boundary — 2026-10-04
+
+The user explicitly approved delivery with the confirmed signals in these matrices, with missing categories tracked in #5. Unavailable Codex failure/rate/context, Claude context exhaustion, and Pi independent approval/rate/context are deferred. A missing signal never becomes a fabricated unclassified stop. Optional native integration installation and live client acceptance remain separate from source coverage.

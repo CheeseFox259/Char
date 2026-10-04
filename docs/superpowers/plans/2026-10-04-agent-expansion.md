@@ -20,8 +20,8 @@ A、B、C 各自独立 worktree；共享枚举由 A 提供，合并代理顺序�
 - [x] C：从已安装 DeepSeek Harness/Kimi 源码或官方协议证明本地事件来源、会话身份、CLI/Desktop 区分；实现可靠类别、恢复、启动基线与子会话排除。能力矩阵标明未提供类别，不能以枚举或任意文本推断宣称已支持。
 - [x] D：正常 Runtime 接入新的被动观察器；去重和延迟时间边界复用现有逻辑，整批事件先于时间推进。`scripts/check.sh` 纳入真实协议契约；保持 private metadata only。
 - [x] P：更新 CONTEXT“回城”、spec、行为文档；修复 AGENTS 技能引用（writing-for-agents）及过时测试说明。保留用户验收报告，提交时明确记录其为基线报告。
-- [ ] E：依次运行 `scripts/check.sh`、`scripts/build-app.sh`、`codesign --verify --deep --strict --verbose=2 build/Char.app`、实际包 `--smoke`、`git diff --check`。检查七类气泡全部可点击且无裁切、时间设置默认宽度、Ctrl+B 在有效 Hold 执行回城、结束 Hold 后释放。隔离源数据与真实会话证据分列。
-- [ ] E：执行 Standards/Spec 双轴审查，单一修复代理处理发现，再复查受影响路径。更新 PR 能力/检查/剩余项。只在要求确实完成后标记 ready；原始 #5 必需类别缺口仍保持开放。
+- [x] E：依次运行 `scripts/check.sh`、`scripts/build-app.sh`、`codesign --verify --deep --strict --verbose=2 build/Char.app`、实际包 `--smoke`、`git diff --check`。检查七类气泡全部可点击且无裁切、时间设置默认宽度、Ctrl+B 在有效 Hold 执行回城、结束 Hold 后释放。隔离源数据与真实会话证据分列。
+- [x] E：执行 Standards/Spec 双轴审查，单一修复代理处理发现，再复查受影响路径。更新 PR 能力/检查/剩余项。只在要求确实完成后标记 ready；原始 #5 必需类别缺口仍保持开放。
 
 ## 原验收工作
 
@@ -30,3 +30,7 @@ A、B、C 各自独立 worktree；共享枚举由 A 提供，合并代理顺序�
 ## 实机复测反馈
 
 用户已批准 Tabbit Automation，并确认 Ctrl+B 回到原标签、清除来源徽标；反馈过程有 2–3 秒卡顿。E 包含该性能问题的测量、修复及原路径复测。Kimi/DeepSeek 实际客户端生命周期与原完整桌面验收仍须独立记录。
+
+## 已完成与范围决定
+
+最终实现 `f2b5b4b`：组合检查、打包、签名、七端 smoke 通过；Kimi 迟到绑定回归已修复。Tabbit 卡顿通过批量 ID 查询由实际回城 1062.2 ms 降到 276.4 ms，使用者确认改善。使用者已批准首版按已确认信号交付，#5 改为后续能力跟踪。产品完整验收仍保留原生桌面客户端、可选集成安装和其他未运行环境项；PR 可评审不等同于产品完整验收。
