@@ -8,12 +8,16 @@ import CharCore
                                   pixelsHigh: Int(size.height * scale), bitsPerSample: 8, samplesPerPixel: 4,
                                   hasAlpha: true, isPlanar: false, colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0)!
         rep.size = size
-        NSGraphicsContext.saveGraphicsState()
+        let previousContext = NSGraphicsContext.current
         NSGraphicsContext.current = NSGraphicsContext(bitmapImageRep: rep)
-        NSGraphicsContext.current?.cgContext.clear(CGRect(x: 0, y: 0, width: size.width * scale, height: size.height * scale))
-        NSGraphicsContext.current?.cgContext.scaleBy(x: scale, y: scale)
+        NSGraphicsContext.saveGraphicsState()
+        defer {
+            NSGraphicsContext.restoreGraphicsState()
+            NSGraphicsContext.current = previousContext
+        }
+        // rep.size establishes the logical-to-pixel CTM (2×); do not scale twice.
+        NSGraphicsContext.current?.cgContext.clear(CGRect(origin: .zero, size: size))
         draw()
-        NSGraphicsContext.restoreGraphicsState()
         let image = NSImage(size: size); image.addRepresentation(rep); return image
     }
     static func pose(in rect: NSRect, elapsed: TimeInterval) {
