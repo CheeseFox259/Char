@@ -5,70 +5,175 @@ import CharCore
     let surface: CompanionSurface
     init(runtime: CompanionRuntime) {
         surface = CompanionSurface(runtime: runtime)
-        super.init(contentRect: NSRect(x: 0, y: 0, width: 362, height: 164),
+        super.init(contentRect: NSRect(origin: .zero, size: CompanionGeometry.canvasSize),
                    styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
         isOpaque = false; backgroundColor = .clear; hasShadow = false
         level = .floating; hidesOnDeactivate = false; isMovableByWindowBackground = false
         collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary]
+        if #available(macOS 14, *) { collectionBehavior.insert(.canJoinAllApplications) }
         contentView = surface
     }
     override var canBecomeKey: Bool { false }
     override var canBecomeMain: Bool { false }
+    func transition(to frame: NSRect, placement: PetPlacement, animated: Bool) {
+        surface.transition(to: frame, placement: placement, animated: animated)
+    }
 }
 
 @MainActor final class CompanionSurface: NSView {
     unowned let runtime: CompanionRuntime
     let pet: GraphicButton
     let buttons: [GraphicButton]
+    private let overflow = NSView(frame: .zero)
+    private var offset = 0
+    private var clock: Timer?
+    private let epoch = ProcessInfo.processInfo.systemUptime
+    private var feedbackAt: TimeInterval?
+    private struct Transition {
+        let frame: NSRect
+        let placement: PetPlacement
+        let started: TimeInterval
+        let reduced: Bool
+        let initialAlpha: CGFloat
+        let initialScale: CGFloat
+        var arrived = false
+    }
+    private var movement: Transition?
+    private var placement: PetPlacement = .desktop
     init(runtime: CompanionRuntime) {
         self.runtime = runtime
         pet = GraphicButton(kind: .pet, runtime: runtime)
         buttons = WorkEnd.allCases.map { GraphicButton(kind: .bubble($0), runtime: runtime) }
-        super.init(frame: NSRect(x: 0, y: 0, width: 362, height: 164))
-        pet.frame = NSRect(x: 0, y: 10, width: 76, height: 76)
+        super.init(frame: NSRect(origin: .zero, size: CompanionGeometry.canvasSize))
         addSubview(pet)
-        for (index, button) in buttons.enumerated() {
-            button.frame = NSRect(x: 82 + index * 68, y: 17, width: 62, height: 62)
-            addSubview(button)
-        }
+        addSubview(overflow)
+        for button in buttons { addSubview(button) }
+        setAccessibilityCustomActions([
+            NSAccessibilityCustomAction(name: "Next Agent bubbles", target: self, selector: #selector(nextBubbles)),
+            NSAccessibilityCustomAction(name: "Previous Agent bubbles", target: self, selector: #selector(previousBubbles))])
         refresh()
     }
     required init?(coder: NSCoder) { nil }
     func refresh() {
+        placement = runtime.petPlacement
         layoutVisibleBubbles()
         pet.setAccessibilityLabel(runtime.snapshot.hold == nil ? "Char 桌宠，当前不可回城" : "回城，返回最初来源，Control+B\(runtime.snapshot.hold?.anchor.accuracy == .application ? "，应用级降级" : "")")
-        pet.needsDisplay = true
         for button in buttons {
             guard case let .bubble(end) = button.kind else { continue }
             let bubble = runtime.snapshot.bubbles.first { $0.workEnd == end }
-            button.isHidden = bubble == nil
             button.setAccessibilityLabel("\(end.title): \(bubble?.count ?? 0) unviewed, \(bubble?.runningCount ?? 0) running\(bubble?.head.map { ", \($0.reason.title)\($0.isPast ? ", past" : "")\($0.navigationOutcome == .fallback ? ", application fallback" : "")" } ?? "")")
             button.needsDisplay = true
         }
+        pet.needsDisplay = true
+        ensureClock()
     }
     private func layoutVisibleBubbles() {
         let visible = buttons.filter { button in
             guard case let .bubble(end) = button.kind else { return false }
             return runtime.snapshot.bubbles.contains { $0.workEnd == end }
         }
-        let columns = min(4, visible.count)
-        let rows = max(1, (visible.count + 3) / 4)
-        let size = NSSize(width: 82 + CGFloat(columns) * 68 + 8, height: max(96, CGFloat(rows) * 68 + 28))
-        if let window, window.frame.size != size {
-            var frame = window.frame
-            frame.origin.x = frame.maxX - size.width
-            frame.size = size
-            if let area = window.screen?.visibleFrame {
-                frame.origin.x = min(max(frame.origin.x, area.minX), area.maxX - frame.width)
-                frame.origin.y = min(max(frame.origin.y, area.minY), area.maxY - frame.height)
+        buttons.forEach { $0.isHidden = true; $0.miniature = false }
+        pet.placement = placement
+        pet.frame = CompanionGeometry.petFrame(placement: placement)
+        let slots = CompanionGeometry.layout(count: visible.count, offset: offset, placement: placement)
+        overflow.isHidden = true
+        for slot in slots {
+            if let index = slot.primaryIndex {
+                visible[index].frame = slot.frame; visible[index].isHidden = false
+            } else {
+                overflow.frame = slot.frame; overflow.isHidden = false
+                for (index, frame) in zip(slot.overflowIndices, slot.miniFrames) {
+                    visible[index].frame = frame; visible[index].miniature = true; visible[index].isHidden = false
+                }
             }
-            window.setFrame(frame, display: true)
         }
-        frame.size = size
-        pet.frame = NSRect(x: 0, y: (size.height - 76) / 2, width: 76, height: 76)
-        for (index, button) in visible.enumerated() {
-            button.frame = NSRect(x: 82 + (index % 4) * 68, y: Int(size.height) - 14 - 62 - (index / 4) * 68, width: 62, height: 62)
+        needsDisplay = true
+    }
+    override func hitTest(_ point: NSPoint) -> NSView? {
+        let local = convert(point, from: superview)
+        for button in ([pet] + buttons).reversed() where !button.isHidden {
+            let p = button.convert(local, from: self)
+            if button.containsInteractivePoint(p) { return button }
         }
+        if !overflow.isHidden && overflow.frame.contains(local) { return self }
+        return nil
+    }
+    override func scrollWheel(with event: NSEvent) {
+        if abs(event.scrollingDeltaY) + abs(event.scrollingDeltaX) > 0 {
+            offset += event.scrollingDeltaY + event.scrollingDeltaX > 0 ? 1 : -1
+            layoutVisibleBubbles()
+        }
+    }
+    @objc private func nextBubbles() -> Bool { offset += 1; layoutVisibleBubbles(); return true }
+    @objc private func previousBubbles() -> Bool { offset -= 1; layoutVisibleBubbles(); return true }
+    func returnFeedback() { feedbackAt = ProcessInfo.processInfo.systemUptime; ensureClock() }
+    func transition(to frame: NSRect, placement: PetPlacement, animated: Bool) {
+        guard animated else {
+            movement = nil; self.placement = placement; window?.alphaValue = 1
+            window?.setFrame(frame, display: true); pet.motionScale = 1; layoutVisibleBubbles(); return
+        }
+        // Replacing this value interrupts both phases; there are no stale completion callbacks.
+        movement = Transition(frame: frame, placement: placement, started: ProcessInfo.processInfo.systemUptime,
+                              reduced: NSWorkspace.shared.accessibilityDisplayShouldReduceMotion,
+                              initialAlpha: window?.alphaValue ?? 1, initialScale: pet.motionScale)
+        ensureClock()
+    }
+    private func ensureClock() {
+        guard clock == nil else { return }
+        clock = Timer.scheduledTimer(withTimeInterval: 1 / 30, repeats: true) { [weak self] _ in
+            MainActor.assumeIsolated { self?.animate() }
+        }
+    }
+    private func animate() {
+        let now = ProcessInfo.processInfo.systemUptime
+        let reduce = NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
+        pet.elapsed = reduce ? 0 : now - epoch
+        pet.clip = "idle"
+        pet.clipElapsed = pet.elapsed
+        pet.feedbackElapsed = feedbackAt.map { now - $0 }
+        if let feedbackAt, now - feedbackAt > 0.65 { self.feedbackAt = nil; pet.feedbackElapsed = nil }
+        if var motion = movement {
+            let duration = motion.reduced ? 0.16 : 0.5
+            let t = min((now - motion.started) / duration, 1)
+            pet.clip = t < 0.35 ? (placement == .desktop ? "depart" : "edgeHide") : (motion.placement == .desktop ? "arrive" : "edgePeek")
+            pet.clipElapsed = now - motion.started
+            if t < 0.35 {
+                let phase = t / 0.35
+                window?.alphaValue = motion.initialAlpha * (1 - phase * phase)
+                pet.motionScale = motion.reduced ? 1 : motion.initialScale * (1 - 0.8 * phase * phase)
+                pet.edgeRetraction = motion.reduced || placement == .desktop ? 0 : phase * 38
+            } else {
+                if !motion.arrived {
+                    window?.setFrame(motion.frame, display: true)
+                    placement = motion.placement; layoutVisibleBubbles(); motion.arrived = true
+                }
+                let phase = (t - 0.35) / 0.65
+                window?.alphaValue = motion.reduced ? phase : min(1, phase * 3)
+                pet.motionScale = motion.reduced ? 1 : CGFloat(0.2 + 0.8 * CompanionGeometry.arrivalProgress(phase))
+                pet.edgeRetraction = motion.reduced || placement == .desktop ? 0 : CGFloat(38 * (1 - CompanionGeometry.arrivalProgress(phase)))
+            }
+            movement = t == 1 ? nil : motion
+            if t == 1 { window?.alphaValue = 1; pet.motionScale = 1; pet.edgeRetraction = 0 }
+        }
+        // AppKit hitTest alone does not forward events through a transparent NSWindow.
+        if let window {
+            let local = convert(window.convertPoint(fromScreen: NSEvent.mouseLocation), from: nil)
+            window.ignoresMouseEvents = hitTest(local) == nil
+        }
+        pet.needsDisplay = true
+        // Keep the single lightweight clock for pointer passthrough; Reduce Motion freezes drawing.
+    }
+    override func draw(_ dirtyRect: NSRect) {
+        guard !overflow.isHidden else { return }
+        NSColor.systemBlue.withAlphaComponent(0.22).setFill()
+        NSBezierPath(ovalIn: overflow.frame).fill()
+        NSColor.white.withAlphaComponent(0.75).setStroke()
+        NSBezierPath(ovalIn: overflow.frame.insetBy(dx: 1, dy: 1)).stroke()
+        let count = max(0, runtime.snapshot.bubbles.count - 5)
+        let style = NSMutableParagraphStyle(); style.alignment = .center
+        "+\(count)".draw(in: NSRect(x: overflow.frame.midX - 11, y: overflow.frame.midY - 3, width: 22, height: 12),
+                         withAttributes: [.font: NSFont.systemFont(ofSize: 9, weight: .bold),
+                                          .foregroundColor: NSColor.labelColor, .paragraphStyle: style])
     }
 }
 
@@ -77,6 +182,22 @@ import CharCore
     let kind: Kind
     unowned let runtime: CompanionRuntime
     var responding = false
+    var miniature = false
+    var elapsed: TimeInterval = 0
+    var feedbackElapsed: TimeInterval?
+    var motionScale: CGFloat = 1
+    var edgeRetraction: CGFloat = 0
+    var placement: PetPlacement = .desktop
+    var clip = "idle"
+    var clipElapsed: TimeInterval = 0
+    func containsInteractivePoint(_ point: NSPoint) -> Bool {
+        guard bounds.contains(point) else { return false }
+        if case .pet = kind { return true }
+        let x = (point.x - bounds.midX) / (bounds.width / 2)
+        let y = (point.y - bounds.midY) / (bounds.height / 2)
+        return x * x + y * y <= 1
+    }
+    override func scrollWheel(with event: NSEvent) { superview?.scrollWheel(with: event) }
     private var dragStart: NSPoint?
     private var initialOrigin: NSPoint?
     private var didDrag = false
@@ -146,24 +267,43 @@ import CharCore
         switch kind { case .pet: drawPet(); case let .bubble(end): drawBubble(end) }
     }
     private func drawPet() {
-        let shift: CGFloat = responding && !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion ? 3 : 0
-        let path = NSBezierPath()
-        path.move(to: NSPoint(x: 13, y: 23 + shift))
-        path.curve(to: NSPoint(x: 8, y: 44 + shift), controlPoint1: NSPoint(x: 6, y: 26 + shift), controlPoint2: NSPoint(x: 4, y: 37 + shift))
-        path.curve(to: NSPoint(x: 27, y: 64 + shift), controlPoint1: NSPoint(x: 12, y: 52 + shift), controlPoint2: NSPoint(x: 19, y: 48 + shift))
-        path.curve(to: NSPoint(x: 37, y: 57 + shift), controlPoint1: NSPoint(x: 30, y: 72 + shift), controlPoint2: NSPoint(x: 34, y: 65 + shift))
-        path.curve(to: NSPoint(x: 57, y: 51 + shift), controlPoint1: NSPoint(x: 43, y: 69 + shift), controlPoint2: NSPoint(x: 60, y: 63 + shift))
-        path.curve(to: NSPoint(x: 64, y: 24 + shift), controlPoint1: NSPoint(x: 70, y: 43 + shift), controlPoint2: NSPoint(x: 72, y: 31 + shift))
-        path.curve(to: NSPoint(x: 13, y: 23 + shift), controlPoint1: NSPoint(x: 53, y: 8 + shift), controlPoint2: NSPoint(x: 25, y: 8 + shift))
-        path.close()
+        let reduce = NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
+        let pulse = reduce ? 0 : sin(elapsed * 1.7)
+        let feedback = reduce ? 0 : feedbackElapsed.map { exp(-8 * $0) * sin(22 * $0) } ?? 0
         NSGraphicsContext.saveGraphicsState()
-        let shadow = NSShadow(); shadow.shadowColor = NSColor.black.withAlphaComponent(0.18); shadow.shadowBlurRadius = 5; shadow.shadowOffset = NSSize(width: 0, height: -2); shadow.set()
-        NSColor(calibratedRed: 0.12, green: 0.78, blue: 0.72, alpha: 1).setFill(); path.fill()
+        let transform = NSAffineTransform()
+        transform.translateX(by: 38, yBy: 38)
+        switch placement {
+        case .left: transform.translateX(by: -edgeRetraction, yBy: 0)
+        case .right: transform.translateX(by: edgeRetraction, yBy: 0)
+        case .top: transform.translateX(by: 0, yBy: edgeRetraction)
+        case .bottom: transform.translateX(by: 0, yBy: -edgeRetraction)
+        case .desktop: break
+        }
+        transform.rotate(byDegrees: CGFloat(reduce ? 0 : sin(elapsed * 0.8) * 2 + feedback * 7))
+        transform.scaleX(by: motionScale * CGFloat(1 + pulse * 0.018 + feedback * 0.1),
+                         yBy: motionScale * CGFloat(1 - pulse * 0.025 - feedback * 0.1))
+        transform.translateX(by: -38, yBy: -38 + CGFloat(pulse * 1.8))
+        transform.concat()
+        if let image = runtime.customPetImage(clip: feedbackElapsed == nil ? clip : "return", elapsed: feedbackElapsed ?? clipElapsed) {
+            image.draw(in: bounds)
+        } else {
+            let ink = NSColor(calibratedRed: 0.08, green: 0.09, blue: 0.16, alpha: 1)
+            let cream = NSColor(calibratedRed: 1, green: 0.97, blue: 0.87, alpha: 1)
+            let body = NSBezierPath(roundedRect: NSRect(x: 7, y: 13, width: 62, height: 58), xRadius: 20, yRadius: 20)
+            cream.setFill(); body.fill(); ink.setStroke(); body.lineWidth = 3.5; body.stroke()
+            for x in [21.0, 54.0] {
+                let foot = NSBezierPath(ovalIn: NSRect(x: x - 7, y: 7, width: 17, height: 15))
+                cream.setFill(); foot.fill(); ink.setStroke(); foot.lineWidth = 2.5; foot.stroke()
+            }
+            ink.setFill()
+            let blink = !reduce && elapsed.truncatingRemainder(dividingBy: 5.2) > 5.04
+            for x in [27.0, 46.0] {
+                NSBezierPath(roundedRect: NSRect(x: x, y: blink || responding ? 35 : 31,
+                                               width: 4, height: blink || responding ? 3 : 12), xRadius: 2, yRadius: 2).fill()
+            }
+        }
         NSGraphicsContext.restoreGraphicsState()
-        NSColor(calibratedRed: 0.02, green: 0.20, blue: 0.23, alpha: 1).setFill()
-        NSBezierPath(roundedRect: NSRect(x: 19, y: 26 + shift, width: 37, height: 23), xRadius: 11, yRadius: 11).fill()
-        NSColor(calibratedRed: 0.87, green: 1, blue: 0.98, alpha: 1).setFill()
-        for x in [29.0, 44.0] { NSBezierPath(roundedRect: NSRect(x: x, y: 33 + shift, width: 4, height: responding ? 3 : 7), xRadius: 2, yRadius: 2).fill() }
         if let anchor = runtime.sourceBadgeAnchor {
             NSGraphicsContext.saveGraphicsState()
             NSGraphicsContext.current?.cgContext.setAlpha(runtime.sourceBadgeOpacity)
@@ -182,20 +322,27 @@ import CharCore
     }
     private func drawBubble(_ end: WorkEnd) {
         guard let bubble = runtime.snapshot.bubbles.first(where: { $0.workEnd == end }) else { return }
-        let rect = NSRect(x: 2, y: 5, width: 58, height: 52)
-        let active = bubble.count > 0
-        NSColor(calibratedRed: 0.06, green: 0.14, blue: 0.17, alpha: active ? 0.96 : 0.74).setFill()
-        NSBezierPath(roundedRect: rect, xRadius: 16, yRadius: 16).fill()
-        NSColor.white.withAlphaComponent(0.16).setStroke()
-        let outline = NSBezierPath(roundedRect: rect.insetBy(dx: 0.5, dy: 0.5), xRadius: 16, yRadius: 16); outline.lineWidth = 1; outline.stroke()
-        symbol(end.symbol, in: NSRect(x: 10, y: 31, width: 16, height: 16), color: .white.withAlphaComponent(0.8))
+        let rect = bounds.insetBy(dx: 1, dy: 1)
+        let hue = CGFloat(WorkEnd.allCases.firstIndex(of: end) ?? 0) / CGFloat(WorkEnd.allCases.count)
+        let tint = NSColor(calibratedHue: hue, saturation: 0.55, brightness: 0.9, alpha: 1)
+        let path = NSBezierPath(ovalIn: rect)
+        NSGradient(starting: tint.withAlphaComponent(0.35), ending: tint.withAlphaComponent(0.88))?.draw(in: path, angle: -70)
+        tint.setStroke(); path.lineWidth = 1.5; path.stroke()
+        NSColor.white.withAlphaComponent(0.78).setFill()
+        NSBezierPath(ovalIn: NSRect(x: bounds.width * 0.17, y: bounds.height * 0.69,
+                                  width: bounds.width * 0.27, height: bounds.height * 0.12)).fill()
+        let iconRect = bounds.insetBy(dx: miniature ? 5 : 12, dy: miniature ? 5 : 12)
+        if let icon = runtime.agentIcon(for: end) { icon.draw(in: iconRect) }
+        else { symbol(end.symbol, in: iconRect, color: .white) }
+        guard !miniature else { return }
         if let head = bubble.head {
-            symbol(head.reason.symbol, in: NSRect(x: 12, y: 12, width: 16, height: 16), color: .systemMint)
-            number(bubble.count, rect: NSRect(x: 32, y: 24, width: 24, height: 25), color: .white, size: 21)
-            if head.isPast { symbol("clock.arrow.circlepath", in: NSRect(x: 35, y: 10, width: 11, height: 11), color: .white.withAlphaComponent(0.8)) }
-            if head.navigationOutcome == .fallback { symbol("arrow.triangle.turn.up.right.diamond.fill", in: NSRect(x: 48, y: 10, width: 11, height: 11), color: .systemOrange) }
-        } else { number(bubble.runningCount, rect: NSRect(x: 31, y: 20, width: 24, height: 25), color: .white.withAlphaComponent(0.65), size: 17) }
-        if active && bubble.runningCount > 0 { number(bubble.runningCount, rect: NSRect(x: 44, y: 47, width: 16, height: 12), color: .systemMint, size: 9) }
+            symbol(head.reason.symbol, in: NSRect(x: 3, y: 2, width: 15, height: 15), color: .labelColor)
+            NSColor.white.setFill(); NSBezierPath(ovalIn: NSRect(x: 35, y: 34, width: 17, height: 17)).fill()
+            number(bubble.count, rect: NSRect(x: 35, y: 35, width: 17, height: 15), color: .black, size: 11)
+            if head.isPast { symbol("clock.arrow.circlepath", in: NSRect(x: 21, y: 1, width: 12, height: 12), color: .labelColor) }
+            if head.navigationOutcome == .fallback { symbol("arrow.triangle.turn.up.right.diamond.fill", in: NSRect(x: 37, y: 1, width: 13, height: 13), color: .systemOrange) }
+        }
+        if bubble.runningCount > 0 { number(bubble.runningCount, rect: NSRect(x: 35, y: 17, width: 17, height: 12), color: .black, size: 9) }
     }
     private func symbol(_ name: String, in rect: NSRect, color: NSColor) {
         guard let image = NSImage(systemSymbolName: name, accessibilityDescription: nil)?.withSymbolConfiguration(.init(pointSize: rect.height, weight: .semibold)) else { return }
