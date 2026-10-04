@@ -505,6 +505,10 @@ actor ObservationWorker {
         }
         guard panel.surface.hostedSceneInvariant else { fail("owned scene host contains event views or duplicate backing artwork") }
         if CommandLine.arguments.contains("--orbit-path-check") {
+            guard !panel.surface.reducesMotionForDiagnostics else {
+                FileHandle.standardOutput.write(Data("Char orbit layer-path check NOT RUN: Reduce Motion is enabled; animated coverage skipped\n".utf8))
+                exit(2)
+            }
             setBubbleDistance(8)
             var findings: [String] = []
             for placement in PetPlacement.allCases {

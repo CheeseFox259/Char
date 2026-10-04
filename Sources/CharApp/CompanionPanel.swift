@@ -80,6 +80,7 @@ import CharCore
     private var lastPointer: NSPoint?
     var capacity: Int { CompanionGeometry.capacity(placement: placement, petSize: runtime.petSize, bubbleDistance: runtime.bubbleDistance) }
     var canCycle: Bool { runtime.snapshot.bubbles.count > capacity }
+    var reducesMotionForDiagnostics: Bool { reducedMotion }
     var isSpaceFeedbackActive: Bool { spaceAt != nil || pendingSpaceFeedback }
     private(set) var visualOpacity: CGFloat = 1
     private var overflowArtwork: NSImage?
@@ -276,20 +277,24 @@ import CharCore
     }
     // [DEBUG-char-wheel-deep] Real surface/layout/layer animation chain, opt-in fixture only.
     func debugOrbitPathFindings(step: Int) -> [String] {
+        guard !reducedMotion else { return ["NOT RUN: Reduce Motion disables animated paths"] }
+        var required = Set(buttons.filter { !$0.isHidden }.map(ObjectIdentifier.init))
         guard cycleBubbles(by: step) else { return ["orbit was not folded"] }
+        required.formUnion(buttons.filter { !$0.isHidden }.map(ObjectIdentifier.init))
         let center = NSPoint(x: pet.frame.midX, y: pet.frame.midY)
         var findings: [String] = []
+        var inspected = 0
         for button in buttons {
-            guard let group = button.graphicLayer.animation(forKey: "orbit") as? CAAnimationGroup,
-                  let path = group.animations?.first(where: { ($0 as? CAPropertyAnimation)?.keyPath == "position" }) as? CAKeyframeAnimation,
-                  let values = path.values as? [NSValue], let first = values.first?.pointValue, let last = values.last?.pointValue,
-                  let grow = group.animations?.first(where: { ($0 as? CAPropertyAnimation)?.keyPath == "transform.scale" }) else { continue }
-            let scales: [NSNumber]
-            if let keyframes = grow as? CAKeyframeAnimation, let samples = keyframes.values as? [NSNumber] { scales = samples }
-            else if let basic = grow as? CABasicAnimation, let from = basic.fromValue as? NSNumber, let to = basic.toValue as? NSNumber {
-                scales = values.indices.map { NSNumber(value: from.doubleValue + (to.doubleValue-from.doubleValue)*Double($0)/Double(values.count-1)) }
-            } else { findings.append("missing actual scale samples"); continue }
-            guard scales.count == values.count else { findings.append("mismatched actual scale samples"); continue }
+            let samples: OrbitPathInspection.Samples
+            do {
+                guard let actual = try OrbitPathInspection.read(button.graphicLayer, required: required.contains(ObjectIdentifier(button))) else {
+                    FileHandle.standardError.write(Data("[DEBUG-char-wheel-deep] path-check deliberately-hidden no animation\n".utf8))
+                    continue
+                }
+                samples = actual; inspected += 1
+            } catch { findings.append("\(String(describing: button.renderedWorkEnd)): \(error)"); continue }
+            let values = samples.positions, scales = samples.scales
+            let first = values[0].pointValue, last = values[values.count-1].pointValue
             let fromScale = scales.first?.doubleValue ?? 0
             let toScale = scales.last?.doubleValue ?? 0
             var delta = atan2(last.y-center.y, last.x-center.x)-atan2(first.y-center.y, first.x-center.x)
@@ -307,6 +312,7 @@ import CharCore
             FileHandle.standardError.write(Data("[DEBUG-char-wheel-deep] path-check \(row)\n".utf8))
             if opposite { findings.append(row) }
         }
+        if required.isEmpty || inspected < required.count { findings.append("incomplete animated coverage: inspected=\(inspected) required=\(required.count)") }
         return findings
     }
     @objc fileprivate func nextBubbles() -> Bool { cycleBubbles(by: 1) }
