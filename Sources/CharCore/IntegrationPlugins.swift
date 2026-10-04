@@ -3,24 +3,60 @@ import ImageIO
 
 /// Configuration only: a plugin selects an adapter shipped with Char; it never executes code.
 public struct IntegrationPlugin: Codable, Identifiable, Equatable, Sendable {
-    public enum Kind: String, Codable, Sendable { case agent, source }
-    public enum SourceAdapter: String, Codable, Sendable { case tabbit, vscode, application }
+    public enum ReturnAdapter: String, Codable, Sendable { case tabbit, vscode, application }
     public var schemaVersion: Int
     public var id: String
     public var name: String
-    public var kind: Kind
     public var workEnd: WorkEnd?
     public var bundleIdentifier: String
-    public var sourceAdapter: SourceAdapter?
+    public var returnAdapter: ReturnAdapter?
     public var icon: String?
 
-    public init(schemaVersion: Int = 1, id: String, name: String, kind: Kind,
+    public init(schemaVersion: Int = 2, id: String, name: String,
                 workEnd: WorkEnd? = nil, bundleIdentifier: String,
-                sourceAdapter: SourceAdapter? = nil, icon: String? = nil) {
-        self.schemaVersion = schemaVersion; self.id = id; self.name = name; self.kind = kind
+                returnAdapter: ReturnAdapter? = nil, icon: String? = nil) {
+        self.schemaVersion = schemaVersion; self.id = id; self.name = name
         self.workEnd = workEnd; self.bundleIdentifier = bundleIdentifier
-        self.sourceAdapter = sourceAdapter; self.icon = icon
+        self.returnAdapter = returnAdapter; self.icon = icon
     }
+
+    private enum CodingKeys: String, CodingKey {
+        case schemaVersion, id, name, workEnd, bundleIdentifier, returnAdapter, icon
+        case kind, sourceAdapter // Version 1 compatibility only; never encoded.
+    }
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        let version = try c.decode(Int.self, forKey: .schemaVersion)
+        guard version == 1 || version == 2 else {
+            throw IntegrationPluginError.invalid("manifest version")
+        }
+        id = try c.decode(String.self, forKey: .id)
+        name = try c.decode(String.self, forKey: .name)
+        workEnd = try c.decodeIfPresent(WorkEnd.self, forKey: .workEnd)
+        bundleIdentifier = try c.decode(String.self, forKey: .bundleIdentifier)
+        icon = try c.decodeIfPresent(String.self, forKey: .icon)
+        if version == 1 {
+            let kind = try c.decode(String.self, forKey: .kind)
+            returnAdapter = try c.decodeIfPresent(ReturnAdapter.self, forKey: .sourceAdapter)
+            guard (kind == "agent" && workEnd != nil && returnAdapter == nil) ||
+                    (kind == "source" && workEnd == nil && returnAdapter != nil) else {
+                throw IntegrationPluginError.invalid("legacy adapter fields")
+            }
+        } else {
+            returnAdapter = try c.decodeIfPresent(ReturnAdapter.self, forKey: .returnAdapter)
+        }
+        schemaVersion = 2
+    }
+    public func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encode(schemaVersion, forKey: .schemaVersion)
+        try c.encode(id, forKey: .id); try c.encode(name, forKey: .name)
+        try c.encodeIfPresent(workEnd, forKey: .workEnd)
+        try c.encode(bundleIdentifier, forKey: .bundleIdentifier)
+        try c.encodeIfPresent(returnAdapter, forKey: .returnAdapter)
+        try c.encodeIfPresent(icon, forKey: .icon)
+    }
+
 }
 
 public struct IntegrationPluginEntry: Identifiable, Equatable, Sendable {
@@ -55,7 +91,7 @@ public final class IntegrationPluginStore {
         var isBuiltIn: Bool
     }
     private struct Registry: Codable {
-        var schemaVersion = 1
+        var schemaVersion = 2
         var records: [Record]
         var tombstones: Set<String> = []
     }
@@ -75,7 +111,7 @@ public final class IntegrationPluginStore {
 
     public func reload() throws {
         let candidate = try JSONDecoder().decode(Registry.self, from: Data(contentsOf: registryURL))
-        guard candidate.schemaVersion == 1 else { throw IntegrationPluginError.invalid("registry version") }
+        guard candidate.schemaVersion == 1 || candidate.schemaVersion == 2 else { throw IntegrationPluginError.invalid("registry version") }
         try validate(candidate)
         registry = candidate
         publish()
@@ -133,8 +169,10 @@ public final class IntegrationPluginStore {
         for plugin in Self.builtIns where !candidate.records.contains(where: { $0.plugin.id == plugin.id }) {
             // Restore without overriding a user's replacement for the same adapter.
             let enabled = !candidate.records.contains {
-                $0.enabled && (plugin.kind == .agent && $0.plugin.workEnd == plugin.workEnd ||
-                    plugin.kind == .source && $0.plugin.kind == .source && $0.plugin.bundleIdentifier == plugin.bundleIdentifier)
+                $0.enabled && (plugin.workEnd != nil && $0.plugin.workEnd == plugin.workEnd ||
+                    plugin.returnAdapter != nil && plugin.returnAdapter != .application &&
+                    $0.plugin.returnAdapter != nil && $0.plugin.returnAdapter != .application &&
+                    $0.plugin.bundleIdentifier == plugin.bundleIdentifier)
             }
             candidate.records.append(Record(plugin: plugin, enabled: enabled, isBuiltIn: true))
             candidate.tombstones.remove(plugin.id)
@@ -159,19 +197,20 @@ public final class IntegrationPluginStore {
     private func commit(_ candidate: Registry) throws {
         try validate(candidate)
         let encoder = JSONEncoder(); encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
-        try encoder.encode(candidate).write(to: registryURL, options: .atomic)
-        registry = candidate
+        var migrated = candidate; migrated.schemaVersion = 2
+        try encoder.encode(migrated).write(to: registryURL, options: .atomic)
+        registry = migrated
         publish()
     }
 
     private func validateRecords(_ candidate: Registry) throws {
-        var ids = Set<String>(); var enabledEnds = Set<WorkEnd>(); var enabledSources = Set<String>()
+        var ids = Set<String>(); var enabledEnds = Set<WorkEnd>(); var enabledPreciseBundles = Set<String>()
         for record in candidate.records {
             try validateManifest(record.plugin)
             guard ids.insert(record.plugin.id).inserted else { throw IntegrationPluginError.duplicateID(record.plugin.id) }
-            if record.enabled, record.plugin.kind == .source {
-                guard enabledSources.insert(record.plugin.bundleIdentifier).inserted else {
-                    throw IntegrationPluginError.invalid("an enabled source already owns this application")
+            if record.enabled, record.plugin.returnAdapter != nil && record.plugin.returnAdapter != .application {
+                guard enabledPreciseBundles.insert(record.plugin.bundleIdentifier).inserted else {
+                    throw IntegrationPluginError.invalid("an enabled precise return adapter already owns this application")
                 }
             }
             if record.enabled, let end = record.plugin.workEnd {
@@ -197,21 +236,20 @@ public final class IntegrationPluginStore {
     private func validateManifest(_ plugin: IntegrationPlugin) throws {
         let idPattern = "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$"
         let bundlePattern = "^[A-Za-z0-9][A-Za-z0-9-]*(\\.[A-Za-z0-9][A-Za-z0-9-]*)+$"
-        guard plugin.schemaVersion == 1,
+        guard plugin.schemaVersion == 2,
               plugin.id.range(of: idPattern, options: .regularExpression) != nil,
               !plugin.name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, plugin.name.count <= 100,
               plugin.bundleIdentifier.range(of: bundlePattern, options: .regularExpression) != nil else {
             throw IntegrationPluginError.invalid("version, ID, name or bundle identifier")
         }
-        if plugin.sourceAdapter == .tabbit && plugin.bundleIdentifier != "com.tabbit-ai.Tabbit" {
+        if plugin.returnAdapter == .tabbit && plugin.bundleIdentifier != "com.tabbit-ai.Tabbit" {
             throw IntegrationPluginError.invalid("Tabbit adapter requires Tabbit bundle identifier")
         }
-        if plugin.sourceAdapter == .vscode && plugin.bundleIdentifier != "com.microsoft.VSCode" {
+        if plugin.returnAdapter == .vscode && plugin.bundleIdentifier != "com.microsoft.VSCode" {
             throw IntegrationPluginError.invalid("VS Code adapter requires VS Code bundle identifier")
         }
-        guard (plugin.kind == .agent && plugin.workEnd != nil && plugin.sourceAdapter == nil)
-                || (plugin.kind == .source && plugin.workEnd == nil && plugin.sourceAdapter != nil) else {
-            throw IntegrationPluginError.invalid("kind requires its adapter fields")
+        guard plugin.workEnd != nil || plugin.returnAdapter != nil else {
+            throw IntegrationPluginError.invalid("at least one integration capability is required")
         }
         if let icon = plugin.icon {
             guard !icon.isEmpty, !icon.hasPrefix("/"), icon.split(separator: "/").allSatisfy({ $0 != "." && $0 != ".." }),
@@ -258,10 +296,10 @@ public final class IntegrationPluginStore {
         (.kimiDesktop, "Kimi Code", "com.kimi.code.desktop"),
         (.pi, "pi", "dev.warp.Warp-Stable")
     ].map { end, name, bundle in
-        IntegrationPlugin(id: "builtin.agent.\(end.rawValue)", name: name, kind: .agent, workEnd: end, bundleIdentifier: bundle)
+        IntegrationPlugin(id: "builtin.agent.\(end.rawValue)", name: name, workEnd: end, bundleIdentifier: bundle)
     } + [
-        IntegrationPlugin(id: "builtin.source.tabbit", name: "Tabbit", kind: .source, bundleIdentifier: "com.tabbit-ai.Tabbit", sourceAdapter: .tabbit),
-        IntegrationPlugin(id: "builtin.source.vscode", name: "VS Code", kind: .source, bundleIdentifier: "com.microsoft.VSCode", sourceAdapter: .vscode),
-        IntegrationPlugin(id: "builtin.source.wechat", name: "WeChat", kind: .source, bundleIdentifier: "com.tencent.xinWeChat", sourceAdapter: .application)
+        IntegrationPlugin(id: "builtin.source.tabbit", name: "Tabbit", bundleIdentifier: "com.tabbit-ai.Tabbit", returnAdapter: .tabbit),
+        IntegrationPlugin(id: "builtin.source.vscode", name: "VS Code", bundleIdentifier: "com.microsoft.VSCode", returnAdapter: .vscode),
+        IntegrationPlugin(id: "builtin.source.wechat", name: "WeChat", bundleIdentifier: "com.tencent.xinWeChat", returnAdapter: .application)
     ]
 }

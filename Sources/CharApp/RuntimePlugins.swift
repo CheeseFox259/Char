@@ -79,7 +79,7 @@ extension CompanionRuntime {
             for end in old.subtracting(enabledWorkEnds) { router.remove(workEnd: end) }
             platform?.configure(plugins: next.filter(\.enabled).map(\.plugin))
             if let anchor = router.snapshot.hold?.anchor,
-               !next.contains(where: { $0.enabled && $0.plugin.kind == .source && $0.plugin.bundleIdentifier == anchor.bundleIdentifier }) {
+               anchor.accuracy == .exact && platform?.isAnchorValid(anchor) == false {
                 router.endHold()
             }
             observationGeneration.configure(enabled: enabledWorkEnds, at: Date())

@@ -53,7 +53,7 @@ struct SettingsView: View {
                 Button("Authorize focused display tracking…") { runtime.requestAccessibility() }.disabled(runtime.demo)
                 LabeledContent("Tabbit Automation", value: runtime.automationStatus)
                 Button("Authorize Tabbit return…") { runtime.requestAutomation() }.disabled(runtime.demo)
-                Text("VS Code exact return requires the optional local Char Return Anchor extension. Warp sources have no Hold. WeChat returns to the application with a fallback mark.")
+                Text("任意前台应用（包括 Agent 和 Warp）均可作为回城起点。VS Code 准确返回需要可选的本地 Char Return Anchor 扩展；准确捕获不可用时保存应用级起点，并明确标记降级。")
                     .font(.caption).foregroundStyle(.secondary)
                 Button("Refresh Status") { runtime.refreshStatus() }
             }

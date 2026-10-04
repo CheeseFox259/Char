@@ -6,25 +6,22 @@ struct PluginSettingsView: View {
     @State private var deleteID: String?
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
-            Text("启停即时生效。停用 Agent 会清除其提醒；停用当前来源会结束回城。")
+            Text("所有前台应用都可记录为回城起点，包括 Agent。插件统一配置提醒和准确返回能力；停用提醒不影响应用级回城。")
                 .font(.caption).foregroundStyle(.secondary)
-            ForEach([IntegrationPlugin.Kind.agent, .source], id: \.self) { kind in
-                Text(kind == .agent ? "Agent" : "回城来源").font(.headline)
-                ForEach(runtime.pluginEntries.filter { $0.plugin.kind == kind }) { entry in
-                    HStack {
-                        Toggle(entry.plugin.name, isOn: Binding(get: { entry.enabled }, set: { runtime.setPlugin(entry.id, enabled: $0) }))
-                        Spacer()
-                        if entry.plugin.sourceAdapter == .application { Text("应用级").font(.caption).foregroundStyle(.secondary) }
-                        Button { deleteID = entry.id } label: { Image(systemName: "trash") }
-                            .accessibilityLabel("删除 \(entry.plugin.name)")
-                    }
+            ForEach(runtime.pluginEntries) { entry in
+                HStack {
+                    Toggle(entry.plugin.name, isOn: Binding(get: { entry.enabled }, set: { runtime.setPlugin(entry.id, enabled: $0) }))
+                    Spacer()
+                    Text(capabilities(entry.plugin)).font(.caption).foregroundStyle(.secondary)
+                    Button { deleteID = entry.id } label: { Image(systemName: "trash") }
+                        .accessibilityLabel("删除 \(entry.plugin.name)")
                 }
             }
             HStack {
                 Button("导入插件…") { runtime.importPlugin() }
                 Button("恢复已删除的内置插件") { runtime.restorePlugins() }
             }
-            Text("自定义插件可配置现有 Agent 的目标应用、图标，或添加应用级来源。精确返回取决于来源的集成能力。")
+            Text("自定义插件可配置现有 Agent 的目标应用、图标及准确返回适配器。未安装插件的应用也支持应用级回城；停用准确返回适配器会结束依赖它的回城。")
                 .font(.caption).foregroundStyle(.secondary)
         }
         .alert("删除插件？", isPresented: Binding(get: { deleteID != nil }, set: { if !$0 { deleteID = nil } })) {
@@ -32,6 +29,14 @@ struct PluginSettingsView: View {
             Button("删除", role: .destructive) { if let id = deleteID { runtime.deletePlugin(id) }; deleteID = nil }
         } message: { Text("插件将从 Char 移除。已安装在 Agent 客户端的观察 Hook 保留，可按集成文档卸载。") }
     }
+    private func capabilities(_ plugin: IntegrationPlugin) -> String {
+        var labels: [String] = []
+        if plugin.workEnd != nil { labels.append("提醒") }
+        if plugin.returnAdapter == .tabbit || plugin.returnAdapter == .vscode { labels.append("准确回城") }
+        else { labels.append("应用级回城") }
+        return labels.joined(separator: " · ")
+    }
+
 }
 private struct SelectedPetPreview: NSViewRepresentable {
     let runtime: CompanionRuntime

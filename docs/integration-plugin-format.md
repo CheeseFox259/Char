@@ -1,61 +1,44 @@
-# Integration configuration plugins, version 1
+# Integration configuration plugins, version 2
 
-Char integration plugins are local configuration packages. They choose an observation or source adapter already shipped with Char; importing one does not execute scripts, load libraries, install a native hook, or contact a provider. Native pi, Kimi and DeepSeek bridges still require their separate explicit installations.
+Char integrations configure independent **observation** (`workEnd`) and **return** (`returnAdapter`) capabilities. A record may provide either or both. No Agent/source category is needed. Every foreground application except Char can be captured as an application-level return origin, including Agent apps and Warp; importing a plugin is not required for this fallback. Plugins never execute scripts, load libraries, install native hooks, or contact a provider. Native pi, Kimi and DeepSeek bridges still require their separate explicit installations.
 
 ## Package
 
-A directory named, for example, `my-terminal.charintegration` contains `manifest.json` and optional PNG assets. The suffix is descriptive; the loader validates the contents. No symbolic links are permitted anywhere in the package. The total package limit is 8 MiB. An icon must decode as PNG and be at most 2048 × 2048 pixels.
-
-Agent example:
+A directory such as `my-terminal.charintegration` contains `manifest.json` and optional PNG assets. The suffix is descriptive; contents are validated. No symbolic links are allowed, total size is at most 8 MiB, and an icon must decode as PNG at most 2048 × 2048 pixels.
 
 ```json
 {
-  "schemaVersion": 1,
+  "schemaVersion": 2,
   "id": "personal.pi",
   "name": "My pi",
-  "kind": "agent",
   "workEnd": "pi",
   "bundleIdentifier": "dev.warp.Warp-Stable",
   "icon": "assets/pi.png"
 }
 ```
 
-Source example:
-
-```json
-{
-  "schemaVersion": 1,
-  "id": "personal.browser",
-  "name": "My browser",
-  "kind": "source",
-  "bundleIdentifier": "com.example.browser",
-  "sourceAdapter": "application"
-}
-```
+An exact-return configuration uses `"returnAdapter": "tabbit"` with `"bundleIdentifier": "com.tabbit-ai.Tabbit"`, or `"vscode"` with `"com.microsoft.VSCode"`. A combined record may also specify `workEnd`. `"application"` remains accepted for existing generic configuration packages but is not necessary for origin capture.
 
 | Field | Contract |
 | --- | --- |
-| `schemaVersion` | Required integer, exactly `1`. |
-| `id` | Required unique ID, 1–128 ASCII letters, numbers, `.`, `_`, or `-`; begins with a letter or number. |
-| `name` | Required nonblank display name, at most 100 characters. |
-| `kind` | `agent` or `source`. |
-| `bundleIdentifier` | Required dotted application bundle ID; segments begin with a letter/number and contain letters, numbers or hyphens. Used for the target application or source match. |
-| `workEnd` | Required for an agent; one of `claudeCode`, `codexCLI`, `codexDesktop`, `deepseekDesktop`, `kimiCLI`, `kimiDesktop`, `pi`. Must be absent for a source. |
-| `sourceAdapter` | Required for a source; `tabbit`, `vscode`, or `application`. Must be absent for an agent. Exact adapters depend on the installed app, its permissions and existing bridge. `application` retains application-level accuracy. |
-| `icon` | Optional relative PNG path inside the package. Absolute paths and `.`/`..` components are rejected. Omit to use the renderer's built-in work-end/app icon. |
+| `schemaVersion` | Required integer `2`; legacy version `1` is decoded and migrated. |
+| `id` | Unique 1–128 ASCII letters, numbers, `.`, `_`, or `-`; begins with a letter or number. |
+| `name` | Nonblank display name, at most 100 characters. |
+| `bundleIdentifier` | Dotted application bundle ID. Used for observation navigation and optional precise return matching. |
+| `workEnd` | Optional supported observation protocol: `claudeCode`, `codexCLI`, `codexDesktop`, `deepseekDesktop`, `kimiCLI`, `kimiDesktop`, `pi`. |
+| `returnAdapter` | Optional `tabbit`, `vscode`, or `application`. Precise adapters depend on app permissions and existing bridges. |
+| `icon` | Optional relative PNG path inside the package; absolute paths and `.`/`..` components are rejected. |
 
-This format configures the seven supported protocols; it does not introduce a protocol for an arbitrary new agent. Disable the existing plugin for a work end before importing its replacement. Two enabled agent configurations cannot own the same `workEnd`. Each enabled source owns a unique application bundle ID. Exact Tabbit/VS Code adapters require their respective application bundle IDs; use `application` for other apps.
+At least one capability must be present. Two enabled configurations cannot observe the same work end; only one enabled precise return adapter may own a bundle ID. Multiple CLI observers may share Warp, and generic application return does not reserve a bundle ID. This format configures the seven supported protocols; it does not introduce an arbitrary new Agent protocol.
 
-## Store and lifecycle
+## Migration, store and lifecycle
 
-`IntegrationPluginStore(directory:)` creates `registry.json` and `packages/`. First creation installs seven agent configurations and Tabbit, VS Code and WeChat sources. The registry persists enabled state and built-in removal tombstones. Reopening the store never resurrects removed built-ins; **Restore built-ins** is explicit. Restoration keeps existing configurations and restores an agent disabled when a user's enabled replacement already owns that work end.
+Version 1 `kind: agent`/`workEnd` and `kind: source`/`sourceAdapter` records decode into the unified capabilities. Legacy combinations remain validated. New writes encode version 2 and omit `kind` and `sourceAdapter`. Legacy installed package manifests remain readable without rewriting the package; registry mutations upgrade the registry atomically. Existing IDs, enabled states, copied assets and removal tombstones persist. Read-only reload does not rewrite user files.
 
-`importPackage(at:)` validates the full manifest and assets, checks duplicate IDs and enabled adapter conflicts, then copies into a private catalog directory. A failed import leaves the registry and published entries unchanged. Registry writes use Foundation atomic replacement. `remove(id:)` first commits removal, then cleans up its copied asset directory. Built-in configuration removal does not uninstall any native bridge or delete the user's agent data.
+`IntegrationPluginStore(directory:)` creates `registry.json` and `packages/`, initially with seven observers plus Tabbit, VS Code and WeChat configurations. Reopening does not resurrect removed built-ins; restoration is explicit and restores conflicting capabilities disabled. Import validates the full package, conflicts and duplicate IDs before copying assets; failed imports leave published entries and registry unchanged. Installed manifests are immutable: changed manifests must be removed and reimported. Removal commits first, then cleans copied assets; it does not uninstall native bridges or remove Agent data.
 
-`setEnabled(_:for:)`, `remove(id:)`, and `restoreBuiltIns()` reload the latest registry before mutation. `reload()` publishes only a fully valid catalog; callers invoke it when the catalog changes or on a polling tick for live configuration updates. Installed packages are immutable: changing an installed manifest in place is rejected; remove and reimport the package instead. Invalid external edits do not replace the store's last valid entries.
-
-Agent unloading and source Hold invalidation are Runtime responsibilities: the catalog reports configuration, while the existing adapters and attention router enforce session and return semantics. Importing a package alone does not replay historical journal records.
+Runtime reloads only fully valid catalogs and clears reminders for removed observers. Generic origins survive configuration changes while their original process is live. Exact anchors become invalid when the required precise adapter disappears; temporary adapter query failures preserve them. Failed precise capture falls back to an explicitly application-level anchor. PID-based returns remain navigation fallback and do not mark attention items viewed. The first anchor is retained across visits to other Agents.
 
 ## Behavior checks
 
-`Tests/CharCoreChecks/PluginChecks.swift` covers persistent enable state across two stores, explicit restoration after deletion/restart, work-end conflicts, invalid version/identity/adapter fields, atomic registry preservation on rejected import, owned asset copies and deletion, decoded PNG reachability, path traversal and symbolic-link rejection. All fixtures live in temporary directories; these checks do not mutate user profiles.
+`Tests/CharCoreChecks/PluginChecks.swift` covers version 1 registry/package migration, tombstones and disabled state, shared-Warp observers, combined capabilities, conflicts, atomic rejection, owned PNG copies and deletion, traversal and symlinks. `Tests/CharPlatformChecks` checks arbitrary and Agent origin capture, PID fallback, precise adapter removal, unavailable precise capture and Char exclusion. `AttentionChecks` verifies the first Agent origin survives another Agent visit and application navigation keeps reminders unviewed. Fixtures use temporary files and mock app controllers; no user profiles or apps are controlled.

@@ -158,6 +158,22 @@ struct AttentionChecks {
         try checkEqual(r.snapshot.navigationFeedback, .exact)
     }
 
+    func testAgentOriginFirstAnchorAndReturn() throws {
+        let r = router()
+        waiting(r)
+        let origin = anchor("warp-origin", accuracy: .application, bundle: "dev.warp.Warp-Stable")
+        r.completeVisit(key: key("a"), outcome: .fallback, sourceAnchor: origin, at: time(10))
+        r.completeVisit(key: key("b", .codexDesktop), outcome: .fallback,
+            sourceAnchor: anchor("codex-origin", accuracy: .application, bundle: "com.openai.codex"), at: time(11))
+        try checkEqual(r.snapshot.hold?.anchor, origin)
+        try checkEqual(r.snapshot.bubbles.reduce(0) { $0 + $1.count }, 2)
+        r.remove(workEnd: .pi)
+        try checkEqual(r.snapshot.hold?.anchor, origin)
+        r.updateFocus(FocusContext(isAgent: true, sourceAnchorID: origin.id), at: time(12))
+        try check(r.snapshot.hold == nil, "manual return to an Agent origin must end Hold")
+        try checkEqual(r.snapshot.bubbles.reduce(0) { $0 + $1.count }, 2)
+    }
+
     func testExactVisitAndUnavailableVisit() throws {
         let r = router()
         waiting(r)

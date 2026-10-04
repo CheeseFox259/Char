@@ -60,8 +60,8 @@ public struct ForegroundSnapshot: Equatable, Sendable {
     private let vscode: any VSCodeControlling
     private var plugins = IntegrationPluginStore.builtIns
     public func configure(plugins: [IntegrationPlugin]) { self.plugins = plugins }
-    private func source(for bundleID: String) -> IntegrationPlugin? {
-        plugins.first { $0.kind == .source && $0.bundleIdentifier == bundleID }
+    private func preciseReturn(for bundleID: String) -> IntegrationPlugin? {
+        plugins.first { $0.returnAdapter != nil && $0.returnAdapter != .application && $0.bundleIdentifier == bundleID }
     }
     private var anchors: [String: Captured] = [:]
 
@@ -88,30 +88,27 @@ public struct ForegroundSnapshot: Equatable, Sendable {
 
     /// A visit never opens a native session URI or selects a Warp pane.
     public func activate(workEnd: WorkEnd, target: SessionTarget) async -> NavigationOutcome {
-        guard let bundleID = plugins.first(where: { $0.kind == .agent && $0.workEnd == workEnd })?.bundleIdentifier else { return .unavailable }
+        guard let bundleID = plugins.first(where: { $0.workEnd == workEnd })?.bundleIdentifier else { return .unavailable }
         return await apps.activate(bundleID: bundleID, preferredProcessID: nil) ? .fallback : .unavailable
     }
 
     public func captureSource() -> ReturnAnchor? {
-        guard let source = apps.foreground(), let plugin = self.source(for: source.bundleIdentifier) else { return nil }
-        let captured: Captured
-        let accuracy: AnchorAccuracy
-        switch plugin.sourceAdapter {
+        guard let source = apps.foreground(), source.bundleIdentifier != "com.cheesefox.char",
+              source.bundleIdentifier != Bundle.main.bundleIdentifier else { return nil }
+        var captured: Captured = .application(processID: source.processID, bundleID: source.bundleIdentifier)
+        var accuracy: AnchorAccuracy = .application
+        switch preciseReturn(for: source.bundleIdentifier)?.returnAdapter {
         case .tabbit:
-            guard apps.hasUniqueRunningInstance(bundleID: Self.tabbitBundleID) else { return nil }
-            guard let tabID = tabbit.captureActiveTabID(), !tabID.isEmpty else { return nil }
-            captured = .tabbit(processID: source.processID, tabID: tabID)
-            accuracy = .exact
+            if apps.hasUniqueRunningInstance(bundleID: Self.tabbitBundleID),
+               let tabID = tabbit.captureActiveTabID(), !tabID.isEmpty {
+                captured = .tabbit(processID: source.processID, tabID: tabID); accuracy = .exact
+            }
         case .vscode:
-            guard apps.hasUniqueRunningInstance(bundleID: Self.vscodeBundleID) else { return nil }
-            guard let token = vscode.captureFocusedTab() else { return nil }
-            captured = .vscode(processID: source.processID, token: token)
-            accuracy = .exact
-        case .application:
-            captured = .application(processID: source.processID, bundleID: source.bundleIdentifier)
-            accuracy = .application
-        default:
-            return nil
+            if apps.hasUniqueRunningInstance(bundleID: Self.vscodeBundleID),
+               let token = vscode.captureFocusedTab(), !token.isEmpty {
+                captured = .vscode(processID: source.processID, token: token); accuracy = .exact
+            }
+        default: break
         }
         let id = UUID().uuidString
         anchors[id] = captured
@@ -120,25 +117,25 @@ public struct ForegroundSnapshot: Equatable, Sendable {
 
     /// false confirms invalidation; nil preserves an anchor through a temporary query failure.
     public func isAnchorValid(_ anchor: ReturnAnchor) -> Bool? {
-        guard let captured = anchors[anchor.id], anchor.token == anchor.id, source(for: anchor.bundleIdentifier) != nil else { return false }
+        guard let captured = anchors[anchor.id], anchor.token == anchor.id else { return false }
         switch captured {
         case let .tabbit(pid, tabID):
-            guard anchor.accuracy == .exact, source(for: anchor.bundleIdentifier)?.sourceAdapter == .tabbit, anchor.bundleIdentifier == Self.tabbitBundleID,
+            guard anchor.accuracy == .exact, preciseReturn(for: anchor.bundleIdentifier)?.returnAdapter == .tabbit, anchor.bundleIdentifier == Self.tabbitBundleID,
                   apps.isRunning(bundleID: Self.tabbitBundleID, processID: pid) else { return false }
             return tabbit.contains(tabID: tabID)
         case let .vscode(pid, token):
-            guard anchor.accuracy == .exact, source(for: anchor.bundleIdentifier)?.sourceAdapter == .vscode, anchor.bundleIdentifier == Self.vscodeBundleID,
+            guard anchor.accuracy == .exact, preciseReturn(for: anchor.bundleIdentifier)?.returnAdapter == .vscode, anchor.bundleIdentifier == Self.vscodeBundleID,
                   apps.isRunning(bundleID: Self.vscodeBundleID, processID: pid) else { return false }
             return vscode.contains(token: token)
         case let .application(pid, bundleID):
-            return anchor.accuracy == .application && source(for: bundleID)?.sourceAdapter == .application && anchor.bundleIdentifier == bundleID &&
+            return anchor.accuracy == .application && anchor.bundleIdentifier == bundleID &&
                 apps.isRunning(bundleID: bundleID, processID: pid)
         }
     }
 
     public func focusContext(for anchor: ReturnAnchor?) -> FocusContext {
         let current = apps.foreground()
-        let isAgent = current.map { foreground in plugins.contains { plugin in plugin.kind == .agent && plugin.bundleIdentifier == foreground.bundleIdentifier } } ?? false
+        let isAgent = current.map { foreground in plugins.contains { plugin in plugin.workEnd != nil && plugin.bundleIdentifier == foreground.bundleIdentifier } } ?? false
         guard let anchor, let current, isAnchorValid(anchor) == true, let captured = anchors[anchor.id] else {
             return FocusContext(isAgent: isAgent)
         }

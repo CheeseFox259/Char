@@ -85,15 +85,15 @@ import Foundation
 
         apps.current = ForegroundSnapshot(bundleIdentifier: MacOSPlatform.warpBundleID, processID: 10, windowNumber: 5, displayID: 2)
         assert(platform.foreground()?.displayID == 2)
-        assert(platform.captureSource() == nil)
+        assert(platform.captureSource()?.accuracy == .application)
         assert(platform.focusContext(for: nil).isAgent)
 
         apps.current = ForegroundSnapshot(bundleIdentifier: MacOSPlatform.tabbitBundleID, processID: 10)
-        assert(platform.captureSource() == nil)
+        assert(platform.captureSource()?.accuracy == .application)
         tabbit.capturedID = "opaque-tab"
         tabbit.live = ["opaque-tab"]
         apps.uniqueInstance = false
-        assert(platform.captureSource() == nil)
+        assert(platform.captureSource()?.accuracy == .application)
         apps.uniqueInstance = true
         let tabbitAnchor = platform.captureSource()!
         assert(tabbitAnchor.accuracy == .exact)
@@ -115,7 +115,7 @@ import Foundation
         assert(closedTabReturn == .unavailable)
 
         apps.current = ForegroundSnapshot(bundleIdentifier: MacOSPlatform.vscodeBundleID, processID: 20)
-        assert(platform.captureSource() == nil)
+        assert(platform.captureSource()?.accuracy == .application)
         vscode.capturedToken = "live-token"
         vscode.live = ["live-token"]
         let vscodeAnchor = platform.captureSource()!
