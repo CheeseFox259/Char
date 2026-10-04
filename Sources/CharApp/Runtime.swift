@@ -495,6 +495,16 @@ actor ObservationWorker {
         }
         guard snapshot.bubbles.count == WorkEnd.allCases.count, snapshot.bubbles.allSatisfy({ $0.count == 2 }) else { fail("initial bubbles") }
         guard snapshot.bubbles.first(where: { $0.workEnd == .codexCLI })?.head?.isPast == true else { fail("visible past head marker") }
+        guard let fixedSlot = panel.surface.buttons.first(where: { !$0.isHidden && !$0.miniature }),
+              case let .bubble(oldEnd) = fixedSlot.kind else { fail("fixed slot fixture") }
+        let fixedFrame = fixedSlot.frame
+        guard panel.surface.cycleBubbles(by: 1), fixedSlot.frame == fixedFrame,
+              case let .bubble(newEnd) = fixedSlot.kind, newEnd != oldEnd,
+              fixedSlot.accessibilityLabel()?.hasPrefix(newEnd.title) == true else { fail("accepted orbit step did not rebind fixed hit view immediately") }
+        fixedSlot.performClick(nil)
+        try? await Task.sleep(nanoseconds: 100_000_000)
+        guard router.nextVisit(for: newEnd)?.navigationOutcome == .fallback else { fail("rebound slot clicked previous work end") }
+        _ = panel.surface.cycleBubbles(by: -1)
         visit(.claudeCode)
         try? await Task.sleep(nanoseconds: 100_000_000)
         guard snapshot.hold?.anchor.accuracy == .application,

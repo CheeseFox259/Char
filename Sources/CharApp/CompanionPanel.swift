@@ -5,7 +5,6 @@ import CharCore
 /// Opt-in native input/render boundary trace; contains no session or page data.
 @MainActor private enum OrbitTrace {
     static let enabled = ProcessInfo.processInfo.environment["CHAR_ORBIT_TRACE"] == "1"
-    static let windowFlushProbe = ProcessInfo.processInfo.environment["CHAR_ORBIT_WINDOW_FLUSH"] == "1"
     static var sequence = 0
     static var activeUntil: TimeInterval = 0
     static func record(_ message: @autoclosure () -> String) {
@@ -123,7 +122,8 @@ import CharCore
     init(runtime: CompanionRuntime) {
         self.runtime = runtime
         pet = GraphicButton(kind: .pet, runtime: runtime)
-        buttons = WorkEnd.allCases.map { GraphicButton(kind: .bubble($0), runtime: runtime) }
+        // Five regular slots plus up to three fixed miniature slots when folded.
+        buttons = (0..<8).map { _ in GraphicButton(kind: .bubble(.claudeCode), runtime: runtime) }
         super.init(frame: NSRect(origin: .zero, size: CompanionGeometry.canvasSize))
         wantsLayer = true
         overflow.wantsLayer = true
@@ -199,49 +199,42 @@ import CharCore
         if movement == nil { placement = runtime.petPlacement }
         layoutVisibleBubbles()
         pet.setAccessibilityLabel(runtime.snapshot.hold == nil ? "Char 桌宠，当前不可回城" : "回城，返回最初来源，Control+B\(runtime.snapshot.hold?.anchor.accuracy == .application ? "，应用级降级" : "")")
-        for button in buttons {
-            guard case let .bubble(end) = button.kind else { continue }
-            let bubble = runtime.snapshot.bubbles.first { $0.workEnd == end }
-            button.setAccessibilityLabel("\(end.title): \(bubble?.count ?? 0) unviewed, \(bubble?.runningCount ?? 0) running\(bubble?.head.map { ", \($0.reason.title)\($0.isPast ? ", past" : "")\($0.navigationOutcome == .fallback ? ", application fallback" : "")" } ?? "")")
-            button.refreshArtwork()
-        }
+        for button in buttons { button.refreshArtwork() }
         pet.needsDisplay = true
         ensureClock()
     }
     private func layoutVisibleBubbles() {
-        let visible = buttons.filter { button in
-            guard case let .bubble(end) = button.kind else { return false }
-            return runtime.snapshot.bubbles.contains { $0.workEnd == end }
-        }
-        offset = visible.count <= 6 ? 0 : CompanionGeometry.normalizedOffset(offset, count: visible.count)
-        let key = LayoutKey(ends: visible.compactMap { if case let .bubble(end) = $0.kind { return end }; return nil },
-                            offset: offset, placement: placement, petSize: runtime.petSize)
+        let ends = WorkEnd.allCases.filter { end in runtime.snapshot.bubbles.contains { $0.workEnd == end } }
+        offset = ends.count <= 6 ? 0 : CompanionGeometry.normalizedOffset(offset, count: ends.count)
+        let key = LayoutKey(ends: ends, offset: offset, placement: placement, petSize: runtime.petSize)
         guard key != lastLayout else { return }
         lastLayout = key; lastPointer = nil
         var presented = Set<GraphicButton>()
         pet.placement = placement
         let petFrame = CompanionGeometry.petFrame(placement: placement, petSize: runtime.petSize)
         if pet.frame != petFrame { pet.frame = petFrame }
-        let slots = CompanionGeometry.layout(count: visible.count, offset: offset, placement: placement, petSize: runtime.petSize)
+        let slots = CompanionGeometry.layout(count: ends.count, offset: offset, placement: placement, petSize: runtime.petSize)
         let hasOverflow = slots.contains { $0.primaryIndex == nil }
         if overflow.isHidden == hasOverflow { overflow.isHidden = !hasOverflow }
-        for slot in slots {
+        for (slotIndex, slot) in slots.enumerated() {
             if let index = slot.primaryIndex {
-                if visible[index].frame != slot.frame { visible[index].frame = slot.frame }
-                visible[index].miniature = false; presented.insert(visible[index])
+                let button = buttons[slotIndex]
+                button.bind(end: ends[index], miniature: false, frame: slot.frame)
+                presented.insert(button)
             } else {
                 if overflow.frame != slot.frame { overflow.frame = slot.frame }
                 if overflow.isHidden { overflow.isHidden = false }
-                for (index, frame) in zip(slot.overflowIndices, slot.miniFrames) {
-                    if visible[index].frame != frame { visible[index].frame = frame }
-                    visible[index].miniature = true; presented.insert(visible[index])
+                for (miniIndex, pair) in zip(slot.overflowIndices, slot.miniFrames).enumerated() {
+                    let button = buttons[5 + miniIndex]
+                    button.bind(end: ends[pair.0], miniature: true, frame: pair.1)
+                    presented.insert(button)
                 }
             }
         }
         for button in buttons {
             let hidden = !presented.contains(button)
             if button.isHidden != hidden { button.isHidden = hidden }
-            if !button.isHidden { button.refreshArtwork() }
+            if !hidden { button.refreshArtwork() }
         }
         updateOverflowArtwork()
         setAccessibilityChildren([pet] + buttons.filter { !$0.isHidden })
@@ -264,7 +257,10 @@ import CharCore
                                      precise: event.hasPreciseScrollingDeltas, hasGesturePhase: event.phase != [], momentum: event.momentumPhase != [],
                                      count: runtime.snapshot.bubbles.count, now: event.timestamp)
         OrbitTrace.record("policy sequence=\(OrbitTrace.sequence) step=\(step) count=\(runtime.snapshot.bubbles.count)")
-        if step != 0 {
+        if step != 0 { _ = cycleBubbles(by: step) }
+    }
+    @discardableResult func cycleBubbles(by step: Int) -> Bool {
+        guard canCycle, step != 0 else { return false }
             OrbitTrace.activeUntil = ProcessInfo.processInfo.systemUptime + 0.12
             CATransaction.begin(); CATransaction.setDisableActions(true)
             offset += step; layoutVisibleBubbles()
@@ -274,12 +270,6 @@ import CharCore
             for button in buttons where !button.isHidden { button.displayIfNeeded() }
             overflow.displayIfNeeded()
             CATransaction.commit(); CATransaction.flush()
-            if OrbitTrace.windowFlushProbe {
-                OrbitTrace.record("window-flush-start sequence=\(OrbitTrace.sequence)")
-                window?.displayIfNeeded()
-                window?.flush()
-                OrbitTrace.record("window-flush-return sequence=\(OrbitTrace.sequence)")
-            }
             traceOrder("appkit-flush-complete")
             if OrbitTrace.enabled {
                 let sequence = OrbitTrace.sequence
@@ -289,7 +279,7 @@ import CharCore
                     self.traceOrder("presentation-after-30ms", sequence: sequence)
                 }
             }
-        }
+        return true
     }
     private func traceOrder(_ boundary: String, sequence: Int? = nil) {
         guard OrbitTrace.enabled else { return }
@@ -301,8 +291,8 @@ import CharCore
         let mode = RunLoop.current.currentMode?.rawValue ?? "none"
         OrbitTrace.record("\(boundary) sequence=\(sequence ?? OrbitTrace.sequence) offset=\(offset) runloop=\(mode) windowVisible=\(window?.isVisible ?? false) occlusion=\(window?.occlusionState.rawValue ?? 0) ignoresMouse=\(window?.ignoresMouseEvents ?? false) sceneOpacity=\(layer?.opacity ?? 0) surfaceNeedsDisplay=\(needsDisplay) order=\(order)")
     }
-    @objc fileprivate func nextBubbles() -> Bool { guard canCycle else { return false }; offset += 1; layoutVisibleBubbles(); return true }
-    @objc fileprivate func previousBubbles() -> Bool { guard canCycle else { return false }; offset -= 1; layoutVisibleBubbles(); return true }
+    @objc fileprivate func nextBubbles() -> Bool { cycleBubbles(by: 1) }
+    @objc fileprivate func previousBubbles() -> Bool { cycleBubbles(by: -1) }
     func spaceFeedback() {
         traceSpace("workspace-notification")
         // Notifications may arrive after the pet already became visible. A
@@ -491,9 +481,10 @@ import CharCore
     // All vector and manifest-anchor geometry uses AppKit's bottom-left coordinates.
     override var isFlipped: Bool { false }
     enum Kind { case pet, bubble(WorkEnd) }
-    let kind: Kind
+    private(set) var kind: Kind
     unowned let runtime: CompanionRuntime
     private struct ArtworkKey: Equatable {
+        let workEnd: WorkEnd
         let bubble: AttentionBubble?
         let icon: ObjectIdentifier?
         let miniature: Bool
@@ -506,9 +497,20 @@ import CharCore
     private var symbolImages: [String: NSImage] = [:]
     func refreshArtwork() {
         guard case let .bubble(end) = kind else { return }
-        let next = ArtworkKey(bubble: runtime.snapshot.bubbles.first { $0.workEnd == end },
+        let next = ArtworkKey(workEnd: end, bubble: runtime.snapshot.bubbles.first { $0.workEnd == end },
                               icon: runtime.agentIcon(for: end).map(ObjectIdentifier.init), miniature: miniature, size: bounds.size)
         if next != artworkKey { artworkKey = next; artwork = nil; needsDisplay = true }
+        let bubble = next.bubble
+        setAccessibilityLabel("\(end.title): \(bubble?.count ?? 0) unviewed, \(bubble?.runningCount ?? 0) running\(bubble?.head.map { ", \($0.reason.title)\($0.isPast ? ", past" : "")\($0.navigationOutcome == .fallback ? ", application fallback" : "")" } ?? "")")
+    }
+    func bind(end: WorkEnd, miniature: Bool, frame: NSRect) {
+        if case let .bubble(previous) = kind, previous != end {
+            kind = .bubble(end)
+            artworkKey = nil; artwork = nil
+        }
+        self.miniature = miniature
+        if self.frame != frame { self.frame = frame }
+        refreshArtwork()
     }
     var reducedMotion = NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
     private static let defaultBody = BubbleDrawing.raster(size: NSSize(width: 76, height: 76)) {
