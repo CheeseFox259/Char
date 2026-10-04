@@ -17,13 +17,6 @@ import CharCore
         guard previous != runtime.snapshot || previousSound != runtime.settings.soundEnabled else { return }
         previous = runtime.snapshot; previousSound = runtime.settings.soundEnabled
         let menu = NSMenu()
-        let attention = runtime.snapshot.bubbles.flatMap(\.items)
-        for group in AttentionPresentationGroup.allCases {
-            let count = attention.filter { AttentionPresentationGroup.forReason($0.reason) == group }.count
-            let line = NSMenuItem(title: "\(group.title) · \(count)", action: nil, keyEquivalent: "")
-            line.isEnabled = false; menu.addItem(line)
-        }
-        menu.addItem(.separator())
         add("显示桌宠", action: #selector(showPet), to: menu)
         add("设置…", action: #selector(settings), to: menu)
         let home = add("回城 · Ctrl+B", action: #selector(returnHome), to: menu)
@@ -33,7 +26,7 @@ import CharCore
         add("退出 Char", action: #selector(quit), to: menu)
         menu.autoenablesItems = false
         item.menu = menu
-        item.button?.toolTip = "Char · \(attention.count) 条未查看"
+        item.button?.toolTip = "Char"
     }
     @discardableResult private func add(_ title: String, action: Selector, to menu: NSMenu) -> NSMenuItem {
         let row = NSMenuItem(title: title, action: action, keyEquivalent: "")

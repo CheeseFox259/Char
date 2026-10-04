@@ -578,13 +578,14 @@ import CharCore
             NSBezierPath(roundedRect: rect, xRadius: 4, yRadius: 4).fill()
             symbol("terminal", in: rect.insetBy(dx: 2, dy: 2), color: .white)
         }
-        guard !miniature, let head = bubble.head else { return }
-        let group = AttentionPresentationGroup.forReason(head.reason)
-        let color: NSColor = group == .issue ? .systemOrange : group == .interaction ? .systemBlue : .systemGreen
+        guard !miniature else { return }
+        let group = bubble.head.map { AttentionPresentationGroup.forReason($0.reason) }
+        let color: NSColor = group == nil ? .systemMint : group == .issue ? .systemOrange : group == .interaction ? .systemBlue : .systemGreen
         let badge = NSRect(x: bounds.maxX - 26, y: 0, width: 26, height: 15)
-        color.setFill(); NSBezierPath(roundedRect: badge, xRadius: 7.5, yRadius: 7.5).fill()
-        symbol(group.symbol, in: NSRect(x: badge.minX + 3, y: 3, width: 9, height: 9), color: .white)
-        number(bubble.count, rect: NSRect(x: badge.minX + 12, y: 1, width: 12, height: 13), color: .white, size: 10)
+        color.withAlphaComponent(bubble.head?.isPast == true ? 0.45 : 1).setFill()
+        NSBezierPath(roundedRect: badge, xRadius: 7.5, yRadius: 7.5).fill()
+        symbol(group?.symbol ?? "circle.fill", in: NSRect(x: badge.minX + 3, y: 3, width: 9, height: 9), color: .white)
+        number(bubble.head == nil ? bubble.runningCount : bubble.count, rect: NSRect(x: badge.minX + 12, y: 1, width: 12, height: 13), color: .white, size: 10)
     }
     private func symbol(_ name: String, in rect: NSRect, color: NSColor) {
         let key = "\(name)/\(rect.height)/\(color.description)"

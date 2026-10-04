@@ -321,8 +321,11 @@ actor ObservationWorker {
         refreshStatus()
         if settingsWindow == nil {
             let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 530, height: 630),
-                                  styleMask: [.titled, .closable, .resizable], backing: .buffered, defer: false)
+                                  styleMask: [.titled, .closable], backing: .buffered, defer: false)
             window.title = "Char Settings"
+            window.collectionBehavior = [.fullScreenNone]
+            window.standardWindowButton(.miniaturizeButton)?.isHidden = true
+            window.standardWindowButton(.zoomButton)?.isHidden = true
             window.isReleasedWhenClosed = false
             window.delegate = self
             window.contentView = NSHostingView(rootView: SettingsView(runtime: self))
