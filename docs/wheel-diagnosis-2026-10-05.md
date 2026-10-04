@@ -82,3 +82,9 @@ Apple区分AppKit管理的backing layer与自主管理的hosting layer；后者�
 下一组打包并启用`CHAR_STATIC_MOUSE_ROUTING=1`（其余hosted/诊断/私有fixture配置保持），进程71420；CUA确认七泡可见，启动日志accepts=true且始终不切换穿透。已说明透明画布暂接收鼠标并发出单格停住采集；边界`/tmp/char-wheel-static-route-held.capture-start.json`，等待完成回复。
 
 固定路由组用户回复“首格没有立刻切换”。采集段只出现accepts=true且target=codexCLI，全部本App local探针、global探针及surface输入均无事件。这组也失败。无需重复已有的移开复现，改验证`CHAR_ACTIVATING_WINDOW=1`：初始化为带标题栏、可成为key/main的激活面板；固定原生接收、hosted绘制、策略与七泡fixture保持。启动可激活，要求用户采集前点击标题栏；入口日志增加panelKey以核对该反事实实际成立。未将此诊断窗口形态选作产品方案。
+
+激活窗口组用户确认首格未立即切换，但为回复移动了鼠标。日志验证appActive=true、panelKey=true；两条入口各在移动附近出现，surface在1.3 ms以内处理。因采集段实际有两次事件，不能声称“一条唯一事件”，也不能将回复前移动后的输入算作及时首格。该反事实没有消除用户症状。
+
+准备下一边界：仅scrollWheel的被动CGEvent taps，分别位于HID head与session tail；坐标位于Char画布时才写数值/时间，不监听键盘，不重发/改写事件。启动先调用CGPreflightListenEventAccess，只在现有权限允许且显式diagnostic flag开启时创建tap；拒绝/缺失权限不发起请求。新建权限须先取得用户明确授权。
+
+新普通面板实例77548读取现有listen权限为true，HID/session两个被动tap均成功建立；无新授权请求。前述hosting/static/activating flags全部关闭以恢复普通基线。CUA两次自动化scroll（AX索引与坐标）均返回AXError.notImplemented，日志无滚轮事件；不计作校准成功。七泡布局保持offset0。用户说明不能保持鼠标静止回复，下一采集改为明确3秒悬停→一格→完整5秒静止→只移开→回复，允许鼠标回复，用不同边界时间辨别送达。边界`/tmp/char-wheel-raw-held.capture-start.json`。等待完成回复前不读取采集段。

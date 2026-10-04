@@ -8,10 +8,30 @@ import QuartzCore
     private var active: (sequence: Int, until: TimeInterval, layer: CALayer)?
     private var monitors: [Any] = []
     private var lastRoute: String?
+    private weak var rawSurface: CompanionSurface?
+    private var rawTaps: [(CFMachPort, CFRunLoopSource)] = []
     // [DEBUG-char-wheel-deep] Passive input boundaries; never consume or repost events.
     func monitor(_ surface: CompanionSurface) {
         stopMonitoring()
         guard enabled else { return }
+        let rawAllowed = CGPreflightListenEventAccess()
+        write(["kind": "rawAccess", "now": ProcessInfo.processInfo.systemUptime, "allowed": rawAllowed])
+        if ProcessInfo.processInfo.environment["CHAR_RAW_WHEEL_DIAGNOSTICS"] == "1", rawAllowed {
+            rawSurface = surface
+            installRawTap(location: .cghidEventTap, placement: .headInsertEventTap, callback: { _, type, event, context in
+                if type == .scrollWheel, let context {
+                    MainActor.assumeIsolated { Unmanaged<WheelDiagnostics>.fromOpaque(context).takeUnretainedValue().rawInput(event, kind: "rawHID") }
+                }
+                return Unmanaged.passUnretained(event)
+            })
+            installRawTap(location: .cgSessionEventTap, placement: .tailAppendEventTap, callback: { _, type, event, context in
+                if type == .scrollWheel, let context {
+                    MainActor.assumeIsolated { Unmanaged<WheelDiagnostics>.fromOpaque(context).takeUnretainedValue().rawInput(event, kind: "rawSession") }
+                }
+                return Unmanaged.passUnretained(event)
+            })
+            write(["kind": "rawTapsInstalled", "count": rawTaps.count, "now": ProcessInfo.processInfo.systemUptime])
+        }
         if let token = NSEvent.addLocalMonitorForEvents(matching: .scrollWheel, handler: { [weak self, weak surface] event in
             MainActor.assumeIsolated {
                 if let surface { self?.ingress(event, surface: surface, kind: "ingressLocal") }
@@ -27,7 +47,33 @@ import QuartzCore
         }) { monitors.append(token) }
         write(["kind": "monitorInstalled", "now": ProcessInfo.processInfo.systemUptime, "count": monitors.count])
     }
-    func stopMonitoring() { for token in monitors { NSEvent.removeMonitor(token) }; monitors.removeAll() }
+    func stopMonitoring() {
+        for token in monitors { NSEvent.removeMonitor(token) }; monitors.removeAll()
+        for (tap, source) in rawTaps {
+            CFRunLoopRemoveSource(CFRunLoopGetMain(), source, .commonModes)
+            CFMachPortInvalidate(tap)
+        }
+        rawTaps.removeAll(); rawSurface = nil
+    }
+    private func installRawTap(location: CGEventTapLocation, placement: CGEventTapPlacement, callback: CGEventTapCallBack) {
+        guard let tap = CGEvent.tapCreate(tap: location, place: placement, options: .listenOnly,
+                                         eventsOfInterest: 1 << CGEventType.scrollWheel.rawValue,
+                                         callback: callback, userInfo: Unmanaged.passUnretained(self).toOpaque()),
+              let source = CFMachPortCreateRunLoopSource(nil, tap, 0) else { return }
+        rawTaps.append((tap, source)); CFRunLoopAddSource(CFRunLoopGetMain(), source, .commonModes)
+    }
+    private func rawInput(_ event: CGEvent, kind: String) {
+        guard let surface = rawSurface, let window = surface.window, let screenTop = NSScreen.screens.first?.frame.maxY else { return }
+        let point = NSPoint(x: event.location.x, y: screenTop-event.location.y)
+        guard window.frame.contains(point) else { return }
+        write(["kind": kind, "now": ProcessInfo.processInfo.systemUptime,
+               "eventTime": Double(event.timestamp)/1_000_000_000,
+               "screenPoint": [point.x,point.y],
+               "line": event.getIntegerValueField(.scrollWheelEventDeltaAxis1),
+               "pixels": event.getIntegerValueField(.scrollWheelEventPointDeltaAxis1),
+               "continuous": event.getIntegerValueField(.scrollWheelEventIsContinuous),
+               "sourcePID": event.getIntegerValueField(.eventSourceUnixProcessID)])
+    }
     func route(_ surface: CompanionSurface, point: NSPoint, accepts: Bool) {
         guard enabled else { return }
         let target = (surface.hitTest(point) as? GraphicButton)?.renderedWorkEnd?.rawValue ?? "surface/none"
