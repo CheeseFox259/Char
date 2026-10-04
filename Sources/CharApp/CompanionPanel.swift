@@ -18,6 +18,16 @@ import CharCore
     }
 }
 
+/// Temporary public-API experiment, disabled unless explicitly requested at launch.
+@MainActor enum CompanionSpaceProbe {
+    static let enabled = ProcessInfo.processInfo.environment["CHAR_SPACE_FRESH_PANEL"] == "1"
+    static func record(_ stage: String, panel: CompanionPanel) {
+        guard enabled else { return }
+        let line = "[DEBUG-char-space-fresh] t=\(ProcessInfo.processInfo.systemUptime) stage=\(stage) panel=\(panel.windowNumber) visible=\(panel.isVisible) tuck=\(panel.surface.pet.spaceTuck) opacity=\(panel.surface.visualOpacity) offset=\(panel.surface.orbitOffset)\n"
+        FileHandle.standardError.write(Data(line.utf8))
+    }
+}
+
 @MainActor private enum BubbleDrawing {
     static func raster(size: NSSize, draw: () -> Void) -> NSImage {
         let scale: CGFloat = 2
@@ -62,7 +72,9 @@ import CharCore
                    styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
         isOpaque = false; backgroundColor = .clear; hasShadow = false
         level = .statusBar; hidesOnDeactivate = false; isMovableByWindowBackground = false
-        collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary]
+        collectionBehavior = [.fullScreenAuxiliary, .stationary]
+        if CompanionSpaceProbe.enabled { isReleasedWhenClosed = false }
+        else { collectionBehavior.insert(.canJoinAllSpaces) }
         if #available(macOS 14, *) {
             collectionBehavior.remove(.fullScreenAuxiliary)
             collectionBehavior.insert(.canJoinAllApplications)
@@ -89,6 +101,8 @@ import CharCore
     }
     private var lastLayout: LayoutKey?
     private var offset = 0
+    var orbitOffset: Int { offset }
+    var isClockRunning: Bool { clock != nil }
     private var scrollPolicy = CompanionScrollPolicy()
     private var spaceAt: TimeInterval?
     private var pendingSpaceFeedback = false
@@ -153,6 +167,23 @@ import CharCore
     deinit {
         if let displayOptionsObserver { workspaceNotifications.removeObserver(displayOptionsObserver) }
         if let occlusionObserver { NotificationCenter.default.removeObserver(occlusionObserver) }
+    }
+    func dispose() {
+        clock?.invalidate(); clock = nil
+        if let displayOptionsObserver { workspaceNotifications.removeObserver(displayOptionsObserver) }
+        displayOptionsObserver = nil
+        if let occlusionObserver { NotificationCenter.default.removeObserver(occlusionObserver) }
+        occlusionObserver = nil
+    }
+    var replacementFrame: NSRect { movement?.frame ?? window?.frame ?? .zero }
+    var replacementPlacement: PetPlacement { movement?.placement ?? placement }
+    func prepareFreshSpaceProbe(placement: PetPlacement, orbitOffset: Int) {
+        self.placement = placement; offset = orbitOffset; lastLayout = nil
+        layoutVisibleBubbles()
+        prepareSpaceAppearance()
+        visualOpacity = reducedMotion ? 0.75 : 0.45
+        applySharedTransform()
+        pet.needsDisplay = true
     }
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()

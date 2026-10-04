@@ -421,7 +421,26 @@ actor ObservationWorker {
     @objc private func workspaceActivated() { trackFocusedDisplay() }
     @objc private func spaceChanged() {
         trackFocusedDisplay()
-        panel.surface.spaceFeedback()
+        if CompanionSpaceProbe.enabled { replacePanelForSpaceProbe() }
+        else { panel.surface.spaceFeedback() }
+    }
+    @discardableResult private func replacePanelForSpaceProbe() -> CompanionPanel {
+        let old = panel!
+        let frame = old.surface.replacementFrame
+        let placement = old.surface.replacementPlacement
+        let offset = old.surface.orbitOffset
+        let fresh = CompanionPanel(runtime: self)
+        fresh.setFrame(frame, display: false)
+        fresh.surface.prepareFreshSpaceProbe(placement: placement, orbitOffset: offset)
+        CompanionSpaceProbe.record("prepared-before-order-front", panel: fresh)
+        panel = fresh
+        old.surface.dispose()
+        old.orderOut(nil)
+        fresh.orderFrontRegardless()
+        CompanionSpaceProbe.record("after-order-front", panel: fresh)
+        fresh.surface.spaceFeedback()
+        old.close()
+        return old
     }
     private func trackFocusedDisplay() {
         // With one screen there can be no migration, so avoid repeated AX/CG window queries.
@@ -505,6 +524,20 @@ actor ObservationWorker {
         try? await Task.sleep(nanoseconds: 100_000_000)
         guard router.nextVisit(for: newEnd)?.navigationOutcome == .fallback else { fail("rebound slot clicked previous work end") }
         _ = panel.surface.cycleBubbles(by: -1)
+        if CompanionSpaceProbe.enabled {
+            let old = panel!
+            let expectedFrame = old.frame
+            let expectedHold = snapshot.hold
+            let expectedOffset = old.surface.orbitOffset
+            let disposed = replacePanelForSpaceProbe()
+            guard disposed === old, panel !== old, panel.frame == expectedFrame,
+                  panel.surface.orbitOffset == expectedOffset, snapshot.hold == expectedHold,
+                  !disposed.surface.isClockRunning, !disposed.isVisible,
+                  panel.surface.isClockRunning,
+                  !panel.collectionBehavior.contains(.canJoinAllSpaces) else { fail("fresh Space panel preserved state/disposal") }
+            guard panel.surface.buttons.contains(where: { !$0.isHidden && $0.accessibilityLabel()?.hasPrefix("Claude Code") == true }) else { fail("fresh Space panel lost bound targets") }
+            try? await Task.sleep(nanoseconds: 800_000_000)
+        }
         visit(.claudeCode)
         try? await Task.sleep(nanoseconds: 100_000_000)
         guard snapshot.hold?.anchor.accuracy == .application,
