@@ -22,8 +22,21 @@ actor ObservationWorker {
             kimiSessionsRoot: kimiHome.appendingPathComponent("sessions"))
     }
     func start() { poller.start() }
-    func poll() -> [ObservationEvent] { poller.poll() }
-    func configure(enabled: Set<WorkEnd>) { poller.setEnabledWorkEnds(enabled) }
+    private var configuration = ObservationGeneration()
+    struct Batch { let events: [ObservationEvent]; let configuration: ObservationGeneration }
+    func poll() -> Batch { Batch(events: poller.poll(), configuration: configuration) }
+    func configure(_ next: ObservationGeneration) {
+        guard next.isNewer(than: configuration) else { return }
+        let restarted = next.enabled.filter { next.generations[$0, default: 0] != configuration.generations[$0, default: 0] }
+        // An off/on Task may overtake the off Task. Apply a new EOF baseline anyway.
+        var enabled = next.enabled.subtracting(restarted)
+        poller.setEnabledWorkEnds(enabled, at: next.changedAt)
+        for end in WorkEnd.allCases where restarted.contains(end) {
+            enabled.insert(end)
+            poller.setEnabledWorkEnds(enabled, at: next.activatedAt[end] ?? next.changedAt)
+        }
+        configuration = next
+    }
 }
 
 @MainActor final class AppDelegate: NSObject, NSApplicationDelegate {
@@ -47,6 +60,7 @@ actor ObservationWorker {
     let skinStore: PetSkinStore?
     var agentIconCache: [WorkEnd: NSImage] = [:]
     var pluginRegistryRevision: Date?
+    var observationGeneration = ObservationGeneration()
     @Published var pluginEntries: [IntegrationPluginEntry] = []
     @Published var skins: [PetSkinManifest] = []
     @Published var selectedSkinID = "char.default"
@@ -130,8 +144,10 @@ actor ObservationWorker {
                 refreshStatus()
             }
         }
+        observationGeneration.configure(enabled: enabledWorkEnds, at: Date())
+        let initialConfiguration = observationGeneration
         Task {
-            await worker?.configure(enabled: enabledWorkEnds)
+            await worker?.configure(initialConfiguration)
             await worker?.start()
             timer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { [weak self] _ in
                 Task { @MainActor in await self?.tick() }
@@ -170,8 +186,9 @@ actor ObservationWorker {
         guard !polling, !busy else { return }
         polling = true
         defer { polling = false }
-        let events = await worker?.poll() ?? []
-        router.ingest(events.filter { enabledWorkEnds.contains($0.key.workEnd) }) // A complete sleep/wake batch precedes any focus or time advancement.
+        let batch = await worker?.poll()
+        let events = batch.map { batch in batch.events.filter { observationGeneration.accepts($0.key.workEnd, from: batch.configuration) } } ?? []
+        router.ingest(events) // A complete sleep/wake batch precedes any focus or time advancement.
         if let platform {
             if let anchor = router.snapshot.hold?.anchor, platform.isAnchorValid(anchor) == false { router.invalidateAnchor(id: anchor.id) }
             router.updateFocus(platform.focusContext(for: router.snapshot.hold?.anchor), at: Date())

@@ -33,8 +33,24 @@ struct PluginSettingsView: View {
         } message: { Text("插件将从 Char 移除。已安装在 Agent 客户端的观察 Hook 保留，可按集成文档卸载。") }
     }
 }
+private struct SelectedPetPreview: NSViewRepresentable {
+    let runtime: CompanionRuntime
+    let elapsed: TimeInterval
+    func makeNSView(context: Context) -> GraphicButton {
+        let view = GraphicButton(kind: .pet, runtime: runtime)
+        view.isEnabled = false
+        view.setAccessibilityRole(.image)
+        view.setAccessibilityLabel("当前桌宠形象预览")
+        return view
+    }
+    func updateNSView(_ view: GraphicButton, context: Context) {
+        view.elapsed = elapsed; view.clipElapsed = elapsed; view.needsDisplay = true
+    }
+}
 struct AppearanceSettingsView: View {
     @ObservedObject var runtime: CompanionRuntime
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var previewStarted = Date()
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             Picker("放置方式", selection: Binding(get: { runtime.petPlacement }, set: { runtime.setPlacement($0) })) {
@@ -46,6 +62,10 @@ struct AppearanceSettingsView: View {
             }
             Picker("桌宠形象", selection: Binding(get: { runtime.selectedSkinID }, set: { runtime.selectSkin($0) })) {
                 ForEach(runtime.skins, id: \.id) { skin in Text(skin.name).tag(skin.id) }
+            }
+            TimelineView(.animation(minimumInterval: 1 / 12, paused: reduceMotion)) { timeline in
+                SelectedPetPreview(runtime: runtime, elapsed: reduceMotion ? 0 : timeline.date.timeIntervalSince(previewStarted))
+                    .frame(width: 76, height: 76)
             }
             HStack {
                 Button("导入形象…") { runtime.importSkin() }

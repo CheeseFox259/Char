@@ -1,6 +1,41 @@
 import AppKit
 import CharCore
 
+@MainActor private enum BubbleDrawing {
+    static func raster(size: NSSize, draw: () -> Void) -> NSImage {
+        let scale: CGFloat = 2
+        let rep = NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: Int(size.width * scale),
+                                  pixelsHigh: Int(size.height * scale), bitsPerSample: 8, samplesPerPixel: 4,
+                                  hasAlpha: true, isPlanar: false, colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0)!
+        rep.size = size
+        NSGraphicsContext.saveGraphicsState()
+        NSGraphicsContext.current = NSGraphicsContext(bitmapImageRep: rep)
+        NSGraphicsContext.current?.cgContext.clear(CGRect(x: 0, y: 0, width: size.width * scale, height: size.height * scale))
+        NSGraphicsContext.current?.cgContext.scaleBy(x: scale, y: scale)
+        draw()
+        NSGraphicsContext.restoreGraphicsState()
+        let image = NSImage(size: size); image.addRepresentation(rep); return image
+    }
+    static func pose(in rect: NSRect, elapsed: TimeInterval) {
+        let wobble = NSWorkspace.shared.accessibilityDisplayShouldReduceMotion ? 0 : sin(elapsed * 1.2) * sin(elapsed * 0.37)
+        let pose = NSAffineTransform()
+        pose.translateX(by: rect.midX, yBy: rect.midY)
+        pose.rotate(byDegrees: CGFloat(wobble * 2.5))
+        pose.scaleX(by: CGFloat(1 + wobble * 0.035), yBy: CGFloat(1 - wobble * 0.035))
+        pose.translateX(by: -rect.midX, yBy: -rect.midY)
+        pose.concat()
+    }
+    static func shell(in bounds: NSRect, tint: NSColor) {
+        let rect = bounds.insetBy(dx: 2, dy: 2)
+        let path = NSBezierPath(ovalIn: rect)
+        NSGradient(starting: tint.withAlphaComponent(0.35), ending: tint.withAlphaComponent(0.88))?.draw(in: path, angle: -70)
+        tint.setStroke(); path.lineWidth = 1.5; path.stroke()
+        NSColor.white.withAlphaComponent(0.78).setFill()
+        NSBezierPath(ovalIn: NSRect(x: rect.minX + rect.width * 0.17, y: rect.minY + rect.height * 0.69,
+                                  width: rect.width * 0.27, height: rect.height * 0.12)).fill()
+    }
+}
+
 @MainActor final class CompanionPanel: NSPanel {
     let surface: CompanionSurface
     init(runtime: CompanionRuntime) {
@@ -29,6 +64,9 @@ import CharCore
     let buttons: [GraphicButton]
     private let overflow = NSView(frame: .zero)
     private var offset = 0
+    private var overflowArtwork: NSImage?
+    private var overflowCount = -1
+    private var lastReduced: Bool?
     private var clock: Timer?
     private let epoch = ProcessInfo.processInfo.systemUptime
     private var feedbackAt: TimeInterval?
@@ -37,6 +75,7 @@ import CharCore
         let placement: PetPlacement
         let started: TimeInterval
         let reduced: Bool
+        let playback: CompanionPlayback
         let initialAlpha: CGFloat
         let initialScale: CGFloat
         var arrived = false
@@ -51,6 +90,7 @@ import CharCore
         addSubview(pet)
         addSubview(overflow)
         for button in buttons { addSubview(button) }
+        setAccessibilityElement(true)
         setAccessibilityRole(.group)
         setAccessibilityLabel("Agent orbit, scroll or use next and previous actions to cycle bubbles")
         setAccessibilityCustomActions([
@@ -67,8 +107,11 @@ import CharCore
             guard case let .bubble(end) = button.kind else { continue }
             let bubble = runtime.snapshot.bubbles.first { $0.workEnd == end }
             button.setAccessibilityLabel("\(end.title): \(bubble?.count ?? 0) unviewed, \(bubble?.runningCount ?? 0) running\(bubble?.head.map { ", \($0.reason.title)\($0.isPast ? ", past" : "")\($0.navigationOutcome == .fallback ? ", application fallback" : "")" } ?? "")")
+            button.refreshArtwork()
             button.needsDisplay = true
         }
+        let count = max(0, runtime.snapshot.bubbles.count - 5)
+        if overflowCount != count { overflowCount = count; overflowArtwork = nil }
         pet.needsDisplay = true
         ensureClock()
     }
@@ -92,6 +135,8 @@ import CharCore
                 }
             }
         }
+        for button in buttons where !button.isHidden { button.refreshArtwork() }
+        setAccessibilityChildren([pet] + buttons.filter { !$0.isHidden })
         needsDisplay = true
     }
     override func hitTest(_ point: NSPoint) -> NSView? {
@@ -109,8 +154,8 @@ import CharCore
             layoutVisibleBubbles()
         }
     }
-    @objc private func nextBubbles() -> Bool { offset += 1; layoutVisibleBubbles(); return true }
-    @objc private func previousBubbles() -> Bool { offset -= 1; layoutVisibleBubbles(); return true }
+    @objc fileprivate func nextBubbles() -> Bool { offset += 1; layoutVisibleBubbles(); return true }
+    @objc fileprivate func previousBubbles() -> Bool { offset -= 1; layoutVisibleBubbles(); return true }
     func returnFeedback() { pet.feedbackClip = "return"; feedbackAt = ProcessInfo.processInfo.systemUptime; ensureClock() }
     func pressFeedback() { pet.feedbackClip = "press"; feedbackAt = ProcessInfo.processInfo.systemUptime; ensureClock() }
     func transition(to frame: NSRect, placement: PetPlacement, animated: Bool) {
@@ -121,6 +166,8 @@ import CharCore
         // Replacing this value interrupts both phases; there are no stale completion callbacks.
         movement = Transition(frame: frame, placement: placement, started: ProcessInfo.processInfo.systemUptime,
                               reduced: NSWorkspace.shared.accessibilityDisplayShouldReduceMotion,
+                              playback: CompanionPlayback(departure: runtime.customPetClipDuration(clip: self.placement == .desktop ? "depart" : "edgeHide"),
+                                                          arrival: runtime.customPetClipDuration(clip: placement == .desktop ? "arrive" : "edgePeek")),
                               initialAlpha: window?.alphaValue ?? 1, initialScale: pet.motionScale)
         ensureClock()
     }
@@ -134,18 +181,23 @@ import CharCore
     private func animate() {
         let now = ProcessInfo.processInfo.systemUptime
         let reduce = NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
+        let wasAnimating = movement != nil || feedbackAt != nil
         pet.elapsed = reduce ? 0 : now - epoch
         pet.clip = "idle"
         pet.clipElapsed = pet.elapsed
         pet.feedbackElapsed = feedbackAt.map { reduce ? 0 : now - $0 }
-        if let feedbackAt, now - feedbackAt > 0.65 { self.feedbackAt = nil; pet.feedbackElapsed = nil }
+        if let feedbackAt, now - feedbackAt > (runtime.customPetClipDuration(clip: pet.feedbackClip) ?? 0.65) { self.feedbackAt = nil; pet.feedbackElapsed = nil }
         if var motion = movement {
-            let duration = motion.reduced ? 0.16 : 0.5
-            let t = min((now - motion.started) / duration, 1)
-            pet.clip = t < 0.35 ? (placement == .desktop ? "depart" : "edgeHide") : (motion.placement == .desktop ? "arrive" : "edgePeek")
-            pet.clipElapsed = reduce ? 0 : max(0, now - motion.started - (t < 0.35 ? 0 : duration * 0.35))
-            if t < 0.35 {
-                let phase = t / 0.35
+            // A placement transition interrupts feedback; its authored departure/arrival wins.
+            feedbackAt = nil; pet.feedbackElapsed = nil
+            let elapsed = now - motion.started
+            let playback = motion.reduced ? CompanionPlayback(departure: 0.056, arrival: 0.104) : motion.playback
+            let arriving = playback.isArriving(at: elapsed)
+            let phase = playback.progress(at: elapsed)
+            let t = min(elapsed / playback.duration, 1)
+            pet.clip = arriving ? (motion.placement == .desktop ? "arrive" : "edgePeek") : (placement == .desktop ? "depart" : "edgeHide")
+            pet.clipElapsed = reduce ? 0 : playback.clipElapsed(at: elapsed)
+            if !arriving {
                 window?.alphaValue = motion.initialAlpha * (1 - phase * phase)
                 pet.motionScale = motion.reduced || placement != .desktop ? 1 : motion.initialScale * (1 - 0.8 * phase * phase)
                 pet.edgeRetraction = motion.reduced || placement == .desktop ? 0 : phase * 38
@@ -154,7 +206,6 @@ import CharCore
                     window?.setFrame(motion.frame, display: true)
                     placement = motion.placement; layoutVisibleBubbles(); motion.arrived = true
                 }
-                let phase = (t - 0.35) / 0.65
                 window?.alphaValue = motion.reduced ? phase : min(1, phase * 3)
                 pet.motionScale = motion.reduced || placement != .desktop ? 1 : CGFloat(0.2 + 0.8 * CompanionGeometry.arrivalProgress(phase))
                 pet.edgeRetraction = motion.reduced || placement == .desktop ? 0 : CGFloat(38 * (1 - CompanionGeometry.arrivalProgress(phase)))
@@ -167,36 +218,60 @@ import CharCore
             let local = convert(window.convertPoint(fromScreen: NSEvent.mouseLocation), from: nil)
             window.ignoresMouseEvents = hitTest(local) == nil
         }
-        pet.needsDisplay = true
-        for button in buttons where !button.isHidden {
-            button.elapsed = reduce ? 0 : now - epoch
-            button.needsDisplay = true
+        let redraw = !reduce || lastReduced != reduce || wasAnimating
+        if redraw {
+            pet.needsDisplay = true
+            for button in buttons where !button.isHidden {
+                button.elapsed = reduce ? 0 : now - epoch
+                button.needsDisplay = true
+            }
+            if !overflow.isHidden { needsDisplay = true }
         }
-        if !overflow.isHidden { needsDisplay = true }
+        lastReduced = reduce
         // Keep the single lightweight clock for pointer passthrough; Reduce Motion freezes drawing.
     }
     override func draw(_ dirtyRect: NSRect) {
         guard !overflow.isHidden else { return }
-        let rect = overflow.frame.insetBy(dx: 1, dy: 1)
-        let tint = NSColor.systemBlue
-        NSGradient(starting: tint.withAlphaComponent(0.35), ending: tint.withAlphaComponent(0.88))?.draw(in: NSBezierPath(ovalIn: rect), angle: -70)
-        NSColor.white.withAlphaComponent(0.78).setFill()
-        NSBezierPath(ovalIn: NSRect(x: rect.minX + rect.width * 0.17, y: rect.minY + rect.height * 0.69,
-                                  width: rect.width * 0.27, height: rect.height * 0.12)).fill()
-        NSColor.white.withAlphaComponent(0.75).setStroke()
-        NSBezierPath(ovalIn: overflow.frame.insetBy(dx: 1, dy: 1)).stroke()
-        let count = max(0, runtime.snapshot.bubbles.count - 5)
-        let style = NSMutableParagraphStyle(); style.alignment = .center
-        "+\(count)".draw(in: NSRect(x: overflow.frame.midX - 11, y: overflow.frame.midY - 3, width: 22, height: 12),
-                         withAttributes: [.font: NSFont.systemFont(ofSize: 9, weight: .bold),
-                                          .foregroundColor: NSColor.labelColor, .paragraphStyle: style])
+        NSGraphicsContext.saveGraphicsState()
+        defer { NSGraphicsContext.restoreGraphicsState() }
+        BubbleDrawing.pose(in: overflow.frame, elapsed: ProcessInfo.processInfo.systemUptime - epoch)
+        if overflowArtwork == nil {
+            overflowArtwork = BubbleDrawing.raster(size: overflow.frame.size) {
+                let rect = NSRect(origin: .zero, size: overflow.frame.size)
+                BubbleDrawing.shell(in: rect, tint: .systemBlue)
+                let style = NSMutableParagraphStyle(); style.alignment = .center
+                "+\(overflowCount)".draw(in: NSRect(x: rect.midX - 11, y: rect.midY - 3, width: 22, height: 12),
+                                        withAttributes: [.font: NSFont.systemFont(ofSize: 9, weight: .bold),
+                                                         .foregroundColor: NSColor.labelColor, .paragraphStyle: style])
+            }
+        }
+        overflowArtwork?.draw(in: overflow.frame)
     }
 }
 
 @MainActor final class GraphicButton: NSButton {
+    // All vector and manifest-anchor geometry uses AppKit's bottom-left coordinates.
+    override var isFlipped: Bool { false }
     enum Kind { case pet, bubble(WorkEnd) }
     let kind: Kind
     unowned let runtime: CompanionRuntime
+    private struct ArtworkKey: Equatable {
+        let bubble: AttentionBubble?
+        let icon: ObjectIdentifier?
+        let miniature: Bool
+        let size: NSSize
+    }
+    private var artworkKey: ArtworkKey?
+    private var artwork: NSImage?
+    private var sourceIconBundle: String?
+    private var sourceIcon: NSImage?
+    private var symbolImages: [String: NSImage] = [:]
+    func refreshArtwork() {
+        guard case let .bubble(end) = kind else { return }
+        let next = ArtworkKey(bubble: runtime.snapshot.bubbles.first { $0.workEnd == end },
+                              icon: runtime.agentIcon(for: end).map(ObjectIdentifier.init), miniature: miniature, size: bounds.size)
+        if next != artworkKey { artworkKey = next; artwork = nil }
+    }
     var responding = false
     var miniature = false
     var elapsed: TimeInterval = 0
@@ -269,6 +344,14 @@ import CharCore
             if selector == #selector(endAction) || selector == #selector(homeAction) { item.isEnabled = runtime.snapshot.hold != nil }
             menu.addItem(item)
         }
+        if let surface = superview as? CompanionSurface {
+            menu.addItem(.separator())
+            for (title, selector) in [("下一组气泡", #selector(CompanionSurface.nextBubbles)),
+                                      ("上一组气泡", #selector(CompanionSurface.previousBubbles))] {
+                let item = NSMenuItem(title: title, action: selector, keyEquivalent: "")
+                item.target = surface; menu.addItem(item)
+            }
+        }
         menu.autoenablesItems = false
         NSMenu.popUpContextMenu(menu, with: event, for: self)
     }
@@ -296,7 +379,8 @@ import CharCore
         let feedback = reduce ? 0 : feedbackElapsed.map { exp(-8 * $0) * sin(22 * $0) } ?? 0
         NSGraphicsContext.saveGraphicsState()
         let transform = NSAffineTransform()
-        let custom = runtime.customPetImage(clip: feedbackElapsed == nil ? clip : feedbackClip, elapsed: feedbackElapsed ?? clipElapsed)
+        let imageClip = feedbackElapsed == nil ? clip : feedbackClip
+        let custom = runtime.customPetImage(clip: imageClip, elapsed: feedbackElapsed ?? clipElapsed)
         // The manifest anchor lands at the stable pet center and is the deformation pivot.
         let anchor = NSPoint(x: bounds.midX, y: bounds.midY)
         transform.translateX(by: anchor.x, yBy: anchor.y)
@@ -314,9 +398,18 @@ import CharCore
         transform.concat()
         if let image = custom {
             let size = runtime.customPetSize
+            NSGraphicsContext.saveGraphicsState()
+            if imageClip == "edgeHide" || imageClip == "edgePeek" {
+                let orientation = NSAffineTransform()
+                orientation.translateX(by: anchor.x, yBy: anchor.y)
+                orientation.rotate(byDegrees: CGFloat(CompanionPlayback.edgeRotation(placement: placement)))
+                orientation.translateX(by: -anchor.x, yBy: -anchor.y)
+                orientation.concat()
+            }
             image.draw(in: NSRect(x: anchor.x - runtime.customPetAnchor.x * size.width,
                                   y: anchor.y - runtime.customPetAnchor.y * size.height,
                                   width: size.width, height: size.height))
+            NSGraphicsContext.restoreGraphicsState()
         } else {
             let ink = NSColor(calibratedRed: 0.08, green: 0.09, blue: 0.16, alpha: 1)
             let cream = NSColor(calibratedRed: 1, green: 0.97, blue: 0.87, alpha: 1)
@@ -338,9 +431,12 @@ import CharCore
             NSGraphicsContext.saveGraphicsState()
             NSGraphicsContext.current?.cgContext.setAlpha(runtime.sourceBadgeOpacity)
             NSColor.white.setFill(); NSBezierPath(ovalIn: NSRect(x: 51, y: 8, width: 23, height: 23)).fill()
-            let icon = runtime.demo ? NSImage(systemSymbolName: "bubble.left.and.bubble.right.fill", accessibilityDescription: nil)
-                : NSWorkspace.shared.urlForApplication(withBundleIdentifier: anchor.bundleIdentifier).map { NSWorkspace.shared.icon(forFile: $0.path) }
-            icon?.draw(in: NSRect(x: 54, y: 11, width: 17, height: 17))
+            if sourceIconBundle != anchor.bundleIdentifier {
+                sourceIconBundle = anchor.bundleIdentifier
+                sourceIcon = runtime.demo ? NSImage(systemSymbolName: "bubble.left.and.bubble.right.fill", accessibilityDescription: nil)
+                    : NSWorkspace.shared.urlForApplication(withBundleIdentifier: anchor.bundleIdentifier).map { NSWorkspace.shared.icon(forFile: $0.path) }
+            }
+            sourceIcon?.draw(in: NSRect(x: 54, y: 11, width: 17, height: 17))
             if anchor.accuracy == .application { symbol("arrow.triangle.turn.up.right.diamond.fill", in: NSRect(x: 5, y: 8, width: 16, height: 16), color: .systemOrange) }
             NSGraphicsContext.restoreGraphicsState()
         }
@@ -351,26 +447,20 @@ import CharCore
         }
     }
     private func drawBubble(_ end: WorkEnd) {
-        guard let bubble = runtime.snapshot.bubbles.first(where: { $0.workEnd == end }) else { return }
+        if artwork == nil {
+            artwork = BubbleDrawing.raster(size: bounds.size) { drawBubbleContent(end) }
+        }
         NSGraphicsContext.saveGraphicsState()
         defer { NSGraphicsContext.restoreGraphicsState() }
         let phase = elapsed + Double(WorkEnd.allCases.firstIndex(of: end) ?? 0) * 0.7
-        let wobble = NSWorkspace.shared.accessibilityDisplayShouldReduceMotion ? 0 : sin(phase * 1.2) * sin(phase * 0.37)
-        let pose = NSAffineTransform()
-        pose.translateX(by: bounds.midX, yBy: bounds.midY)
-        pose.rotate(byDegrees: CGFloat(wobble * 2.5))
-        pose.scaleX(by: CGFloat(1 + wobble * 0.035), yBy: CGFloat(1 - wobble * 0.035))
-        pose.translateX(by: -bounds.midX, yBy: -bounds.midY)
-        pose.concat()
-        let rect = bounds.insetBy(dx: 2, dy: 2)
+        BubbleDrawing.pose(in: bounds, elapsed: phase)
+        artwork?.draw(in: bounds)
+    }
+    private func drawBubbleContent(_ end: WorkEnd) {
+        guard let bubble = runtime.snapshot.bubbles.first(where: { $0.workEnd == end }) else { return }
         let hue = CGFloat(WorkEnd.allCases.firstIndex(of: end) ?? 0) / CGFloat(WorkEnd.allCases.count)
         let tint = NSColor(calibratedHue: hue, saturation: 0.55, brightness: 0.9, alpha: 1)
-        let path = NSBezierPath(ovalIn: rect)
-        NSGradient(starting: tint.withAlphaComponent(0.35), ending: tint.withAlphaComponent(0.88))?.draw(in: path, angle: -70)
-        tint.setStroke(); path.lineWidth = 1.5; path.stroke()
-        NSColor.white.withAlphaComponent(0.78).setFill()
-        NSBezierPath(ovalIn: NSRect(x: bounds.width * 0.17, y: bounds.height * 0.69,
-                                  width: bounds.width * 0.27, height: bounds.height * 0.12)).fill()
+        BubbleDrawing.shell(in: bounds, tint: tint)
         let iconRect = bounds.insetBy(dx: miniature ? 5 : 12, dy: miniature ? 5 : 12)
         if let icon = runtime.agentIcon(for: end) { icon.draw(in: iconRect) }
         else { symbol(end.symbol, in: iconRect, color: .white) }
@@ -385,11 +475,15 @@ import CharCore
         if bubble.runningCount > 0 { number(bubble.runningCount, rect: NSRect(x: 35, y: 17, width: 17, height: 12), color: .black, size: 9) }
     }
     private func symbol(_ name: String, in rect: NSRect, color: NSColor) {
-        guard let image = NSImage(systemSymbolName: name, accessibilityDescription: nil)?.withSymbolConfiguration(.init(pointSize: rect.height, weight: .semibold)) else { return }
-        let tinted = NSImage(size: image.size)
-        tinted.lockFocus(); image.draw(at: .zero, from: .zero, operation: .sourceOver, fraction: 1)
-        color.set(); NSRect(origin: .zero, size: image.size).fill(using: .sourceAtop); tinted.unlockFocus()
-        tinted.draw(in: rect)
+        let key = "\(name)/\(rect.height)/\(color.description)"
+        if symbolImages[key] == nil {
+            guard let image = NSImage(systemSymbolName: name, accessibilityDescription: nil)?.withSymbolConfiguration(.init(pointSize: rect.height, weight: .semibold)) else { return }
+            let tinted = NSImage(size: image.size)
+            tinted.lockFocus(); image.draw(at: .zero, from: .zero, operation: .sourceOver, fraction: 1)
+            color.set(); NSRect(origin: .zero, size: image.size).fill(using: .sourceAtop); tinted.unlockFocus()
+            symbolImages[key] = tinted
+        }
+        symbolImages[key]?.draw(in: rect)
     }
     private func number(_ value: Int, rect: NSRect, color: NSColor, size: CGFloat) {
         let style = NSMutableParagraphStyle(); style.alignment = .center

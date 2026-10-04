@@ -55,6 +55,10 @@ extension CompanionRuntime {
             return true
         }
     }
+    func customPetClipDuration(clip: String) -> TimeInterval? {
+        guard let animation = skinStore?.selectedSkin.clips[clip] else { return nil }
+        return Double(animation.frames.count) / animation.fps
+    }
     func customPetImage(clip: String, elapsed: TimeInterval) -> NSImage? {
         guard let clip = PetSkinClip(rawValue: clip), let skinStore else { return nil }
         return skinStore.image(for: skinStore.selectedSkin.id, clip: clip, elapsed: elapsed)
@@ -78,8 +82,9 @@ extension CompanionRuntime {
                !next.contains(where: { $0.enabled && $0.plugin.kind == .source && $0.plugin.bundleIdentifier == anchor.bundleIdentifier }) {
                 router.endHold()
             }
-            let enabled = enabledWorkEnds
-            Task { await worker?.configure(enabled: enabled) }
+            observationGeneration.configure(enabled: enabledWorkEnds, at: Date())
+            let configuration = observationGeneration
+            Task { await worker?.configure(configuration) }
             publish()
         } catch { setupMessage = "插件未重新加载：\(error)" }
     }

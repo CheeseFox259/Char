@@ -1,5 +1,6 @@
 import AppKit
 import CharPlatform
+import CharCore
 import Foundation
 
 private enum PetSkinCheckFailure: Error { case failed(String) }
@@ -31,6 +32,26 @@ private func skinRequire(_ condition: @autoclosure () -> Bool, _ message: String
     try skinRequire(first != next, "sample is not animated")
     let duration = Double(manifest.clips["idle"]!.frames.count) / manifest.clips["idle"]!.fps
     try skinRequire(first == store.image(for: manifest.id, clip: .idle, elapsed: duration)!.tiffRepresentation, "idle loop does not wrap")
+    // A valid slow package exercises the same authored durations used by the UI phases.
+    let slow = temp.appendingPathComponent("slow.charpet")
+    try fm.copyItem(at: sample, to: slow)
+    let manifestURL = slow.appendingPathComponent("manifest.json")
+    var slowJSON = try JSONSerialization.jsonObject(with: Data(contentsOf: manifestURL)) as! [String: Any]
+    slowJSON["id"] = "char.slow-check"
+    var slowClips = slowJSON["clips"] as! [String: [String: Any]]
+    for key in slowClips.keys { slowClips[key]!["fps"] = 1 }
+    slowJSON["clips"] = slowClips
+    try JSONSerialization.data(withJSONObject: slowJSON).write(to: manifestURL)
+    let slowStore = try PetSkinStore(directory: temp.appendingPathComponent("slow-store"))
+    let slowManifest = try slowStore.importPackage(at: slow)
+    let departDuration = Double(slowManifest.clips["depart"]!.frames.count)
+    let arriveDuration = Double(slowManifest.clips["arrive"]!.frames.count)
+    let playback = CompanionPlayback(departure: departDuration, arrival: arriveDuration)
+    let finalImage = slowStore.image(for: slowManifest.id, clip: .arrive, elapsed: playback.clipElapsed(at: playback.duration))!.tiffRepresentation
+    let finalFile = NSImage(contentsOf: slow.appendingPathComponent(slowManifest.clips["arrive"]!.frames.last!))!.tiffRepresentation
+    try skinRequire(finalImage == finalFile, "full slow arrival must reach authored final frame")
+    try skinRequire(slowStore.image(for: slowManifest.id, clip: .arrive, elapsed: 0)!.tiffRepresentation != finalImage,
+                    "slow arrival fixture must distinguish first and final poses")
     let reloaded = try PetSkinStore(directory: temp.appendingPathComponent("store"))
     try skinRequire(reloaded.selectedSkin.id == manifest.id, "selection did not survive restart")
     do { try store.importPackage(at: sample); throw PetSkinCheckFailure.failed("duplicate accepted") }

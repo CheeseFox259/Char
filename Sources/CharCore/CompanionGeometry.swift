@@ -38,12 +38,15 @@ public enum CompanionGeometry {
         return (0..<number).map { index in
             let fraction = number == 1 ? 0.5 : Double(index) / Double(number - 1)
             let angle: Double
+            // Trim the semicircle tips inward: the pet panel extends 30pt off-screen.
+            // 140 degrees preserves 52pt hit areas on the physical screen at all edges.
+            let span = 140.0 * .pi / 180
             switch placement {
             case .desktop: angle = .pi / 2 + Double(index) * 2 * .pi / Double(number)
-            case .left: angle = -.pi / 2 + fraction * .pi
-            case .right: angle = .pi / 2 + fraction * .pi
-            case .top: angle = .pi + fraction * .pi
-            case .bottom: angle = fraction * .pi
+            case .left: angle = -span / 2 + fraction * span
+            case .right: angle = .pi - span / 2 + fraction * span
+            case .top: angle = 3 * .pi / 2 - span / 2 + fraction * span
+            case .bottom: angle = .pi / 2 - span / 2 + fraction * span
             }
             let radius = placement == .desktop ? 112.0 : 128.0
             let point = CGPoint(x: center.x + cos(angle) * radius, y: center.y + sin(angle) * radius)
@@ -62,5 +65,26 @@ public enum CompanionGeometry {
         let t = min(max(progress, 0), 1)
         if t == 1 { return 1 }
         return 1 - exp(-7 * t) * cos(10 * t)
+    }
+}
+
+/// A complete authored clip plays during each phase; only native navigation is immediate.
+public struct CompanionPlayback: Sendable {
+    public let departure: TimeInterval
+    public let arrival: TimeInterval
+    public init(departure: TimeInterval?, arrival: TimeInterval?) {
+        self.departure = departure ?? 0.175; self.arrival = arrival ?? 0.325
+    }
+    public var duration: TimeInterval { departure + arrival }
+    public func isArriving(at elapsed: TimeInterval) -> Bool { elapsed >= departure }
+    public func clipElapsed(at elapsed: TimeInterval) -> TimeInterval {
+        isArriving(at: elapsed) ? min(arrival, max(0, elapsed - departure)) : max(0, elapsed)
+    }
+    public func progress(at elapsed: TimeInterval) -> Double {
+        isArriving(at: elapsed) ? min(1, max(0, (elapsed - departure) / arrival)) : min(1, max(0, elapsed / departure))
+    }
+    /// Package edge clips are authored toward bottom; upright clips retain zero rotation.
+    public static func edgeRotation(placement: PetPlacement) -> Double {
+        switch placement { case .left: return -90; case .right: return 90; case .top: return 180; case .bottom, .desktop: return 0 }
     }
 }

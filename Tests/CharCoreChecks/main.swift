@@ -52,3 +52,7 @@ try plugins.testAssetsAndSymlinks()
 print("CharCore: 3 integration plugin groups passed")
 
 try CompanionGeometryChecks().run()
+print("CharCore: companion physical-edge and playback checks passed")
+
+try ObservationGenerationChecks().run()
+print("CharCore: observation generation checks passed")
