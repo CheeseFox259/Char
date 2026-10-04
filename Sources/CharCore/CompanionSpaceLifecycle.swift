@@ -4,7 +4,7 @@ public struct CompanionSpaceLifecycle: Sendable {
     public private(set) var state: State = .visible
     public init() {}
     @discardableResult public mutating func prepareHiddenAppearance() -> Bool {
-        guard state == .visible else { return false }
+        guard state != .prepared else { return false }
         state = .prepared
         return true
     }

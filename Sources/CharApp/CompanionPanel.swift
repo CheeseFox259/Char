@@ -167,13 +167,14 @@ import CharCore
     }
     private func occlusionChanged() {
         traceSpace("occlusion")
-        guard let window, movement == nil, spaceAt == nil, !pendingSpaceFeedback else { return }
+        guard let window, movement == nil else { return }
         if window.occlusionState.contains(.visible) { beginSpaceArrival() }
         else { prepareSpaceAppearance() }
     }
     /// Called by an actual occlusion loss; exposed internally for the fixture lifecycle check.
     func prepareSpaceAppearance() {
         guard spaceLifecycle.prepareHiddenAppearance() else { return }
+        spaceAt = nil; pendingSpaceFeedback = false; visualOpacity = 1
         pet.spaceTuck = reducedMotion ? 0 : 1
         if placement != .desktop { pet.edgeRetraction = reducedMotion ? 0 : min(24, pet.frame.width * 0.5) }
         applySharedTransform()
@@ -183,6 +184,7 @@ import CharCore
     private func beginSpaceArrival() {
         guard window?.occlusionState.contains(.visible) == true,
               spaceLifecycle.beginPreparedArrival() else { return }
+        pendingSpaceFeedback = false
         spaceAt = ProcessInfo.processInfo.systemUptime
         pet.spaceTuck = reducedMotion ? 0 : 1
         visualOpacity = reducedMotion ? 0.75 : 0.45
