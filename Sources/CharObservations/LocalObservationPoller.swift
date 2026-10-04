@@ -146,7 +146,7 @@ public final class LocalObservationPoller {
         for (root, source) in [(claudeProjectsRoot, Source.claude), (codexSessionsRoot, Source.codex)] {
             if source == .claude && !enabledWorkEnds.contains(.claudeCode) { continue }
             if source == .codex && enabledWorkEnds.isDisjoint(with: [.codexCLI, .codexDesktop]) { continue }
-            if let enumerator = FileManager.default.enumerator(at: root, includingPropertiesForKeys: [.isRegularFileKey], options: [.skipsHiddenFiles]) {
+            if let enumerator = FileManager.default.enumerator(at: root, includingPropertiesForKeys: nil, options: [.skipsHiddenFiles]) {
                 for case let url as URL in enumerator where url.pathExtension == "jsonl" { result.append((url, source)) }
             }
         }

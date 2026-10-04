@@ -1,4 +1,5 @@
 import Foundation
+import Darwin
 import CharCore
 
 /// SessionStart identifies the owning native client; only the main Agent's durable wire is read.
@@ -159,19 +160,21 @@ public final class KimiObservationPoller {
     }
 
     private func baseline(_ file: URL) {
-        let attributes = try? FileManager.default.attributesOfItem(atPath: file.path)
-        cursors[file.path] = Cursor(offset: (attributes?[.size] as? NSNumber)?.uint64Value ?? 0,
-                                   inode: attributes?[.systemFileNumber] as? NSNumber)
+        let metadata = fileMetadata(file)
+        cursors[file.path] = Cursor(offset: metadata?.size ?? 0, inode: metadata?.inode)
     }
 
     private func read(_ file: URL) -> [Data] {
-        guard let attributes = try? FileManager.default.attributesOfItem(atPath: file.path),
-              let size = (attributes[.size] as? NSNumber)?.uint64Value,
-              let handle = try? FileHandle(forReadingFrom: file) else { return [] }
-        defer { try? handle.close() }
-        let inode = attributes[.systemFileNumber] as? NSNumber
+        guard let metadata = fileMetadata(file) else { return [] }
+        let size = metadata.size, inode = metadata.inode
         var cursor = cursors[file.path] ?? Cursor(offset: 0, inode: inode)
         if size < cursor.offset || cursor.inode != inode { cursor = Cursor(offset: 0, inode: inode) }
+        // Most polls see no append. Do not open/seek/read unchanged journals.
+        guard size > cursor.offset, let handle = try? FileHandle(forReadingFrom: file) else {
+            cursors[file.path] = cursor
+            return []
+        }
+        defer { try? handle.close() }
         do {
             try handle.seek(toOffset: cursor.offset)
             let data = try handle.readToEnd() ?? Data()
@@ -181,5 +184,15 @@ public final class KimiObservationPoller {
             cursors[file.path] = cursor
             return complete.split(separator: UInt8(10)).map { Data($0) }
         } catch { return [] }
+    }
+
+    private func fileMetadata(_ file: URL) -> (size: UInt64, inode: NSNumber)? {
+        var value = stat()
+        let result = file.withUnsafeFileSystemRepresentation { path -> Int32 in
+            guard let path else { return -1 }
+            return stat(path, &value)
+        }
+        guard result == 0, value.st_size >= 0 else { return nil }
+        return (UInt64(value.st_size), NSNumber(value: value.st_ino))
     }
 }
