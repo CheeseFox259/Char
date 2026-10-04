@@ -618,7 +618,12 @@ actor ObservationWorker {
                 guard pet.artworkPixelData != withBadge else { fail("static custom frame missed source badge fade") }
                 sourceBadgeAnchor = nil; sourceBadgeOpacity = 0; pet.refreshPetArtwork()
                 guard pet.artworkPixelData == withoutBadge else { fail("static custom frame retained removed source badge") }
-                router.completeReturn(outcome: .unavailable); publish(); pet.refreshPetArtwork()
+                // A failed return requires an active Hold. This fixture has already
+                // ended it, so exercise a failed visit to create navigation feedback.
+                guard let attention = router.nextVisit(for: .claudeCode) else { fail("static frame navigation fixture missing") }
+                router.completeVisit(key: attention.key, outcome: .unavailable, sourceAnchor: nil, at: Date())
+                publish(); pet.refreshPetArtwork()
+                guard snapshot.navigationFeedback == .unavailable else { fail("static frame navigation fixture did not create feedback") }
                 guard pet.artworkPixelData != withoutBadge else { fail("static custom frame missed navigation feedback") }
                 router.clearNavigationFeedback(); publish(); pet.refreshPetArtwork()
                 guard pet.artworkPixelData == withoutBadge else { fail("static custom frame retained navigation feedback") }
