@@ -66,6 +66,10 @@ actor ObservationWorker {
     @Published var selectedSkinID = "char.default"
     @Published var petPlacement: PetPlacement = .desktop
     @Published var petSize: Double = 48
+    @Published var bubbleDistance: Double = 20
+    var bubbleCapacity: Int {
+        CompanionGeometry.capacity(placement: petPlacement, petSize: petSize, bubbleDistance: bubbleDistance)
+    }
     private var companionPreferences = CompanionPreferences()
     private let companionPreferencesURL: URL
     @Published var settings: CharSettings
@@ -130,7 +134,7 @@ actor ObservationWorker {
         refreshSkins()
         if let data = try? Data(contentsOf: companionPreferencesURL),
            let saved = try? JSONDecoder().decode(CompanionPreferences.self, from: data) {
-            companionPreferences = saved; petPlacement = saved.placement; petSize = saved.petSize
+            companionPreferences = saved; petPlacement = saved.placement; petSize = saved.petSize; bubbleDistance = saved.bubbleDistance
         }
 
     }
@@ -408,6 +412,12 @@ actor ObservationWorker {
         saveCompanionPreferences()
     }
     func showPet() { panel.orderFrontRegardless() }
+    func setBubbleDistance(_ distance: Double) {
+        companionPreferences.setBubbleDistance(distance)
+        bubbleDistance = companionPreferences.bubbleDistance
+        panel.surface.refresh()
+        saveCompanionPreferences()
+    }
     private func installDesktopTracking() {
         let center = NSWorkspace.shared.notificationCenter
         center.addObserver(self, selector: #selector(workspaceActivated), name: NSWorkspace.didActivateApplicationNotification, object: nil)
@@ -421,26 +431,7 @@ actor ObservationWorker {
     @objc private func workspaceActivated() { trackFocusedDisplay() }
     @objc private func spaceChanged() {
         trackFocusedDisplay()
-        if CompanionSpaceProbe.enabled { replacePanelForSpaceProbe() }
-        else { panel.surface.spaceFeedback() }
-    }
-    @discardableResult private func replacePanelForSpaceProbe() -> CompanionPanel {
-        let old = panel!
-        let frame = old.surface.replacementFrame
-        let placement = old.surface.replacementPlacement
-        let offset = old.surface.orbitOffset
-        let fresh = CompanionPanel(runtime: self)
-        fresh.setFrame(frame, display: false)
-        fresh.surface.prepareFreshSpaceProbe(placement: placement, orbitOffset: offset)
-        CompanionSpaceProbe.record("prepared-before-order-front", panel: fresh)
-        panel = fresh
-        old.surface.dispose()
-        old.orderOut(nil)
-        fresh.orderFrontRegardless()
-        CompanionSpaceProbe.record("after-order-front", panel: fresh)
-        fresh.surface.spaceFeedback()
-        old.close()
-        return old
+        panel.surface.spaceFeedback()
     }
     private func trackFocusedDisplay() {
         // With one screen there can be no migration, so avoid repeated AX/CG window queries.
@@ -514,30 +505,27 @@ actor ObservationWorker {
         }
         guard snapshot.bubbles.count == WorkEnd.allCases.count, snapshot.bubbles.allSatisfy({ $0.count == 2 }) else { fail("initial bubbles") }
         guard snapshot.bubbles.first(where: { $0.workEnd == .codexCLI })?.head?.isPast == true else { fail("visible past head marker") }
-        guard let fixedSlot = panel.surface.buttons.first(where: { !$0.isHidden && !$0.miniature }),
-              case let .bubble(oldEnd) = fixedSlot.kind else { fail("fixed slot fixture") }
-        let fixedFrame = fixedSlot.frame
-        guard panel.surface.cycleBubbles(by: 1), fixedSlot.frame == fixedFrame,
-              case let .bubble(newEnd) = fixedSlot.kind, newEnd != oldEnd,
-              fixedSlot.accessibilityLabel()?.hasPrefix(newEnd.title) == true else { fail("accepted orbit step did not rebind fixed hit view immediately") }
-        fixedSlot.performClick(nil)
+        setBubbleDistance(8)
+        guard panel.surface.capacity < snapshot.bubbles.count,
+              let bubble = panel.surface.buttons.first(where: { !$0.isHidden && !$0.miniature }),
+              case let .bubble(end) = bubble.kind else { fail("folded orbit fixture") }
+        let oldFrame = bubble.frame
+        guard panel.surface.cycleBubbles(by: 1), bubble.frame != oldFrame,
+              bubble.renderedWorkEnd == end, bubble.hasOwnedImage,
+              bubble.graphicLayer.animation(forKey: "orbit") != nil,
+              bubble.accessibilityLabel()?.hasPrefix(end.title) == true else { fail("accepted orbit step did not animate owned artwork") }
+        try? await Task.sleep(nanoseconds: 240_000_000)
+        guard abs(bubble.presentationFrame.width - bubble.frame.width) < 0.5,
+              abs(bubble.presentationFrame.midX - bubble.frame.midX) < 0.5 else { fail("orbit artwork failed to arrive") }
+        bubble.performClick(nil)
         try? await Task.sleep(nanoseconds: 100_000_000)
-        guard router.nextVisit(for: newEnd)?.navigationOutcome == .fallback else { fail("rebound slot clicked previous work end") }
+        guard router.nextVisit(for: end)?.navigationOutcome == .fallback else { fail("owned artwork clicked incorrect work end") }
         _ = panel.surface.cycleBubbles(by: -1)
-        if CompanionSpaceProbe.enabled {
-            let old = panel!
-            let expectedFrame = old.frame
-            let expectedHold = snapshot.hold
-            let expectedOffset = old.surface.orbitOffset
-            let disposed = replacePanelForSpaceProbe()
-            guard disposed === old, panel !== old, panel.frame == expectedFrame,
-                  panel.surface.orbitOffset == expectedOffset, snapshot.hold == expectedHold,
-                  !disposed.surface.isClockRunning, !disposed.isVisible,
-                  panel.surface.isClockRunning,
-                  !panel.collectionBehavior.contains(.canJoinAllSpaces) else { fail("fresh Space panel preserved state/disposal") }
-            guard panel.surface.buttons.contains(where: { !$0.isHidden && $0.accessibilityLabel()?.hasPrefix("Claude Code") == true }) else { fail("fresh Space panel lost bound targets") }
-            try? await Task.sleep(nanoseconds: 800_000_000)
-        }
+        setBubbleDistance(72)
+        guard !panel.surface.canCycle, !panel.surface.cycleBubbles(by: 1),
+              let savedOrbit = try? JSONDecoder().decode(CompanionPreferences.self, from: Data(contentsOf: companionPreferencesURL)),
+              savedOrbit.bubbleDistance == 72 else { fail("distance capacity/persistence or unfolded scroll gate") }
+        setBubbleDistance(20)
         visit(.claudeCode)
         try? await Task.sleep(nanoseconds: 100_000_000)
         guard snapshot.hold?.anchor.accuracy == .application,
@@ -565,7 +553,8 @@ actor ObservationWorker {
         visit(.deepseekDesktop)
         try? await Task.sleep(nanoseconds: 100_000_000)
         deletePlugin("builtin.source.wechat")
-        guard snapshot.hold == nil, homeShortcut.status == .inactive else { fail("source deletion retained Hold") }
+        guard snapshot.hold?.anchor.id == "fixture-wechat", homeShortcut.status == .registered else { fail("generic origin was invalidated by plugin deletion") }
+        endHold()
         restorePlugins()
         guard pluginEntries.contains(where: { $0.id == "builtin.source.wechat" }) else { fail("source restore") }
         setPetSize(64)

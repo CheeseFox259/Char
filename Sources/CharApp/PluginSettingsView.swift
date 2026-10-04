@@ -67,6 +67,15 @@ struct AppearanceSettingsView: View {
                 Text("\(Int(runtime.petSize)) pt").monospacedDigit().frame(width: 46)
                 Button("重置") { runtime.setPetSize(48) }
             }
+            HStack {
+                Text("气泡距离")
+                Slider(value: Binding(get: { runtime.bubbleDistance }, set: { runtime.setBubbleDistance($0) }), in: 8...72, step: 2)
+                    .accessibilityLabel("气泡与桌宠的距离")
+                Text("\(Int(runtime.bubbleDistance)) pt").monospacedDigit().frame(width: 46)
+                Button("重置") { runtime.setBubbleDistance(20) }
+            }
+            Text("当前轨道可容纳 \(runtime.bubbleCapacity) 个气泡，超过后自动折叠。")
+                .font(.caption).foregroundStyle(.secondary)
             Picker("桌宠形象", selection: Binding(get: { runtime.selectedSkinID }, set: { runtime.selectSkin($0) })) {
                 ForEach(runtime.skins, id: \.id) { skin in Text(skin.name).tag(skin.id) }
             }
