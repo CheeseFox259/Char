@@ -36,7 +36,7 @@ public enum AttentionPresentationGroup: String, CaseIterable, Sendable {
         }
     }
     public var title: String {
-        switch self { case .interaction: return "等待交互"; case .issue: return "发生问题"; case .ended: return "轮次结束" }
+        switch self { case .interaction: return "需关注"; case .issue: return "发生问题"; case .ended: return "轮次结束" }
     }
     public var symbol: String {
         switch self { case .interaction: return "ellipsis.bubble.fill"; case .issue: return "exclamationmark"; case .ended: return "checkmark" }

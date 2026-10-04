@@ -49,4 +49,4 @@ Artifacts: `/tmp/char-polish-performance-baseline.md`, `docs/companion-performan
 
 ## Coverage decisions
 
-The menu bar uses three presentation groups: needs interaction (question/approval/unclassified), issue (failure/rate limit/context exhausted), and turn ended. Precise native categories and recovered/unviewed semantics remain available through accessible descriptions. The existing #15 whole-screen request remains deferred; this task implements the user's new local pet feedback alternative.
+The menu bar uses three presentation groups: attention (question/approval/unclassified; neutral label “需关注” so an unclassified stop does not imply confirmed interaction), issue (failure/rate limit/context exhausted), and turn ended. Precise native categories and recovered/unviewed semantics remain available through accessible descriptions. The existing #15 whole-screen request remains deferred; this task implements the user's new local pet feedback alternative.

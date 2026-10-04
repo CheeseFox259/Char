@@ -70,7 +70,7 @@ struct SettingsView: View {
                     Label("CLI 工作端", systemImage: "terminal.fill")
                     Label("已恢复：状态胶囊变淡", systemImage: "circle.lefthalf.filled")
                 }.font(.caption)
-                Text("气泡只显示一个状态胶囊和未查看数量：等待交互、发生问题、轮次结束。淡色胶囊表示该停顿已恢复；精确原因和运行数量可通过无障碍说明查看。CLI 带小终端标识。点击气泡访问，右键忽略首项；状态栏提供设置与回城入口。")
+                Text("气泡只显示一个状态胶囊和未查看数量：需关注、发生问题、轮次结束。淡色胶囊表示该停顿已恢复；精确原因和运行数量可通过无障碍说明查看。CLI 带小终端标识。点击气泡访问，右键忽略首项；状态栏提供设置与回城入口。")
                     .font(.caption).foregroundStyle(.secondary)
             }
             if !runtime.setupMessage.isEmpty {
