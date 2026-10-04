@@ -65,7 +65,7 @@ public enum CompanionGeometry {
     public static func spaceArrivalProgress(_ progress: Double) -> Double {
         let t = min(max(progress, 0), 1)
         if t == 1 { return 1 }
-        return 1 - exp(-6 * t) * cos(5 * t)
+        return 1 - exp(-6 * t) * (cos(5 * t) + 1.2 * sin(5 * t))
     }
     /// Spring response used only for drawing; event bounds never deform.
     public static func arrivalProgress(_ progress: Double) -> Double {

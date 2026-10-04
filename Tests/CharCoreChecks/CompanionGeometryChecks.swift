@@ -85,6 +85,7 @@ struct CompanionGeometryChecks {
         try checkEqual(CompanionGeometry.normalizedOffset(-1, count: 7), 6)
         try checkEqual(CompanionGeometry.spaceArrivalProgress(0), 0)
         try checkEqual(CompanionGeometry.spaceArrivalProgress(1), 1)
+        try check(CompanionGeometry.spaceArrivalProgress(0.01) < 0.01, "Space response starts gently")
         try check(CompanionGeometry.spaceArrivalProgress(0.15) < CompanionGeometry.arrivalProgress(0.15))
         try checkEqual(CompanionGeometry.arrivalProgress(0), 0)
         try checkEqual(CompanionGeometry.arrivalProgress(1), 1)
