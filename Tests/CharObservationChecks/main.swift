@@ -193,3 +193,5 @@ try testExpandedSharedStreamPipeline()
 try testNewAgentHooksAndKimiWire()
 try testKimiWireWaitsForLateClientBinding()
 print("CharObservations: 11 contract checks passed")
+
+try pluginObservationChecks()

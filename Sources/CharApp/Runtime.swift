@@ -23,6 +23,7 @@ actor ObservationWorker {
     }
     func start() { poller.start() }
     func poll() -> [ObservationEvent] { poller.poll() }
+    func configure(enabled: Set<WorkEnd>) { poller.setEnabledWorkEnds(enabled) }
 }
 
 @MainActor final class AppDelegate: NSObject, NSApplicationDelegate {
@@ -39,9 +40,19 @@ actor ObservationWorker {
     let smoke: Bool
     let store: CharSettingsStore
     let router: AttentionRouter
-    private let platform: MacOSPlatform?
+    let platform: MacOSPlatform?
     private let login: LoginItemController?
-    private let worker: ObservationWorker?
+    let worker: ObservationWorker?
+    let pluginStore: IntegrationPluginStore?
+    let skinStore: PetSkinStore?
+    var agentIconCache: [WorkEnd: NSImage] = [:]
+    var pluginRegistryRevision: Date?
+    @Published var pluginEntries: [IntegrationPluginEntry] = []
+    @Published var skins: [PetSkinManifest] = []
+    @Published var selectedSkinID = "char.default"
+    @Published var petPlacement: PetPlacement = .desktop
+    private var companionPreferences = CompanionPreferences()
+    private let companionPreferencesURL: URL
     @Published var settings: CharSettings
     @Published var snapshot: AttentionSnapshot
     @Published var setupMessage = ""
@@ -59,11 +70,9 @@ actor ObservationWorker {
     private(set) var sourceBadgeOpacity: CGFloat = 0
     private var badgeFadeTimer: Timer?
     private var badgeFadeGeneration = 0
-    private var panel: CompanionPanel!
+    var panel: CompanionPanel!
     private var settingsWindow: NSWindow?
     private var currentDisplay: String?
-    private var positions: [String: [Double]] = [:]
-    private let positionURL: URL
     private var feedbackGeneration = 0
     private var responseGeneration = 0
     private var demoSoundCount = 0
@@ -74,7 +83,9 @@ actor ObservationWorker {
         let directory = demo ? FileManager.default.temporaryDirectory.appendingPathComponent("Char-fixture-\(UUID().uuidString)")
             : CharSettingsStore.defaultFileURL.deletingLastPathComponent()
         store = CharSettingsStore(fileURL: directory.appendingPathComponent("settings.json"))
-        positionURL = directory.appendingPathComponent("positions.json")
+        companionPreferencesURL = directory.appendingPathComponent("companion.json")
+        pluginStore = try? IntegrationPluginStore(directory: directory.appendingPathComponent("integrations"))
+        skinStore = try? PetSkinStore(directory: directory.appendingPathComponent("skins"))
         let loaded: CharSettings
         let loadMessage: String
         do { loaded = try store.load(); loadMessage = "" }
@@ -96,8 +107,15 @@ actor ObservationWorker {
             homeShortcut = HomeShortcutController { [weak self] in self?.returnHome() }
         }
         setupMessage = loadMessage
-        if !demo, let data = try? Data(contentsOf: positionURL),
-           let saved = try? JSONDecoder().decode([String: [Double]].self, from: data) { positions = saved }
+        if let pluginStore { pluginEntries = pluginStore.entries }
+        else { setupMessage = "插件目录无法加载；请检查本地配置。" }
+        platform?.configure(plugins: pluginEntries.filter(\.enabled).map(\.plugin))
+        refreshSkins()
+        if let data = try? Data(contentsOf: companionPreferencesURL),
+           let saved = try? JSONDecoder().decode(CompanionPreferences.self, from: data) {
+            companionPreferences = saved; petPlacement = saved.placement
+        }
+
     }
 
     func start() {
@@ -113,6 +131,7 @@ actor ObservationWorker {
             }
         }
         Task {
+            await worker?.configure(enabled: enabledWorkEnds)
             await worker?.start()
             timer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { [weak self] _ in
                 Task { @MainActor in await self?.tick() }
@@ -147,11 +166,12 @@ actor ObservationWorker {
     }
 
     private func tick() async {
+        reloadPlugins()
         guard !polling, !busy else { return }
         polling = true
         defer { polling = false }
         let events = await worker?.poll() ?? []
-        router.ingest(events) // A complete sleep/wake batch precedes any focus or time advancement.
+        router.ingest(events.filter { enabledWorkEnds.contains($0.key.workEnd) }) // A complete sleep/wake batch precedes any focus or time advancement.
         if let platform {
             if let anchor = router.snapshot.hold?.anchor, platform.isAnchorValid(anchor) == false { router.invalidateAnchor(id: anchor.id) }
             router.updateFocus(platform.focusContext(for: router.snapshot.hold?.anchor), at: Date())
@@ -198,6 +218,7 @@ actor ObservationWorker {
         guard let anchor = router.snapshot.hold?.anchor else {
             responseGeneration += 1
             let generation = responseGeneration
+            panel.surface.pressFeedback()
             panel.surface.pet.responding = true
             panel.surface.pet.needsDisplay = true
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.18) { [weak self] in
@@ -207,6 +228,7 @@ actor ObservationWorker {
             return
         }
         busy = true
+        panel.surface.returnFeedback()
         Task {
             let outcome: NavigationOutcome
             if let platform { outcome = await platform.returnToSource(anchor) }
@@ -295,7 +317,7 @@ actor ObservationWorker {
     private func fixtureAnchor() -> ReturnAnchor {
         ReturnAnchor(id: "fixture-wechat", bundleIdentifier: MacOSPlatform.wechatBundleID, token: "fixture-only", accuracy: .application)
     }
-    private func publish() {
+    func publish() {
         let next = router.snapshot
         if let old = retainedAnchor, old.id != next.hold?.anchor.id { platform?.release(old) }
         if let anchor = next.hold?.anchor {
@@ -346,34 +368,67 @@ actor ObservationWorker {
         }
     }
 
+    func setPlacement(_ placement: PetPlacement) {
+        petPlacement = placement
+        companionPreferences.placement = placement
+        if let screen = panel.screen ?? NSScreen.main {
+            position(on: screen, center: petCenter(), placement: placement, animated: true)
+        }
+        saveCompanionPreferences()
+    }
+    private func petCenter() -> NSPoint {
+        let pet = panel.surface.pet.frame
+        return NSPoint(x: panel.frame.minX + pet.midX, y: panel.frame.minY + pet.midY)
+    }
     func saveDraggedPosition() {
-        guard let currentDisplay else { return }
-        positions[currentDisplay] = [panel.frame.origin.x, panel.frame.origin.y]
-        do {
-            try FileManager.default.createDirectory(at: positionURL.deletingLastPathComponent(), withIntermediateDirectories: true)
-            try JSONEncoder().encode(positions).write(to: positionURL, options: .atomic)
-        } catch { setupMessage = error.localizedDescription }
+        let center = petCenter()
+        guard let screen = NSScreen.screens.first(where: { $0.frame.contains(center) }) ?? panel.screen else { return }
+        let area = screen.visibleFrame
+        let distances: [(PetPlacement, CGFloat)] = [(.left, abs(center.x-area.minX)), (.right, abs(center.x-area.maxX)),
+            (.bottom, abs(center.y-area.minY)), (.top, abs(center.y-area.maxY))]
+        let nearest = distances.min { $0.1 < $1.1 }!
+        let placement: PetPlacement = nearest.1 < 64 ? nearest.0 : .desktop
+        petPlacement = placement
+        companionPreferences.placement = placement
+        position(on: screen, center: center, placement: placement, animated: true)
+        saveCompanionPreferences()
+    }
+    private func saveCompanionPreferences() {
+        do { try JSONEncoder().encode(companionPreferences).write(to: companionPreferencesURL, options: .atomic) }
+        catch { setupMessage = "无法保存桌宠位置：\(error.localizedDescription)" }
+    }
+    private func position(on screen: NSScreen, center: NSPoint, placement: PetPlacement, animated: Bool) {
+        currentDisplay = displayKey(screen)
+        let area = screen.visibleFrame
+        let size = CompanionGeometry.canvasSize
+        let pet = CompanionGeometry.petFrame(placement: placement)
+        var point = center
+        switch placement {
+        case .desktop:
+            point.x = min(max(point.x, area.minX + size.width/2), area.maxX-size.width/2)
+            point.y = min(max(point.y, area.minY + size.height/2), area.maxY-size.height/2)
+        case .left: point.x = area.minX + 8; point.y = min(max(point.y, area.minY+170), area.maxY-170)
+        case .right: point.x = area.maxX - 8; point.y = min(max(point.y, area.minY+170), area.maxY-170)
+        case .top: point.y = area.maxY - 8; point.x = min(max(point.x, area.minX+170), area.maxX-170)
+        case .bottom: point.y = area.minY + 8; point.x = min(max(point.x, area.minX+170), area.maxX-170)
+        }
+        let frame = NSRect(x: point.x-pet.midX, y: point.y-pet.midY, width: size.width, height: size.height)
+        companionPreferences.displays[currentDisplay!] = CompanionPosition(x: point.x, y: point.y, placement: placement)
+        panel.transition(to: frame, placement: placement, animated: animated)
+    }
+    private func displayKey(_ screen: NSScreen) -> String {
+        (screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber)?.stringValue ?? "main"
     }
     private func place(on screen: NSScreen?, animated: Bool) {
         guard let screen else { return }
-        let id = (screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber)?.stringValue ?? "main"
+        let id = displayKey(screen)
         guard id != currentDisplay else { return }
-        currentDisplay = id
-        let area = screen.visibleFrame
-        let saved = positions[id]
-        let width = panel.frame.width, height = panel.frame.height
-        let x = min(max(saved?.first ?? area.maxX - width - 30, area.minX), area.maxX - width)
-        let y = min(max(saved?.last ?? area.minY + 72, area.minY), area.maxY - height)
-        let frame = NSRect(x: x, y: y, width: width, height: height)
-        let reduce = NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
-        if animated {
-            if reduce { panel.alphaValue = 0.35; panel.setFrame(frame, display: true) }
-            NSAnimationContext.runAnimationGroup { context in
-                context.duration = 0.18; context.allowsImplicitAnimation = true
-                if !reduce { panel.animator().setFrame(frame, display: true) }
-                panel.animator().alphaValue = 1
-            }
-        } else { panel.setFrame(frame, display: true) }
+        let saved = companionPreferences.displays[id]
+        let placement = saved?.placement ?? companionPreferences.placement
+        petPlacement = placement
+        let point = NSPoint(x: saved?.x ?? screen.visibleFrame.maxX-200,
+                            y: saved?.y ?? screen.visibleFrame.minY+200)
+        position(on: screen, center: point, placement: placement, animated: animated)
     }
     private func runSmoke() async {
         func fail(_ message: String) -> Never {
@@ -399,8 +454,34 @@ actor ObservationWorker {
         petClicked() // The actual Hold is already gone; controls remain available during the graphic fade.
         try? await Task.sleep(nanoseconds: 150_000_000)
         guard sourceBadgeAnchor == nil, demoSoundCount == soundBeforeReturn else { fail("quiet fade completion") }
-        guard panel.surface.buttons.allSatisfy({ $0.frame.width >= 44 && $0.frame.height >= 44 && panel.surface.bounds.contains($0.frame) }) else { fail("visible hit target size") }
-        print("Char fixture smoke passed: \(WorkEnd.allCases.count) work ends, Ctrl+B 回城, past/fallback, first anchor, ignore, return, hit targets; no real integrations")
+        guard panel.surface.buttons.filter({ !$0.isHidden && !$0.miniature }).allSatisfy({ $0.frame.width >= 44 && $0.frame.height >= 44 && panel.surface.bounds.contains($0.frame) }) else { fail("visible hit target size") }
+        let piID = pluginEntries.first { $0.plugin.workEnd == .pi }!.id
+        setPlugin(piID, enabled: false)
+        guard !snapshot.bubbles.contains(where: { $0.workEnd == .pi }) else { fail("disabled Agent still visible") }
+        setPlugin(piID, enabled: true)
+        guard !snapshot.bubbles.contains(where: { $0.workEnd == .pi }) else { fail("re-enabled Agent replayed history") }
+        visit(.deepseekDesktop)
+        try? await Task.sleep(nanoseconds: 100_000_000)
+        deletePlugin("builtin.source.wechat")
+        guard snapshot.hold == nil, homeShortcut.status == .inactive else { fail("source deletion retained Hold") }
+        restorePlugins()
+        guard pluginEntries.contains(where: { $0.id == "builtin.source.wechat" }) else { fail("source restore") }
+        for placement in PetPlacement.allCases {
+            setPlacement(placement)
+            try? await Task.sleep(nanoseconds: 550_000_000)
+            guard panel.alphaValue == 1, panel.surface.pet.motionScale == 1 else { fail("placement transition completion") }
+        }
+        setPlacement(.desktop)
+        if let sample = Bundle.main.resourceURL?.appendingPathComponent("Skins/example.charpet"), let skinStore {
+            do {
+                let skin = try skinStore.importPackage(at: sample)
+                selectSkin(skin.id)
+                guard customPetImage(clip: "idle", elapsed: 0) != nil else { fail("imported skin rendering") }
+                deleteSkin(skin.id)
+                guard selectedSkinID == "char.default" else { fail("skin deletion fallback") }
+            } catch { fail("sample skin import: \(error)") }
+        } else { fail("bundled sample missing") }
+        print("Char fixture smoke passed: \(WorkEnd.allCases.count) work ends, Ctrl+B 回城, past/fallback, first anchor, ignore, return, orbit targets, plugin hot unplug/source removal, five placements and bundled skin; no real integrations")
         NSApp.terminate(nil)
     }
 }

@@ -139,3 +139,14 @@ char 是仅在本机运行的 macOS 旁路观察器，不接管原生会话。�
 - 本规格记录已讨论的用户行为，准确窗口或聊天定位、图形语义和动效仍需运行时验证。若验证发现某条首版验收路径不可实现，应先调整该路径的产品约束，再开始完整实现。
 - [AgentHUD 的实时事件流](https://github.com/neochoon/agenthud/blob/main/FEATURES.md#follow)可提供粗粒度跨工作端信号；它本身没有覆盖本规格的完整原因与窗口定位，因此被列为可选辅助源。
 - Warp 的公开 URI 文档主要描述创建新窗口或标签；其仓库另有精确控制窗口、标签和 pane 的[设计文档](https://github.com/warpdotdev/warp/blob/master/specs/warp-control-cli/PRODUCT.md)。当前用户安装的 Warp Stable 没有可用的 `warpctrl` 包装命令、Scripting 开关或本地控制端点，设计文档不能替代这条实机路径。
+
+
+## 2026-10-04 插件与视觉扩展（Issue #14）
+
+来源和工作端配置成为可导入、即时启停、删除、显式恢复的配置插件。内置原生协议仍遵守已批准的信号矩阵；插件配置所属应用和图标，应用级来源保存同一存活实例，不宣称精确返回页面。停用工作端立即移除其注意力项和运行计数，重新启用从当前时刻观察；停用当前来源结束 Hold。
+
+默认形象采用参考图的奶油色粗圆角方块、深色描边、竖线眼睛和小脚。桌面放置使用圆环气泡，四边放置探出部分身体并把气泡排列到屏幕内侧。气泡固定 52 pt，六个轨道位置；超出时最后一个位置显示最多三个可访问小气泡，滚轮或无障碍下一组动作循环访问全部工作端。气泡和桌宠使用柔和形变；系统 Reduce Motion 停止持续动作并缩短过场。
+
+跨屏移动分为退出和进入，桌面缩小消失，边缘缩回；切换 Space 选择桌宠持续存在。回城动作立即派发应用激活并同时给予弹性反馈，不增加人为等待。macOS 整屏 Space 的切换曲线由系统控制，本实现不使用私有 API 或修改系统设置。
+
+自定义形象使用版本化 `.charpet` 七动画 RGBA PNG 标准，导入验证后本地安装，选择持久化；删除所选形象自动恢复默认。标准与可导入示例见 `docs/pet-skin-format.md`、`Resources/Skins/example.charpet`。配置插件标准与来源示例见 `docs/integration-plugin-format.md`、`Resources/Integrations/safari.charintegration`。

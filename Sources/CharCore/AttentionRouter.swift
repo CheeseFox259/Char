@@ -84,6 +84,15 @@ public final class AttentionRouter {
         expireHoldIfNeeded()
     }
 
+    /// Forget a removed adapter, including its pending notification batch.
+    public func remove(workEnd: WorkEnd) {
+        for key in Array(sessions.keys) where key.workEnd == workEnd {
+            sessions.removeValue(forKey: key)
+            removeItem(key)
+        }
+        if pendingSound.isEmpty { effects.removeAll(); soundDue = nil }
+    }
+
     public func ingest(_ events: [ObservationEvent]) {
         // Stable order for identical timestamps; late duplicate records cannot undo newer state.
         let ordered = events.enumerated().sorted {
@@ -178,14 +187,14 @@ public final class AttentionRouter {
     }
 
     /// `sourceAnchor` is captured before activation; only a successful app switch starts Hold.
-    /// Application accuracy is supported for a verified live WeChat instance only.
+    /// Application anchors are issued only by an enabled source adapter after PID capture.
     public func completeVisit(key: SessionKey, outcome: NavigationOutcome, sourceAnchor: ReturnAnchor?, at date: Date) {
         advance(to: date)
         guard items[key] != nil else { return }
         navigationFeedback = outcome
         if outcome == .unavailable { return }
         if hold == nil, let anchor = sourceAnchor,
-           anchor.accuracy == .exact || (anchor.accuracy == .application && anchor.bundleIdentifier == "com.tencent.xinWeChat") {
+           anchor.accuracy == .exact || anchor.accuracy == .application {
             hold = HoldSnapshot(anchor: anchor, elapsedGraceSeconds: 0)
         }
         if outcome == .exact {

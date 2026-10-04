@@ -44,7 +44,7 @@ Source example:
 | `sourceAdapter` | Required for a source; `tabbit`, `vscode`, or `application`. Must be absent for an agent. Exact adapters depend on the installed app, its permissions and existing bridge. `application` retains application-level accuracy. |
 | `icon` | Optional relative PNG path inside the package. Absolute paths and `.`/`..` components are rejected. Omit to use the renderer's built-in work-end/app icon. |
 
-This format configures the seven supported protocols; it does not introduce a protocol for an arbitrary new agent. Disable the existing plugin for a work end before importing its replacement. Two enabled agent configurations cannot own the same `workEnd`. Different source configurations can match different application bundle IDs.
+This format configures the seven supported protocols; it does not introduce a protocol for an arbitrary new agent. Disable the existing plugin for a work end before importing its replacement. Two enabled agent configurations cannot own the same `workEnd`. Each enabled source owns a unique application bundle ID. Exact Tabbit/VS Code adapters require their respective application bundle IDs; use `application` for other apps.
 
 ## Store and lifecycle
 

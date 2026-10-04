@@ -27,3 +27,13 @@ scripts/build-app.sh
 - [产品规格](docs/spec.md)及[往返行为](docs/attention-trip.md)：过滤、排序、忽略、声音和 Hold 规则。
 
 Hook 和扩展均需显式安装；构建、检查和演示不会改写用户 harness 配置。设置与显示器位置保存在本机；注意力项与 Hold 不跨重启恢复。
+
+
+### 桌宠、插件与自定义形象
+
+右键桌宠 → Settings 可选择桌面或四个边缘放置，管理 Agent / 回城来源插件、导入和切换形象。拖动靠近边缘会吸附；滚轮循环气泡。插件启停和删除立即生效；重新启用只观察新活动。删除配置插件不会修改已经安装在原生 Agent 中的观察 Hook，卸载步骤仍见相应集成 README。
+
+- [配置插件格式](docs/integration-plugin-format.md)：导入 `.charintegration` 目录；可用 `Resources/Integrations/safari.charintegration` 添加 Safari 应用级回城。
+- [自定义形象格式](docs/pet-skin-format.md)：导入 `.charpet` 目录；`Resources/Skins/example.charpet` 是完整的七动画示例。设置中的导入会直接切换到新形象。
+
+Char 保持显示在所有 Space。桌宠跨屏动作和回城反馈采用弹性动画；整屏 Space 切换速度由 macOS 控制，不提供自定义曲线。

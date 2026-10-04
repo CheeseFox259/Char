@@ -126,9 +126,10 @@ import CharCore
     }
     private func ensureClock() {
         guard clock == nil else { return }
-        clock = Timer.scheduledTimer(withTimeInterval: 1 / 30, repeats: true) { [weak self] _ in
+        clock = Timer.scheduledTimer(withTimeInterval: 1 / 60, repeats: true) { [weak self] _ in
             MainActor.assumeIsolated { self?.animate() }
         }
+        if let clock { RunLoop.main.add(clock, forMode: .common) }
     }
     private func animate() {
         let now = ProcessInfo.processInfo.systemUptime

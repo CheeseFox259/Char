@@ -52,12 +52,17 @@ public struct ForegroundSnapshot: Equatable, Sendable {
     private enum Captured {
         case tabbit(processID: Int32, tabID: String)
         case vscode(processID: Int32, token: String)
-        case wechat(processID: Int32)
+        case application(processID: Int32, bundleID: String)
     }
 
     private let apps: any ApplicationRuntime
     private let tabbit: any TabbitControlling
     private let vscode: any VSCodeControlling
+    private var plugins = IntegrationPluginStore.builtIns
+    public func configure(plugins: [IntegrationPlugin]) { self.plugins = plugins }
+    private func source(for bundleID: String) -> IntegrationPlugin? {
+        plugins.first { $0.kind == .source && $0.bundleIdentifier == bundleID }
+    }
     private var anchors: [String: Captured] = [:]
 
     public init(apps: any ApplicationRuntime, tabbit: any TabbitControlling, vscode: any VSCodeControlling) {
@@ -83,33 +88,27 @@ public struct ForegroundSnapshot: Equatable, Sendable {
 
     /// A visit never opens a native session URI or selects a Warp pane.
     public func activate(workEnd: WorkEnd, target: SessionTarget) async -> NavigationOutcome {
-        let bundleID: String
-        switch workEnd {
-        case .codexDesktop: bundleID = Self.codexBundleID
-        case .deepseekDesktop: bundleID = Self.deepseekBundleID
-        case .kimiDesktop: bundleID = Self.kimiBundleID
-        case .claudeCode, .codexCLI, .kimiCLI, .pi: bundleID = Self.warpBundleID
-        }
+        guard let bundleID = plugins.first(where: { $0.kind == .agent && $0.workEnd == workEnd })?.bundleIdentifier else { return .unavailable }
         return await apps.activate(bundleID: bundleID, preferredProcessID: nil) ? .fallback : .unavailable
     }
 
     public func captureSource() -> ReturnAnchor? {
-        guard let source = apps.foreground() else { return nil }
+        guard let source = apps.foreground(), let plugin = self.source(for: source.bundleIdentifier) else { return nil }
         let captured: Captured
         let accuracy: AnchorAccuracy
-        switch source.bundleIdentifier {
-        case Self.tabbitBundleID:
+        switch plugin.sourceAdapter {
+        case .tabbit:
             guard apps.hasUniqueRunningInstance(bundleID: Self.tabbitBundleID) else { return nil }
             guard let tabID = tabbit.captureActiveTabID(), !tabID.isEmpty else { return nil }
             captured = .tabbit(processID: source.processID, tabID: tabID)
             accuracy = .exact
-        case Self.vscodeBundleID:
+        case .vscode:
             guard apps.hasUniqueRunningInstance(bundleID: Self.vscodeBundleID) else { return nil }
             guard let token = vscode.captureFocusedTab() else { return nil }
             captured = .vscode(processID: source.processID, token: token)
             accuracy = .exact
-        case Self.wechatBundleID:
-            captured = .wechat(processID: source.processID)
+        case .application:
+            captured = .application(processID: source.processID, bundleID: source.bundleIdentifier)
             accuracy = .application
         default:
             return nil
@@ -121,25 +120,25 @@ public struct ForegroundSnapshot: Equatable, Sendable {
 
     /// false confirms invalidation; nil preserves an anchor through a temporary query failure.
     public func isAnchorValid(_ anchor: ReturnAnchor) -> Bool? {
-        guard let captured = anchors[anchor.id], anchor.token == anchor.id else { return false }
+        guard let captured = anchors[anchor.id], anchor.token == anchor.id, source(for: anchor.bundleIdentifier) != nil else { return false }
         switch captured {
         case let .tabbit(pid, tabID):
-            guard anchor.accuracy == .exact, anchor.bundleIdentifier == Self.tabbitBundleID,
+            guard anchor.accuracy == .exact, source(for: anchor.bundleIdentifier)?.sourceAdapter == .tabbit, anchor.bundleIdentifier == Self.tabbitBundleID,
                   apps.isRunning(bundleID: Self.tabbitBundleID, processID: pid) else { return false }
             return tabbit.contains(tabID: tabID)
         case let .vscode(pid, token):
-            guard anchor.accuracy == .exact, anchor.bundleIdentifier == Self.vscodeBundleID,
+            guard anchor.accuracy == .exact, source(for: anchor.bundleIdentifier)?.sourceAdapter == .vscode, anchor.bundleIdentifier == Self.vscodeBundleID,
                   apps.isRunning(bundleID: Self.vscodeBundleID, processID: pid) else { return false }
             return vscode.contains(token: token)
-        case let .wechat(pid):
-            return anchor.accuracy == .application && anchor.bundleIdentifier == Self.wechatBundleID &&
-                apps.isRunning(bundleID: Self.wechatBundleID, processID: pid)
+        case let .application(pid, bundleID):
+            return anchor.accuracy == .application && source(for: bundleID)?.sourceAdapter == .application && anchor.bundleIdentifier == bundleID &&
+                apps.isRunning(bundleID: bundleID, processID: pid)
         }
     }
 
     public func focusContext(for anchor: ReturnAnchor?) -> FocusContext {
         let current = apps.foreground()
-        let isAgent = current.map { [Self.warpBundleID, Self.codexBundleID, Self.deepseekBundleID, Self.kimiBundleID].contains($0.bundleIdentifier) } ?? false
+        let isAgent = current.map { foreground in plugins.contains { plugin in plugin.kind == .agent && plugin.bundleIdentifier == foreground.bundleIdentifier } } ?? false
         guard let anchor, let current, isAnchorValid(anchor) == true, let captured = anchors[anchor.id] else {
             return FocusContext(isAgent: isAgent)
         }
@@ -149,7 +148,7 @@ public struct ForegroundSnapshot: Equatable, Sendable {
             matched = current.processID == pid && tabbit.isActive(tabID: tabID)
         case let .vscode(pid, token):
             matched = current.processID == pid && vscode.isActive(token: token)
-        case let .wechat(pid):
+        case let .application(pid, _):
             matched = current.processID == pid
         }
         return FocusContext(isAgent: isAgent, sourceAnchorID: matched ? anchor.id : nil)
@@ -164,8 +163,8 @@ public struct ForegroundSnapshot: Equatable, Sendable {
         case let .vscode(pid, token):
             guard await apps.activate(bundleID: Self.vscodeBundleID, preferredProcessID: pid) else { return .unavailable }
             return vscode.focus(token: token) && vscode.isActive(token: token) ? .exact : .fallback
-        case let .wechat(pid):
-            return await apps.activate(bundleID: Self.wechatBundleID, preferredProcessID: pid) ? .fallback : .unavailable
+        case let .application(pid, bundleID):
+            return await apps.activate(bundleID: bundleID, preferredProcessID: pid) ? .fallback : .unavailable
         }
     }
 

@@ -44,3 +44,11 @@ try attention.testSettingsChangesAndClosedSession()
 try attention.testClosureRetainsVisibleAttentionOnly()
 try attention.testFailedReturnsKeepRetryableOriginalAnchor()
 print("CharCore: 16 attention/return checks passed")
+
+let plugins = PluginChecks()
+try plugins.testPersistenceAndHotReload()
+try plugins.testImportConflictsAndAtomicFailures()
+try plugins.testAssetsAndSymlinks()
+print("CharCore: 3 integration plugin groups passed")
+
+try CompanionGeometryChecks().run()

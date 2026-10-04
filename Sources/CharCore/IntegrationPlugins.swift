@@ -132,7 +132,10 @@ public final class IntegrationPluginStore {
         var candidate = registry
         for plugin in Self.builtIns where !candidate.records.contains(where: { $0.plugin.id == plugin.id }) {
             // Restore without overriding a user's replacement for the same adapter.
-            let enabled = !candidate.records.contains { $0.enabled && plugin.kind == .agent && $0.plugin.workEnd == plugin.workEnd }
+            let enabled = !candidate.records.contains {
+                $0.enabled && (plugin.kind == .agent && $0.plugin.workEnd == plugin.workEnd ||
+                    plugin.kind == .source && $0.plugin.kind == .source && $0.plugin.bundleIdentifier == plugin.bundleIdentifier)
+            }
             candidate.records.append(Record(plugin: plugin, enabled: enabled, isBuiltIn: true))
             candidate.tombstones.remove(plugin.id)
         }
@@ -162,10 +165,15 @@ public final class IntegrationPluginStore {
     }
 
     private func validateRecords(_ candidate: Registry) throws {
-        var ids = Set<String>(); var enabledEnds = Set<WorkEnd>()
+        var ids = Set<String>(); var enabledEnds = Set<WorkEnd>(); var enabledSources = Set<String>()
         for record in candidate.records {
             try validateManifest(record.plugin)
             guard ids.insert(record.plugin.id).inserted else { throw IntegrationPluginError.duplicateID(record.plugin.id) }
+            if record.enabled, record.plugin.kind == .source {
+                guard enabledSources.insert(record.plugin.bundleIdentifier).inserted else {
+                    throw IntegrationPluginError.invalid("an enabled source already owns this application")
+                }
+            }
             if record.enabled, let end = record.plugin.workEnd {
                 guard enabledEnds.insert(end).inserted else { throw IntegrationPluginError.duplicateWorkEnd(end) }
             }
@@ -194,6 +202,12 @@ public final class IntegrationPluginStore {
               !plugin.name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, plugin.name.count <= 100,
               plugin.bundleIdentifier.range(of: bundlePattern, options: .regularExpression) != nil else {
             throw IntegrationPluginError.invalid("version, ID, name or bundle identifier")
+        }
+        if plugin.sourceAdapter == .tabbit && plugin.bundleIdentifier != "com.tabbit-ai.Tabbit" {
+            throw IntegrationPluginError.invalid("Tabbit adapter requires Tabbit bundle identifier")
+        }
+        if plugin.sourceAdapter == .vscode && plugin.bundleIdentifier != "com.microsoft.VSCode" {
+            throw IntegrationPluginError.invalid("VS Code adapter requires VS Code bundle identifier")
         }
         guard (plugin.kind == .agent && plugin.workEnd != nil && plugin.sourceAdapter == nil)
                 || (plugin.kind == .source && plugin.workEnd == nil && plugin.sourceAdapter != nil) else {

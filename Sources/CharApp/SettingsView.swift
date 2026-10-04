@@ -5,6 +5,8 @@ struct SettingsView: View {
     @ObservedObject var runtime: CompanionRuntime
     var body: some View {
         Form {
+            Section("桌宠与动效") { AppearanceSettingsView(runtime: runtime) }
+            Section("插件") { PluginSettingsView(runtime: runtime) }
             Section("Timing") {
                 HStack {
                     Text("Filter threshold (seconds)")
@@ -69,7 +71,7 @@ struct SettingsView: View {
                     Label("Application fallback", systemImage: "arrow.triangle.turn.up.right.diamond.fill")
                     Label("Unavailable", systemImage: "exclamationmark.circle.fill")
                 }.font(.caption)
-                Text("The large number is unviewed attention; the small mint number is running sessions. Click a bubble to visit; right-click to ignore its first item. Drag the spark to place it. Its source badge means click or Ctrl+B to 回城; right-click for controls.")
+                Text("The large number is unviewed attention; the small mint number is running sessions. Click a bubble to visit; right-click to ignore its first item. Drag the pet to place it. Its source badge means click or Ctrl+B to 回城; right-click for controls.")
                     .font(.caption).foregroundStyle(.secondary)
             }
             if !runtime.setupMessage.isEmpty {

@@ -172,8 +172,7 @@ struct AttentionChecks {
     }
 
     func testUnsupportedApplicationSourcesAndNoSource() throws {
-        for source in [nil, anchor(accuracy: .application, bundle: "dev.warp.Warp-Stable"),
-                       anchor(accuracy: .application, bundle: "com.unknown.app")] {
+        for source in [nil] as [ReturnAnchor?] {
             let r = router()
             waiting(r)
             r.completeVisit(key: key("a"), outcome: .fallback, sourceAnchor: source, at: time(10))
