@@ -34,13 +34,10 @@ import CharCore
 
 @MainActor final class CompanionPanel: NSPanel {
     let surface: CompanionSurface
-    // [DEBUG-char-wheel-deep] Native activation counterfactual, not a product mode.
-    let usesActivatingWindow = ProcessInfo.processInfo.environment["CHAR_ACTIVATING_WINDOW"] == "1"
     init(runtime: CompanionRuntime) {
         surface = CompanionSurface(runtime: runtime)
         super.init(contentRect: NSRect(origin: .zero, size: CompanionGeometry.canvasSize),
-                   styleMask: usesActivatingWindow ? [.titled] : [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
-        if usesActivatingWindow { title = "Char 滚轮窗口对照" }
+                   styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
         isOpaque = false; backgroundColor = .clear; hasShadow = false
         level = .statusBar; hidesOnDeactivate = false; isMovableByWindowBackground = false
         collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary]
@@ -50,8 +47,8 @@ import CharCore
         }
         contentView = surface
     }
-    override var canBecomeKey: Bool { usesActivatingWindow }
-    override var canBecomeMain: Bool { usesActivatingWindow }
+    override var canBecomeKey: Bool { false }
+    override var canBecomeMain: Bool { false }
     func transition(to frame: NSRect, placement: PetPlacement, animated: Bool) {
         surface.transition(to: frame, placement: placement, animated: animated)
     }
@@ -107,37 +104,18 @@ import CharCore
     }
     private var movement: Transition?
     private var placement: PetPlacement = .desktop
-    // [DEBUG-char-wheel-deep] Temporary display-ownership A/B. Host contains only layers.
-    let usesHostedScene = ProcessInfo.processInfo.environment["CHAR_HOSTED_SCENE"] == "1"
-    // [DEBUG-char-wheel-deep] Counterfactual: keep the panel's native mouse route stable.
-    private let usesStaticMouseRouting = ProcessInfo.processInfo.environment["CHAR_STATIC_MOUSE_ROUTING"] == "1"
-    private(set) var sceneHost: NSView?
-    var sceneLayer: CALayer? { sceneHost?.layer ?? layer }
-    var hostedSceneInvariant: Bool {
-        guard usesHostedScene else { return true }
-        guard let sceneHost, let sceneLayer, sceneHost.superview === self,
-              sceneHost.subviews.isEmpty, !wantsLayer else { return false }
-        return ([pet] + buttons).allSatisfy { $0.superview === self && !$0.wantsLayer && $0.graphicLayer.superlayer === sceneLayer }
-            && overflow.superlayer === sceneLayer
-    }
+    var sceneLayer: CALayer? { layer }
     init(runtime: CompanionRuntime) {
         self.runtime = runtime
         pet = GraphicButton(kind: .pet, runtime: runtime)
         buttons = WorkEnd.allCases.map { GraphicButton(kind: .bubble($0), runtime: runtime) }
         super.init(frame: NSRect(origin: .zero, size: CompanionGeometry.canvasSize))
-        if usesHostedScene {
-            let host = NSView(frame: bounds)
-            let owned = CALayer(); owned.anchorPoint = .zero; owned.frame = bounds
-            // AppKit's documented layer-hosting order is significant.
-            host.layer = owned; host.wantsLayer = true
-            host.setAccessibilityElement(false)
-            sceneHost = host; addSubview(host)
-        } else { wantsLayer = true }
+        wantsLayer = true
         overflow.contentsScale = 2
         overflow.actions = ["contents": NSNull(), "bounds": NSNull(), "position": NSNull(), "opacity": NSNull()]
         sceneLayer?.addSublayer(overflow)
-        addSubview(pet); pet.attachArtwork(to: sceneLayer!, eventOnly: usesHostedScene)
-        for button in buttons { addSubview(button); button.attachArtwork(to: sceneLayer!, eventOnly: usesHostedScene) }
+        addSubview(pet); pet.attachArtwork(to: sceneLayer!)
+        for button in buttons { addSubview(button); button.attachArtwork(to: sceneLayer!) }
         setAccessibilityElement(true)
         setAccessibilityRole(.group)
         setAccessibilityLabel("Agent orbit, scroll or use next and previous actions to cycle bubbles")
@@ -161,7 +139,6 @@ import CharCore
     }
     func dispose() {
         clock?.invalidate(); clock = nil
-        wheelDiagnostics.stopMonitoring()
         if let displayOptionsObserver { workspaceNotifications.removeObserver(displayOptionsObserver) }
         displayOptionsObserver = nil
         if let occlusionObserver { NotificationCenter.default.removeObserver(occlusionObserver) }
@@ -169,7 +146,6 @@ import CharCore
     }
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
-        wheelDiagnostics.monitor(self)
         if let occlusionObserver { NotificationCenter.default.removeObserver(occlusionObserver) }
         guard let window else { return }
         occlusionObserver = NotificationCenter.default.addObserver(forName: NSWindow.didChangeOcclusionStateNotification,
@@ -261,19 +237,12 @@ import CharCore
         }
         return nil
     }
-    private let wheelDiagnostics = WheelDiagnostics()
     override func scrollWheel(with event: NSEvent) {
-        let sequence = wheelDiagnostics.input(event, offset: offset)
-        let tracked = buttons.first { !$0.isHidden && !$0.miniature }
-        wheelDiagnostics.handler(sequence, layer: tracked?.graphicLayer)
-        let before = tracked.map { ($0.graphicLayer.presentation() ?? $0.graphicLayer).position }
         let step = scrollPolicy.step(delta: Double(event.scrollingDeltaY + event.scrollingDeltaX),
                                      precise: event.hasPreciseScrollingDeltas, hasGesturePhase: event.phase != [], momentum: event.momentumPhase != [],
                                      count: runtime.snapshot.bubbles.count, capacity: capacity, now: event.timestamp)
         if step != 0 {
             _ = cycleBubbles(by: step)
-            wheelDiagnostics.accepted(sequence, step: step, offset: offset, layer: tracked?.graphicLayer,
-                center: NSPoint(x: pet.frame.midX, y: pet.frame.midY), before: before)
         }
     }
     @discardableResult func cycleBubbles(by step: Int) -> Bool {
@@ -282,8 +251,8 @@ import CharCore
         offset += step; layoutVisibleBubbles(animated: true)
         return true
     }
-    // [DEBUG-char-wheel-deep] Real surface/layout/layer animation chain, opt-in fixture only.
-    func debugOrbitPathFindings(step: Int) -> [String] {
+    // Inspect submitted animations in the explicit orbit regression fixture.
+    func orbitPathFindings(step: Int) -> [String] {
         guard !reducedMotion else { return ["NOT RUN: Reduce Motion disables animated paths"] }
         var required = Set(buttons.filter { !$0.isHidden }.map(ObjectIdentifier.init))
         guard cycleBubbles(by: step) else { return ["orbit was not folded"] }
@@ -295,7 +264,7 @@ import CharCore
             let samples: OrbitPathInspection.Samples
             do {
                 guard let actual = try OrbitPathInspection.read(button.graphicLayer, required: required.contains(ObjectIdentifier(button))) else {
-                    FileHandle.standardError.write(Data("[DEBUG-char-wheel-deep] path-check deliberately-hidden no animation\n".utf8))
+                    FileHandle.standardError.write(Data("Char orbit path check: deliberately-hidden no animation\n".utf8))
                     continue
                 }
                 samples = actual; inspected += 1
@@ -316,7 +285,7 @@ import CharCore
                 return travel * Double(step) > 0.002 && size > 18.0/44.0 + 0.05
             }
             let row = "placement=\(placement) step=\(step) end=\(String(describing: button.renderedWorkEnd)) fromScale=\(fromScale) toScale=\(toScale) angle=\(delta) opposite=\(opposite)"
-            FileHandle.standardError.write(Data("[DEBUG-char-wheel-deep] path-check \(row)\n".utf8))
+            FileHandle.standardError.write(Data("Char orbit path check: \(row)\n".utf8))
             if opposite { findings.append(row) }
         }
         if required.isEmpty || inspected < required.count { findings.append("incomplete animated coverage: inspected=\(inspected) required=\(required.count)") }
@@ -355,7 +324,6 @@ import CharCore
         if let clock { RunLoop.main.add(clock, forMode: .common); RunLoop.main.add(clock, forMode: .eventTracking) }
     }
     private func animate() {
-        wheelDiagnostics.tick()
         guard window?.isVisible == true else { return }
         let now = ProcessInfo.processInfo.systemUptime
         let reduce = reducedMotion
@@ -417,10 +385,9 @@ import CharCore
         // AppKit hitTest alone does not forward events through a transparent NSWindow.
         if let window {
             let local = convert(window.convertPoint(fromScreen: NSEvent.mouseLocation), from: nil)
-            wheelDiagnostics.route(self, point: local, accepts: !window.ignoresMouseEvents)
             let orbitActive = now < orbitUntil
             if local != lastPointer || orbitActive || orbitActive != lastOrbitActive {
-                let desired = usesStaticMouseRouting ? false : hitTest(local) == nil
+                let desired = hitTest(local) == nil
                 if window.ignoresMouseEvents != desired {
                     window.ignoresMouseEvents = desired
                 }
@@ -704,10 +671,9 @@ import CharCore
             refreshPetArtwork()
         }
     }
-    func attachArtwork(to host: CALayer, eventOnly: Bool = false) {
+    func attachArtwork(to host: CALayer) {
         externalArtwork = true
         graphicLayer.removeFromSuperlayer(); host.addSublayer(graphicLayer)
-        if eventOnly { wantsLayer = false }
     }
     func containsSurfacePoint(_ point: NSPoint) -> Bool {
         guard !isHidden else { return false }

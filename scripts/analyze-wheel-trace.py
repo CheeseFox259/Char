@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""[DEBUG-char-wheel-deep] Geometry trace checker; no onscreen pixel claim."""
+"""Saved geometry trace checker; no live instrumentation or onscreen pixel claim."""
 import argparse, json, math, statistics, sys
 PREFIX = '[DEBUG-char-wheel-deep] '
 def angle(p,c): return math.atan2(p[1]-c[1],p[0]-c[0])

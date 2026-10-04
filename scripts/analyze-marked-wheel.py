@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Analyze a physical one-detent capture bracketed by explicit keyboard markers."""
+"""Analyze saved diagnostic captures; live input instrumentation is no longer shipped."""
 import json
 import sys
 from pathlib import Path
@@ -19,6 +19,7 @@ counts = {kind: sum(row.get("kind") == kind for row in held)
 device_available = any(row.get("kind") == "deviceWheel" or
                        (row.get("kind") == "deviceObserver" and row.get("status") == 0) for row in rows)
 counts["deviceWheel"] = sum(row.get("kind") == "deviceWheel" for row in held) if device_available else None
+counts["deviceWheelNonzero"] = sum(row.get("kind") == "deviceWheel" and row.get("value", 0) != 0 for row in held) if device_available else None
 verdict = "IN_WINDOW_STEP_RECEIVED" if counts["accepted"] == 1 else "FIRST_DETENT_MISSING" if counts["accepted"] == 0 else "EXTRA_STEPS"
 print(json.dumps({"held_seconds": round(ends[0] - starts[0], 3), "counts": counts,
                   "verdict": verdict, "scope": "Marked physical input delivery only; does not certify screen animation."}, indent=2))

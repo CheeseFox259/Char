@@ -143,10 +143,6 @@ actor ObservationWorker {
         panel = CompanionPanel(runtime: self)
         place(on: NSScreen.main ?? NSScreen.screens.first, animated: false)
         panel.orderFrontRegardless()
-        if panel.usesActivatingWindow {
-            NSApp.activate(ignoringOtherApps: true)
-            panel.makeKeyAndOrderFront(nil)
-        }
         statusBar = StatusBarController(runtime: self)
         installDesktopTracking()
         if demo { injectFixtures() }
@@ -507,7 +503,6 @@ actor ObservationWorker {
         func fail(_ message: String) -> Never {
             FileHandle.standardError.write(Data("Char fixture smoke failed: \(message)\n".utf8)); exit(1)
         }
-        guard panel.surface.hostedSceneInvariant else { fail("owned scene host contains event views or duplicate backing artwork") }
         if CommandLine.arguments.contains("--orbit-path-check") {
             guard !panel.surface.reducesMotionForDiagnostics else {
                 FileHandle.standardOutput.write(Data("Char orbit layer-path check NOT RUN: Reduce Motion is enabled; animated coverage skipped\n".utf8))
@@ -520,7 +515,7 @@ actor ObservationWorker {
                 try? await Task.sleep(nanoseconds: 300_000_000)
                 let steps = Array(repeating: 1, count: WorkEnd.allCases.count) + Array(repeating: -1, count: WorkEnd.allCases.count) + [1, -1, 1, -1]
                 for (index, step) in steps.enumerated() {
-                    findings += panel.surface.debugOrbitPathFindings(step: step)
+                    findings += panel.surface.orbitPathFindings(step: step)
                     // The second input retargets a live presentation; later steps settle.
                     try? await Task.sleep(nanoseconds: index < WorkEnd.allCases.count * 2 || step == -1 ? 230_000_000 : 40_000_000)
                 }

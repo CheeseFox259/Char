@@ -1,6 +1,6 @@
 import QuartzCore
 
-// [DEBUG-char-wheel-deep] Read the actual submitted layer path, never an inferred fallback.
+// Regression inspection reads the actual submitted layer path.
 enum OrbitPathInspection {
     struct Samples { let positions: [NSValue]; let scales: [NSNumber] }
     enum Failure: Error { case missing(String) }
