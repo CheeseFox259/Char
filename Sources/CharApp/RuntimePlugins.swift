@@ -67,7 +67,7 @@ extension CompanionRuntime {
             guard revision != pluginRegistryRevision else { return }
             try pluginStore.reload()
             pluginRegistryRevision = revision
-            let next = pluginStore?.entries ?? []
+            let next = pluginStore.entries
             guard next != pluginEntries else { return }
             let old = enabledWorkEnds
             pluginEntries = next
