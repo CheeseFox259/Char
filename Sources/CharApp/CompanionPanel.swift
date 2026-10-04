@@ -256,6 +256,27 @@ import CharCore
         offset += step; layoutVisibleBubbles(animated: true)
         return true
     }
+    // [DEBUG-char-wheel-deep] Real surface/layout/layer animation chain, opt-in fixture only.
+    func debugOrbitPathFindings(step: Int) -> [String] {
+        guard cycleBubbles(by: step) else { return ["orbit was not folded"] }
+        let center = NSPoint(x: pet.frame.midX, y: pet.frame.midY)
+        var findings: [String] = []
+        for button in buttons {
+            guard let group = button.graphicLayer.animation(forKey: "orbit") as? CAAnimationGroup,
+                  let path = group.animations?.first(where: { ($0 as? CAPropertyAnimation)?.keyPath == "position" }) as? CAKeyframeAnimation,
+                  let values = path.values as? [NSValue], let first = values.first?.pointValue, let last = values.last?.pointValue,
+                  let grow = group.animations?.first(where: { ($0 as? CAPropertyAnimation)?.keyPath == "transform.scale" }) as? CABasicAnimation else { continue }
+            let fromScale = (grow.fromValue as? NSNumber)?.doubleValue ?? 0
+            let toScale = (grow.toValue as? NSNumber)?.doubleValue ?? 0
+            var delta = atan2(last.y-center.y, last.x-center.x)-atan2(first.y-center.y, first.x-center.x)
+            while delta > .pi { delta -= 2 * .pi }; while delta < -.pi { delta += 2 * .pi }
+            let opposite = fromScale > 0.95 && delta * Double(step) > 0.02
+            let row = "placement=\(placement) step=\(step) end=\(String(describing: button.renderedWorkEnd)) fromScale=\(fromScale) toScale=\(toScale) angle=\(delta) opposite=\(opposite)"
+            FileHandle.standardError.write(Data("[DEBUG-char-wheel-deep] path-check \(row)\n".utf8))
+            if opposite { findings.append(row) }
+        }
+        return findings
+    }
     @objc fileprivate func nextBubbles() -> Bool { cycleBubbles(by: 1) }
     @objc fileprivate func previousBubbles() -> Bool { cycleBubbles(by: -1) }
     func spaceFeedback() {

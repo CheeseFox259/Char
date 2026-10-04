@@ -4,7 +4,7 @@ import argparse, json, math, statistics, sys
 PREFIX = '[DEBUG-char-wheel-deep] '
 def angle(p,c): return math.atan2(p[1]-c[1],p[0]-c[0])
 def wrap(x): return (x+math.pi)%(2*math.pi)-math.pi
-def analyze(records):
+def analyze(records, check_orbit_direction=False):
     inputs={r['sequence']:r for r in records if r['kind']=='input'}
     accepts=[r for r in records if r['kind']=='accepted']
     results=[]
@@ -16,6 +16,7 @@ def analyze(records):
         samples=[r for r in records if r['kind']=='sample' and r['sequence']==seq and len(r.get('presentation',[]))==2]
         onset=None; arrival=None; wrong=[]
         target_delta=wrap(angle(target,center)-angle(before,center)) if center and before and target else 0
+        if check_orbit_direction and target_delta*a["step"]>0.02: faults.append("fold_path_opposes_neighbor_motion")
         next_accept=next((b['now'] for b in accepts if b['now']>a['now']),float('inf'))
         complete=next_accept-a['now']>=.24
         for s in samples:
@@ -38,10 +39,10 @@ def analyze(records):
         verdict='RED' if any(r['faults'] for r in results) else 'INCOMPLETE' if not results or not any(r['samples'] for r in results) else 'LAYER_TRACE_CLEAR',
         scope='Input and CALayer presentation only; physical screen delay requires user/pixel evidence.')
 def main():
-    parser=argparse.ArgumentParser();parser.add_argument('trace');args=parser.parse_args()
+    parser=argparse.ArgumentParser();parser.add_argument('trace');parser.add_argument('--check-orbit-direction',action='store_true');args=parser.parse_args()
     records=[]
     for line in open(args.trace):
         if PREFIX in line: records.append(json.loads(line.split(PREFIX,1)[1]))
-    report=analyze(records);print(json.dumps(report,indent=2))
+    report=analyze(records,args.check_orbit_direction);print(json.dumps(report,indent=2))
     return 1 if report['verdict']=='RED' else 2 if report['verdict']=='INCOMPLETE' else 0
 if __name__=='__main__':sys.exit(main())

@@ -503,6 +503,22 @@ actor ObservationWorker {
         func fail(_ message: String) -> Never {
             FileHandle.standardError.write(Data("Char fixture smoke failed: \(message)\n".utf8)); exit(1)
         }
+        if CommandLine.arguments.contains("--orbit-path-check") {
+            setBubbleDistance(8)
+            var findings: [String] = []
+            for placement in PetPlacement.allCases {
+                setPlacement(placement)
+                try? await Task.sleep(nanoseconds: 300_000_000)
+                for step in [1, -1, 1, -1] {
+                    findings += panel.surface.debugOrbitPathFindings(step: step)
+                    // The second input retargets a live presentation; later steps settle.
+                    try? await Task.sleep(nanoseconds: step == 1 ? 40_000_000 : 230_000_000)
+                }
+            }
+            guard findings.isEmpty else { fail("actual folded layer paths oppose input: \(findings.joined(separator: "; "))") }
+            print("Char orbit layer-path check passed")
+            NSApp.terminate(nil); return
+        }
         guard snapshot.bubbles.count == WorkEnd.allCases.count, snapshot.bubbles.allSatisfy({ $0.count == 2 }) else { fail("initial bubbles") }
         guard snapshot.bubbles.first(where: { $0.workEnd == .codexCLI })?.head?.isPast == true else { fail("visible past head marker") }
         setBubbleDistance(8)
