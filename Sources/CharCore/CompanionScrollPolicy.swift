@@ -6,16 +6,19 @@ public struct CompanionScrollPolicy: Sendable {
     private var lastInput = -Double.infinity
     private var lastStep = -Double.infinity
     private var awaitingFirstStep = true
+    private var lastBurstDelta = 0.0
     public init() {}
     public mutating func step(delta: Double, precise: Bool, hasGesturePhase: Bool = true, momentum: Bool, count: Int, now: TimeInterval) -> Int {
-        guard count > 6 else { accumulated = 0; awaitingFirstStep = true; lastInput = -Double.infinity; return 0 }
+        guard count > 6 else { accumulated = 0; awaitingFirstStep = true; lastInput = -Double.infinity; lastBurstDelta = 0; return 0 }
         guard !momentum, delta != 0 else { return 0 }
         if precise && !hasGesturePhase {
             // Some mouse drivers interpolate one detent into a decaying precise
             // burst without gesture or momentum phases. Consume its onset once;
             // accumulating its tail would count the same physical detent twice.
-            let newBurst = now - lastInput > 0.25
+            let newBurst = now - lastInput > 0.065 || delta * lastBurstDelta < 0
+                || (abs(lastBurstDelta) <= 4 && abs(delta) >= max(6, abs(lastBurstDelta) * 1.8))
             lastInput = now
+            lastBurstDelta = delta
             guard newBurst else { return 0 }
             accumulated = 0; awaitingFirstStep = false; lastStep = now
             return delta > 0 ? 1 : -1

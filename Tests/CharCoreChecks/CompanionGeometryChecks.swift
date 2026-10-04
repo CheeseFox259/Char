@@ -53,6 +53,16 @@ struct CompanionGeometryChecks {
         let secondSteps = detent.prefix(6).map { burstWheel.step(delta: $0.1, precise: true, hasGesturePhase: false, momentum: false, count: 7, now: 1.5834 + $0.0) }
         try checkEqual(secondSteps.first, -1)
         try checkEqual(secondSteps.filter { $0 != 0 }.count, 1)
+        var consecutive = CompanionScrollPolicy()
+        let starts = [0.0, 0.3833, 0.6500]
+        for (index, start) in starts.enumerated() {
+            let steps = detent.map { consecutive.step(delta: index == 2 ? -$0.1 : $0.1, precise: true, hasGesturePhase: false, momentum: false, count: 7, now: start + $0.0) }
+            try checkEqual(steps.first, index == 2 ? 1 : -1)
+            try checkEqual(steps.filter { $0 != 0 }.count, 1)
+        }
+        var overlapping = CompanionScrollPolicy()
+        for sample in detent { _ = overlapping.step(delta: sample.1, precise: true, hasGesturePhase: false, momentum: false, count: 7, now: sample.0) }
+        try checkEqual(overlapping.step(delta: -10, precise: true, hasGesturePhase: false, momentum: false, count: 7, now: 0.2033), -1)
         var mouseWheel = CompanionScrollPolicy()
         try checkEqual(mouseWheel.step(delta: 1, precise: false, momentum: false, count: 7, now: 0), 1)
         try checkEqual(mouseWheel.step(delta: 1, precise: false, momentum: false, count: 7, now: 0.05), 0)
@@ -72,6 +82,16 @@ struct CompanionGeometryChecks {
             }
             try checkEqual(reached, Set(0..<count))
         }
+        var space = CompanionSpaceLifecycle()
+        try check(!space.beginPreparedArrival(), "visible workspace changes cannot replay arrival")
+        try check(space.prepareHiddenAppearance())
+        try check(!space.prepareHiddenAppearance())
+        try check(space.beginPreparedArrival())
+        try check(!space.beginPreparedArrival(), "duplicate visible/workspace notifications are idempotent")
+        try check(!space.prepareHiddenAppearance(), "active arrival cannot be restarted by occlusion")
+        space.finishArrival()
+        try check(!space.beginPreparedArrival(), "late workspace notification cannot replay completed arrival")
+        try check(space.prepareHiddenAppearance(), "a new hide cycle can animate again")
         let long = CompanionPlayback(departure: 120, arrival: 80)
         try check(!long.isArriving(at: 119.9))
         try check(long.isArriving(at: 120))

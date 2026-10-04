@@ -546,11 +546,17 @@ actor ObservationWorker {
         }
         setPlacement(.desktop)
         try? await Task.sleep(nanoseconds: 300_000_000)
+        // A workspace notification alone must not replay a full appearance.
+        panel.surface.spaceFeedback()
+        guard !panel.surface.isSpaceFeedbackActive else { fail("visible Space notification replayed arrival") }
+        panel.surface.prepareSpaceAppearance()
         NSWorkspace.shared.notificationCenter.post(name: NSWorkspace.activeSpaceDidChangeNotification, object: NSWorkspace.shared)
         try? await Task.sleep(nanoseconds: 70_000_000)
         guard panel.surface.isSpaceFeedbackActive, panel.surface.visualOpacity > 0, panel.surface.visualOpacity < 1 else { fail("Space notification arrival feedback") }
         try? await Task.sleep(nanoseconds: 800_000_000)
         guard !panel.surface.isSpaceFeedbackActive, panel.surface.pet.spaceTuck == 0, panel.surface.visualOpacity == 1, panel.surface.layer?.opacity == 1, panel.alphaValue == 1 else { fail("Space feedback completion") }
+        panel.surface.spaceFeedback()
+        guard !panel.surface.isSpaceFeedbackActive else { fail("completed Space arrival replayed") }
         if let sample = Bundle.main.resourceURL?.appendingPathComponent("Skins/example.charpet"), let skinStore {
             do {
                 let skin = try skinStore.importPackage(at: sample)

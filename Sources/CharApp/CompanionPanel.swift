@@ -92,7 +92,7 @@ import CharCore
     private var scrollPolicy = CompanionScrollPolicy()
     private var spaceAt: TimeInterval?
     private var pendingSpaceFeedback = false
-    private var preparedSpaceArrival = false
+    private var spaceLifecycle = CompanionSpaceLifecycle()
     private var occlusionObserver: NSObjectProtocol?
     private var lastPointer: NSPoint?
     var canCycle: Bool { runtime.snapshot.bubbles.count > 6 }
@@ -162,27 +162,33 @@ import CharCore
             MainActor.assumeIsolated { self?.occlusionChanged() }
         }
     }
+    private func traceSpace(_ source: String) {
+        OrbitTrace.record("space source=\(source) visible=\(window?.occlusionState.contains(.visible) ?? false) state=\(spaceLifecycle.state) active=\(spaceAt != nil) pending=\(pendingSpaceFeedback)")
+    }
     private func occlusionChanged() {
+        traceSpace("occlusion")
         guard let window, movement == nil, spaceAt == nil, !pendingSpaceFeedback else { return }
-        if window.occlusionState.contains(.visible) {
-            if preparedSpaceArrival { beginSpaceArrival() }
-        } else if !preparedSpaceArrival, window.alphaValue == 1 {
-            // Prepare content before its next visible draw; never zero window alpha,
-            // which can itself prevent an occlusion-visible transition.
-            preparedSpaceArrival = true
-            pet.spaceTuck = reducedMotion ? 0 : 1
-            if placement != .desktop { pet.edgeRetraction = reducedMotion ? 0 : min(24, pet.frame.width * 0.5) }
-            applySharedTransform()
-            pet.needsDisplay = true
-        }
+        if window.occlusionState.contains(.visible) { beginSpaceArrival() }
+        else { prepareSpaceAppearance() }
+    }
+    /// Called by an actual occlusion loss; exposed internally for the fixture lifecycle check.
+    func prepareSpaceAppearance() {
+        guard spaceLifecycle.prepareHiddenAppearance() else { return }
+        pet.spaceTuck = reducedMotion ? 0 : 1
+        if placement != .desktop { pet.edgeRetraction = reducedMotion ? 0 : min(24, pet.frame.width * 0.5) }
+        applySharedTransform()
+        pet.needsDisplay = true
+        traceSpace("prepare-hidden")
     }
     private func beginSpaceArrival() {
-        preparedSpaceArrival = false
+        guard window?.occlusionState.contains(.visible) == true,
+              spaceLifecycle.beginPreparedArrival() else { return }
         spaceAt = ProcessInfo.processInfo.systemUptime
         pet.spaceTuck = reducedMotion ? 0 : 1
         visualOpacity = reducedMotion ? 0.75 : 0.45
         applySharedTransform()
         pet.needsDisplay = true
+        traceSpace("begin-arrival")
         ensureClock()
     }
     required init?(coder: NSCoder) { nil }
@@ -253,7 +259,7 @@ import CharCore
         }
         let step = scrollPolicy.step(delta: Double(event.scrollingDeltaY + event.scrollingDeltaX),
                                      precise: event.hasPreciseScrollingDeltas, hasGesturePhase: event.phase != [], momentum: event.momentumPhase != [],
-                                     count: runtime.snapshot.bubbles.count, now: ProcessInfo.processInfo.systemUptime)
+                                     count: runtime.snapshot.bubbles.count, now: event.timestamp)
         OrbitTrace.record("policy sequence=\(OrbitTrace.sequence) step=\(step) count=\(runtime.snapshot.bubbles.count)")
         if step != 0 {
             OrbitTrace.activeUntil = ProcessInfo.processInfo.systemUptime + 0.12
@@ -287,6 +293,10 @@ import CharCore
     @objc fileprivate func nextBubbles() -> Bool { guard canCycle else { return false }; offset += 1; layoutVisibleBubbles(); return true }
     @objc fileprivate func previousBubbles() -> Bool { guard canCycle else { return false }; offset -= 1; layoutVisibleBubbles(); return true }
     func spaceFeedback() {
+        traceSpace("workspace-notification")
+        // Notifications may arrive after the pet already became visible. A
+        // preserved window needs no replay; an observed hidden cycle arrives once.
+        guard spaceLifecycle.state == .prepared else { return }
         if movement != nil { pendingSpaceFeedback = true }
         else { beginSpaceArrival() }
         ensureClock()
@@ -323,7 +333,7 @@ import CharCore
         pet.feedbackElapsed = feedbackAt.map { reduce ? 0 : now - $0 }
         if let feedbackAt, now - feedbackAt > (runtime.customPetClipDuration(clip: pet.feedbackClip) ?? 0.65) { self.feedbackAt = nil; pet.feedbackElapsed = nil }
         if var motion = movement {
-            if spaceAt != nil { pendingSpaceFeedback = true; spaceAt = nil; pet.spaceTuck = 0 }
+            if spaceAt != nil { spaceAt = nil; spaceLifecycle.finishArrival(); pet.spaceTuck = 0 }
             // A placement transition interrupts feedback; its authored departure/arrival wins.
             feedbackAt = nil; pet.feedbackElapsed = nil
             let elapsed = now - motion.started
@@ -357,7 +367,8 @@ import CharCore
             let t = now - start
             let duration = reduce ? 0.16 : 0.70
             if t >= duration {
-                spaceAt = nil; pet.spaceTuck = 0; pet.edgeRetraction = 0; visualOpacity = 1
+                spaceAt = nil; spaceLifecycle.finishArrival(); pet.spaceTuck = 0; pet.edgeRetraction = 0; visualOpacity = 1
+                traceSpace("arrival-complete")
             } else {
                 if reduce {
                     pet.spaceTuck = 0
