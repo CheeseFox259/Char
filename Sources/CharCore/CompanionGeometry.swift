@@ -61,6 +61,12 @@ public enum CompanionGeometry {
             return Slot(frame: frame, primaryIndex: overflow ? nil : order[index], overflowIndices: indices, miniFrames: mini)
         }
     }
+    /// A slower, gentler response for a Space appearance, distinct from migration.
+    public static func spaceArrivalProgress(_ progress: Double) -> Double {
+        let t = min(max(progress, 0), 1)
+        if t == 1 { return 1 }
+        return 1 - exp(-6 * t) * cos(5 * t)
+    }
     /// Spring response used only for drawing; event bounds never deform.
     public static func arrivalProgress(_ progress: Double) -> Double {
         let t = min(max(progress, 0), 1)

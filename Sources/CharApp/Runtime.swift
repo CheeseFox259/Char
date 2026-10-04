@@ -548,9 +548,9 @@ actor ObservationWorker {
         try? await Task.sleep(nanoseconds: 300_000_000)
         NSWorkspace.shared.notificationCenter.post(name: NSWorkspace.activeSpaceDidChangeNotification, object: NSWorkspace.shared)
         try? await Task.sleep(nanoseconds: 70_000_000)
-        guard panel.surface.isSpaceFeedbackActive, panel.alphaValue > 0, panel.alphaValue <= 1 else { fail("Space notification arrival feedback") }
-        try? await Task.sleep(nanoseconds: 500_000_000)
-        guard !panel.surface.isSpaceFeedbackActive, panel.surface.pet.spaceTuck == 0, panel.alphaValue == 1 else { fail("Space feedback completion") }
+        guard panel.surface.isSpaceFeedbackActive, panel.surface.visualOpacity > 0, panel.surface.visualOpacity < 1 else { fail("Space notification arrival feedback") }
+        try? await Task.sleep(nanoseconds: 800_000_000)
+        guard !panel.surface.isSpaceFeedbackActive, panel.surface.pet.spaceTuck == 0, panel.surface.visualOpacity == 1, panel.surface.layer?.opacity == 1, panel.alphaValue == 1 else { fail("Space feedback completion") }
         if let sample = Bundle.main.resourceURL?.appendingPathComponent("Skins/example.charpet"), let skinStore {
             do {
                 let skin = try skinStore.importPackage(at: sample)

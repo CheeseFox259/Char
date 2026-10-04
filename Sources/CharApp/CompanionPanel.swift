@@ -81,6 +81,13 @@ import CharCore
     let pet: GraphicButton
     let buttons: [GraphicButton]
     private let overflow = NSImageView(frame: .zero)
+    private struct LayoutKey: Equatable {
+        let ends: [WorkEnd]
+        let offset: Int
+        let placement: PetPlacement
+        let petSize: Double
+    }
+    private var lastLayout: LayoutKey?
     private var offset = 0
     private var scrollPolicy = CompanionScrollPolicy()
     private var spaceAt: TimeInterval?
@@ -90,6 +97,7 @@ import CharCore
     private var lastPointer: NSPoint?
     var canCycle: Bool { runtime.snapshot.bubbles.count > 6 }
     var isSpaceFeedbackActive: Bool { spaceAt != nil || pendingSpaceFeedback }
+    private(set) var visualOpacity: CGFloat = 1
     private var overflowArtwork: NSImage?
     private var overflowCount = -1
     private var lastReduced: Bool?
@@ -105,7 +113,7 @@ import CharCore
         let started: TimeInterval
         let reduced: Bool
         let playback: CompanionPlayback
-        let initialAlpha: CGFloat
+        let initialOpacity: CGFloat
         let initialScale: CGFloat
         var arrived = false
     }
@@ -164,6 +172,7 @@ import CharCore
             preparedSpaceArrival = true
             pet.spaceTuck = reducedMotion ? 0 : 1
             if placement != .desktop { pet.edgeRetraction = reducedMotion ? 0 : min(24, pet.frame.width * 0.5) }
+            applySharedTransform()
             pet.needsDisplay = true
         }
     }
@@ -171,7 +180,8 @@ import CharCore
         preparedSpaceArrival = false
         spaceAt = ProcessInfo.processInfo.systemUptime
         pet.spaceTuck = reducedMotion ? 0 : 1
-        window?.alphaValue = reducedMotion ? 0.75 : 0.45
+        visualOpacity = reducedMotion ? 0.75 : 0.45
+        applySharedTransform()
         pet.needsDisplay = true
         ensureClock()
     }
@@ -190,26 +200,29 @@ import CharCore
         ensureClock()
     }
     private func layoutVisibleBubbles() {
-        lastPointer = nil
         let visible = buttons.filter { button in
             guard case let .bubble(end) = button.kind else { return false }
             return runtime.snapshot.bubbles.contains { $0.workEnd == end }
         }
-        if visible.count <= 6 { offset = 0 }
+        offset = visible.count <= 6 ? 0 : CompanionGeometry.normalizedOffset(offset, count: visible.count)
+        let key = LayoutKey(ends: visible.compactMap { if case let .bubble(end) = $0.kind { return end }; return nil },
+                            offset: offset, placement: placement, petSize: runtime.petSize)
+        guard key != lastLayout else { return }
+        lastLayout = key; lastPointer = nil
         var presented = Set<GraphicButton>()
         pet.placement = placement
         let petFrame = CompanionGeometry.petFrame(placement: placement, petSize: runtime.petSize)
         if pet.frame != petFrame { pet.frame = petFrame }
         let slots = CompanionGeometry.layout(count: visible.count, offset: offset, placement: placement, petSize: runtime.petSize)
         let hasOverflow = slots.contains { $0.primaryIndex == nil }
-        overflow.isHidden = !hasOverflow
+        if overflow.isHidden == hasOverflow { overflow.isHidden = !hasOverflow }
         for slot in slots {
             if let index = slot.primaryIndex {
                 if visible[index].frame != slot.frame { visible[index].frame = slot.frame }
                 visible[index].miniature = false; presented.insert(visible[index])
             } else {
                 if overflow.frame != slot.frame { overflow.frame = slot.frame }
-                overflow.isHidden = false
+                if overflow.isHidden { overflow.isHidden = false }
                 for (index, frame) in zip(slot.overflowIndices, slot.miniFrames) {
                     if visible[index].frame != frame { visible[index].frame = frame }
                     visible[index].miniature = true; presented.insert(visible[index])
@@ -217,7 +230,8 @@ import CharCore
             }
         }
         for button in buttons {
-            button.isHidden = !presented.contains(button)
+            let hidden = !presented.contains(button)
+            if button.isHidden != hidden { button.isHidden = hidden }
             if !button.isHidden { button.refreshArtwork() }
         }
         updateOverflowArtwork()
@@ -281,15 +295,15 @@ import CharCore
     func pressFeedback() { pet.feedbackClip = "press"; feedbackAt = ProcessInfo.processInfo.systemUptime; ensureClock() }
     func transition(to frame: NSRect, placement: PetPlacement, animated: Bool) {
         guard animated else {
-            movement = nil; self.placement = placement; window?.alphaValue = 1
-            window?.setFrame(frame, display: true); pet.motionScale = 1; layoutVisibleBubbles(); return
+            movement = nil; self.placement = placement; visualOpacity = 1
+            window?.setFrame(frame, display: true); pet.motionScale = 1; pet.edgeRetraction = 0; layoutVisibleBubbles(); applySharedTransform(); return
         }
         // Replacing this value interrupts both phases; there are no stale completion callbacks.
         movement = Transition(frame: frame, placement: placement, started: ProcessInfo.processInfo.systemUptime,
                               reduced: reducedMotion,
                               playback: CompanionPlayback(departure: runtime.customPetClipDuration(clip: self.placement == .desktop ? "depart" : "edgeHide"),
                                                           arrival: runtime.customPetClipDuration(clip: placement == .desktop ? "arrive" : "edgePeek")),
-                              initialAlpha: window?.alphaValue ?? 1, initialScale: pet.motionScale)
+                              initialOpacity: visualOpacity, initialScale: pet.motionScale)
         ensureClock()
     }
     private func ensureClock() {
@@ -320,7 +334,7 @@ import CharCore
             pet.clip = arriving ? (motion.placement == .desktop ? "arrive" : "edgePeek") : (placement == .desktop ? "depart" : "edgeHide")
             pet.clipElapsed = reduce ? 0 : playback.clipElapsed(at: elapsed)
             if !arriving {
-                window?.alphaValue = motion.initialAlpha * (1 - phase * phase)
+                visualOpacity = motion.initialOpacity * (1 - phase * phase)
                 pet.motionScale = motion.reduced || placement != .desktop ? 1 : motion.initialScale * (1 - 0.8 * phase * phase)
                 pet.edgeRetraction = motion.reduced || placement == .desktop ? 0 : phase * 38
             } else {
@@ -328,12 +342,12 @@ import CharCore
                     window?.setFrame(motion.frame, display: true)
                     placement = motion.placement; layoutVisibleBubbles(); motion.arrived = true
                 }
-                window?.alphaValue = motion.reduced ? phase : min(1, phase * 3)
+                visualOpacity = motion.reduced ? phase : min(1, phase * 3)
                 pet.motionScale = motion.reduced || placement != .desktop ? 1 : CGFloat(0.2 + 0.8 * CompanionGeometry.arrivalProgress(phase))
                 pet.edgeRetraction = motion.reduced || placement == .desktop ? 0 : CGFloat(38 * (1 - CompanionGeometry.arrivalProgress(phase)))
             }
             movement = t == 1 ? nil : motion
-            if t == 1 { window?.alphaValue = 1; pet.motionScale = 1; pet.edgeRetraction = 0 }
+            if t == 1 { visualOpacity = 1; pet.motionScale = 1; pet.edgeRetraction = 0 }
         }
         if movement == nil, pendingSpaceFeedback {
             pendingSpaceFeedback = false
@@ -341,18 +355,18 @@ import CharCore
         }
         if let start = spaceAt, movement == nil {
             let t = now - start
-            let duration = reduce ? 0.16 : 0.40
+            let duration = reduce ? 0.16 : 0.70
             if t >= duration {
-                spaceAt = nil; pet.spaceTuck = 0; pet.edgeRetraction = 0; window?.alphaValue = 1
+                spaceAt = nil; pet.spaceTuck = 0; pet.edgeRetraction = 0; visualOpacity = 1
             } else {
                 if reduce {
                     pet.spaceTuck = 0
-                    window?.alphaValue = 0.75 + CGFloat(t / duration) * 0.25
+                    visualOpacity = 0.75 + CGFloat(t / duration) * 0.25
                 } else {
                     // Arrival-only feedback avoids a full-size appearance followed by withdrawal.
-                    let tuck = 1 - CompanionGeometry.arrivalProgress(t / duration)
+                    let tuck = 1 - CompanionGeometry.spaceArrivalProgress(t / duration)
                     pet.spaceTuck = CGFloat(max(-0.12, tuck))
-                    window?.alphaValue = min(1, 0.45 + CGFloat(t / duration) * 1.65)
+                    visualOpacity = min(1, 0.45 + CGFloat(t / duration) * 0.90)
                     if placement != .desktop { pet.edgeRetraction = pet.spaceTuck * min(24, pet.frame.width * 0.5) }
                 }
             }
@@ -396,10 +410,40 @@ import CharCore
             if !overflow.isHidden {
                 overflow.layer?.setAffineTransform(BubbleDrawing.layerTransform(elapsed: reduce ? 0 : now - epoch, reduced: reduce))
             }
+            applySharedTransform()
             CATransaction.commit()
         }
         lastReduced = reduce
         // Keep the single lightweight clock for pointer passthrough; Reduce Motion freezes drawing.
+    }
+    /// One scene pose links the pet, primary bubbles and overflow miniatures.
+    /// Layer opacity leaves the native window's occlusion state unchanged.
+    private func applySharedTransform() {
+        let feedback = reducedMotion ? 0 : pet.feedbackElapsed.map { exp(-8 * $0) * sin(22 * $0) } ?? 0
+        let pulse = reducedMotion ? 0 : sin(pet.elapsed * 1.7)
+        let idlePhase = pet.elapsed.truncatingRemainder(dividingBy: 7)
+        let bounce = reducedMotion || idlePhase > 1.2 ? 0 : sin(.pi * idlePhase / 1.2) * exp(-2 * idlePhase) * sin(12 * idlePhase)
+        let baseScale = pet.motionScale * (1 - pet.spaceTuck * 0.45)
+        let sx = baseScale * CGFloat(1 + feedback * 0.06 + pulse * 0.006 + bounce * 0.045)
+        let sy = baseScale * CGFloat(1 - feedback * 0.08 - pulse * 0.006 - bounce * 0.045)
+        // AppKit backing layers commonly use (0,0), unlike ordinary CALayer defaults.
+        let layerAnchor = layer?.anchorPoint ?? .zero
+        let pivot = NSPoint(x: pet.frame.midX - bounds.width * layerAnchor.x,
+                            y: pet.frame.midY - bounds.height * layerAnchor.y)
+        var dx: CGFloat = 0, dy = CGFloat(pulse * 1.8 + bounce * 12)
+        switch placement {
+        case .left: dx = -pet.edgeRetraction
+        case .right: dx = pet.edgeRetraction
+        case .top: dy += pet.edgeRetraction
+        case .bottom: dy -= pet.edgeRetraction
+        case .desktop: break
+        }
+        let transform = CGAffineTransform(a: sx, b: 0, c: 0, d: sy,
+                                          tx: pivot.x * (1 - sx) + dx, ty: pivot.y * (1 - sy) + dy)
+        CATransaction.begin(); CATransaction.setDisableActions(true)
+        layer?.setAffineTransform(transform)
+        layer?.opacity = Float(visualOpacity)
+        CATransaction.commit()
     }
     private func updateOverflowArtwork() {
         guard !overflow.isHidden else { return }
@@ -575,20 +619,13 @@ import CharCore
         // The manifest anchor lands at the stable pet center and is the deformation pivot.
         let anchor = NSPoint(x: bounds.midX, y: bounds.midY)
         transform.translateX(by: anchor.x, yBy: anchor.y)
-        switch placement {
-        case .left: transform.translateX(by: -edgeRetraction, yBy: 0)
-        case .right: transform.translateX(by: edgeRetraction, yBy: 0)
-        case .top: transform.translateX(by: 0, yBy: edgeRetraction)
-        case .bottom: transform.translateX(by: 0, yBy: -edgeRetraction)
-        case .desktop: break
-        }
         let edgeTilt: CGFloat = placement == .left ? -8 : placement == .right ? 8 : 0
         transform.rotate(byDegrees: edgeTilt + CGFloat(reduce ? 0 : sin(elapsed * 0.8) * 2.5 + idleBounce * 6 + feedback * 7))
         let widthPose = CGFloat(1 + pulse * 0.018 + idleBounce * 0.28 + feedback * 0.1)
         let heightPose = CGFloat(1 - pulse * 0.025 - idleBounce * 0.28 - feedback * 0.1)
-        transform.scaleX(by: motionScale * (1 - spaceTuck * 0.45) * widthPose,
-                         yBy: motionScale * (1 - spaceTuck * 0.45) * heightPose)
-        transform.translateX(by: -anchor.x, yBy: -anchor.y + CGFloat(pulse * 1.8 + idleBounce * 12))
+        transform.scaleX(by: widthPose,
+                         yBy: heightPose)
+        transform.translateX(by: -anchor.x, yBy: -anchor.y)
         transform.concat()
         if let image = custom {
             let size = runtime.customPetSize
