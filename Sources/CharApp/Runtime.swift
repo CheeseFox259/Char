@@ -517,7 +517,11 @@ actor ObservationWorker {
         try? await Task.sleep(nanoseconds: 240_000_000)
         guard abs(bubble.presentationFrame.width - bubble.frame.width) < 0.5,
               abs(bubble.presentationFrame.midX - bubble.frame.midX) < 0.5 else { fail("orbit artwork failed to arrive") }
-        bubble.performClick(nil)
+        bubble.beginBubblePress()
+        guard !bubble.finishBubblePress(atSurfacePoint: NSPoint(x: -100, y: -100)),
+              snapshot.hold == nil, router.nextVisit(for: end)?.navigationOutcome == nil else { fail("outside bubble release navigated or created Hold") }
+        bubble.beginBubblePress()
+        guard bubble.finishBubblePress(atSurfacePoint: NSPoint(x: bubble.presentationFrame.midX, y: bubble.presentationFrame.midY)) else { fail("inside presented bubble release cancelled") }
         try? await Task.sleep(nanoseconds: 100_000_000)
         guard router.nextVisit(for: end)?.navigationOutcome == .fallback else { fail("owned artwork clicked incorrect work end") }
         _ = panel.surface.cycleBubbles(by: -1)
@@ -598,6 +602,26 @@ actor ObservationWorker {
                 let skin = try skinStore.importPackage(at: sample)
                 selectSkin(skin.id)
                 guard customPetImage(clip: "idle", elapsed: 0) != nil else { fail("imported skin rendering") }
+                let pet = panel.surface.pet
+                pet.clip = "idle"; pet.clipElapsed = 0; pet.feedbackElapsed = nil
+                router.clearNavigationFeedback(); publish()
+                sourceBadgeAnchor = nil; sourceBadgeOpacity = 0
+                pet.refreshPetArtwork()
+                let withoutBadge = pet.artworkPixelData
+                let staticFrame = customPetImage(clip: "idle", elapsed: 0)
+                sourceBadgeAnchor = fixtureAnchor(); sourceBadgeOpacity = 1
+                pet.refreshPetArtwork()
+                let withBadge = pet.artworkPixelData
+                guard staticFrame === customPetImage(clip: "idle", elapsed: 0),
+                      withoutBadge != nil, withBadge != withoutBadge else { fail("static custom frame missed source badge addition") }
+                sourceBadgeOpacity = 0.5; pet.refreshPetArtwork()
+                guard pet.artworkPixelData != withBadge else { fail("static custom frame missed source badge fade") }
+                sourceBadgeAnchor = nil; sourceBadgeOpacity = 0; pet.refreshPetArtwork()
+                guard pet.artworkPixelData == withoutBadge else { fail("static custom frame retained removed source badge") }
+                router.completeReturn(outcome: .unavailable); publish(); pet.refreshPetArtwork()
+                guard pet.artworkPixelData != withoutBadge else { fail("static custom frame missed navigation feedback") }
+                router.clearNavigationFeedback(); publish(); pet.refreshPetArtwork()
+                guard pet.artworkPixelData == withoutBadge else { fail("static custom frame retained navigation feedback") }
                 deleteSkin(skin.id)
                 guard selectedSkinID == "char.default" else { fail("skin deletion fallback") }
             } catch { fail("sample skin import: \(error)") }

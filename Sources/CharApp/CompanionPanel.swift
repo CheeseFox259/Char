@@ -442,6 +442,8 @@ import CharCore
     private var presentationGeneration = 0
     var renderedWorkEnd: WorkEnd? { if case let .bubble(end) = kind { return end }; return nil }
     var hasOwnedImage: Bool { textureLayer.contents != nil }
+    private var renderedImage: CGImage?
+    var artworkPixelData: Data? { renderedImage?.dataProvider?.data as Data? }
     var presentationFrame: NSRect { graphicLayer.presentation()?.frame ?? graphicLayer.frame }
     unowned let runtime: CompanionRuntime
     private struct ArtworkKey: Equatable {
@@ -463,7 +465,8 @@ import CharCore
         if next != artworkKey {
             artworkKey = next
             artwork = BubbleDrawing.raster(size: NSSize(width: 44, height: 44)) { drawBubbleContent(end) }
-            textureLayer.contents = artwork?.cgImage(forProposedRect: nil, context: nil, hints: nil)
+            renderedImage = artwork?.cgImage(forProposedRect: nil, context: nil, hints: nil)
+            textureLayer.contents = renderedImage
         }
         let bubble = next.bubble
         setAccessibilityLabel("\(end.title): \(bubble?.count ?? 0) unviewed, \(bubble?.runningCount ?? 0) running\(bubble?.head.map { ", \($0.reason.title)\($0.isPast ? ", past" : "")\($0.navigationOutcome == .fallback ? ", application fallback" : "")" } ?? "")")
@@ -551,7 +554,17 @@ import CharCore
         guard isEnabled else { return }
         if case .pet = kind {
             dragStart = NSEvent.mouseLocation; initialOrigin = window?.frame.origin; didDrag = false
-        } else { responding = true }
+        } else { beginBubblePress() }
+    }
+    func beginBubblePress() {
+        guard isEnabled, case .bubble = kind else { return }
+        responding = true
+    }
+    @discardableResult func finishBubblePress(atSurfacePoint point: NSPoint) -> Bool {
+        let accepted = responding && isEnabled && containsSurfacePoint(point)
+        responding = false
+        if accepted { performClickAction() }
+        return accepted
     }
     override func mouseDragged(with event: NSEvent) {
         guard case .pet = kind, let start = dragStart, let origin = initialOrigin else { return }
@@ -561,7 +574,11 @@ import CharCore
         if didDrag { window?.setFrameOrigin(NSPoint(x: origin.x + dx, y: origin.y + dy)) }
     }
     override func mouseUp(with event: NSEvent) {
-        guard case .pet = kind else { if responding { responding = false; performClickAction() }; return }
+        guard case .pet = kind else {
+            let point = superview?.convert(event.locationInWindow, from: nil) ?? .zero
+            _ = finishBubblePress(atSurfacePoint: point)
+            return
+        }
         if didDrag { runtime.saveDraggedPosition() } else { performClickAction() }
         dragStart = nil; initialOrigin = nil
     }
@@ -684,18 +701,21 @@ import CharCore
     func refreshPetArtwork() {
         guard case .pet = kind, bounds.width > 0 else { return }
         let imageClip = feedbackElapsed == nil ? clip : feedbackClip
+        let badge = runtime.sourceBadgeAnchor
+        let overlayKey = "\(badge?.id ?? "")/\(badge?.bundleIdentifier ?? "")/\(String(describing: badge?.accuracy))/\(Int(runtime.sourceBadgeOpacity*30))/\(String(describing: runtime.snapshot.navigationFeedback))"
         if let custom = runtime.customPetImage(clip: imageClip, elapsed: feedbackElapsed ?? clipElapsed) {
             let identity = ObjectIdentifier(custom)
-            guard identity != customImageIdentity || petArtworkKey != "custom/\(bounds.size)/\(placement)" else { return }
-            customImageIdentity = identity; petArtworkKey = "custom/\(bounds.size)/\(placement)"
+            guard identity != customImageIdentity || petArtworkKey != "custom/\(bounds.size)/\(placement)/\(overlayKey)" else { return }
+            customImageIdentity = identity; petArtworkKey = "custom/\(bounds.size)/\(placement)/\(overlayKey)"
         } else {
             let blink = !reducedMotion && elapsed.truncatingRemainder(dividingBy: 5.2) > 5.04
-            let key = "\(bounds.size)/\(placement)/\(Int(gaze.x*30))/\(Int(gaze.y*30))/\(blink)/\(responding)/\(runtime.sourceBadgeAnchor?.bundleIdentifier ?? "")/\(Int(runtime.sourceBadgeOpacity*30))/\(String(describing: runtime.snapshot.navigationFeedback))"
+            let key = "\(bounds.size)/\(placement)/\(Int(gaze.x*30))/\(Int(gaze.y*30))/\(blink)/\(responding)/\(overlayKey)"
             guard petArtworkKey != key else { return }
             customImageIdentity = nil; petArtworkKey = key
         }
         let image = BubbleDrawing.raster(size: bounds.size) { drawPet() }
-        textureLayer.contents = image.cgImage(forProposedRect: nil, context: nil, hints: nil)
+        renderedImage = image.cgImage(forProposedRect: nil, context: nil, hints: nil)
+        textureLayer.contents = renderedImage
     }
     func configureIdle(reduced: Bool) {
         if reduced { textureLayer.removeAnimation(forKey: "idle"); return }
