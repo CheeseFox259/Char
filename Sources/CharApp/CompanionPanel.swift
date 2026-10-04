@@ -2,32 +2,6 @@ import AppKit
 import QuartzCore
 import CharCore
 
-/// Opt-in native input/render boundary trace; contains no session or page data.
-@MainActor private enum OrbitTrace {
-    static let enabled = ProcessInfo.processInfo.environment["CHAR_ORBIT_TRACE"] == "1"
-    static var sequence = 0
-    static var activeUntil: TimeInterval = 0
-    static func record(_ message: @autoclosure () -> String) {
-        guard enabled else { return }
-        let line = "[DEBUG-char-orbit] t=\(ProcessInfo.processInfo.systemUptime) \(message())\n"
-        FileHandle.standardError.write(Data(line.utf8))
-    }
-    static func rendered(_ end: WorkEnd, frame: NSRect) {
-        guard enabled, ProcessInfo.processInfo.systemUptime <= activeUntil else { return }
-        record("draw-complete sequence=\(sequence) end=\(end.rawValue) frame=\(frame)")
-    }
-}
-
-/// Temporary public-API experiment, disabled unless explicitly requested at launch.
-@MainActor enum CompanionSpaceProbe {
-    static let enabled = ProcessInfo.processInfo.environment["CHAR_SPACE_FRESH_PANEL"] == "1"
-    static func record(_ stage: String, panel: CompanionPanel) {
-        guard enabled else { return }
-        let line = "[DEBUG-char-space-fresh] t=\(ProcessInfo.processInfo.systemUptime) stage=\(stage) panel=\(panel.windowNumber) visible=\(panel.isVisible) tuck=\(panel.surface.pet.spaceTuck) opacity=\(panel.surface.visualOpacity) offset=\(panel.surface.orbitOffset)\n"
-        FileHandle.standardError.write(Data(line.utf8))
-    }
-}
-
 @MainActor private enum BubbleDrawing {
     static func raster(size: NSSize, draw: () -> Void) -> NSImage {
         let scale: CGFloat = 2
@@ -46,12 +20,6 @@ import CharCore
         NSGraphicsContext.current?.cgContext.clear(CGRect(origin: .zero, size: size))
         draw()
         let image = NSImage(size: size); image.addRepresentation(rep); return image
-    }
-    static func layerTransform(elapsed: TimeInterval, hover: CGFloat = 0, reduced: Bool = false) -> CGAffineTransform {
-        let wobble = reduced ? 0 : sin(elapsed * 1.2) * sin(elapsed * 0.37)
-        return CGAffineTransform(rotationAngle: CGFloat(wobble * 2.5 * .pi / 180))
-            .scaledBy(x: CGFloat(1 + wobble * 0.035) + hover * 0.09, y: CGFloat(1 - wobble * 0.035) + hover * 0.09)
-            .translatedBy(x: 0, y: hover * 3)
     }
     static func shell(in bounds: NSRect, tint: NSColor) {
         let rect = bounds.insetBy(dx: 2, dy: 2)
@@ -72,9 +40,7 @@ import CharCore
                    styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
         isOpaque = false; backgroundColor = .clear; hasShadow = false
         level = .statusBar; hidesOnDeactivate = false; isMovableByWindowBackground = false
-        collectionBehavior = [.fullScreenAuxiliary, .stationary]
-        if CompanionSpaceProbe.enabled { isReleasedWhenClosed = false }
-        else { collectionBehavior.insert(.canJoinAllSpaces) }
+        collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary]
         if #available(macOS 14, *) {
             collectionBehavior.remove(.fullScreenAuxiliary)
             collectionBehavior.insert(.canJoinAllApplications)
@@ -92,15 +58,18 @@ import CharCore
     unowned let runtime: CompanionRuntime
     let pet: GraphicButton
     let buttons: [GraphicButton]
-    private let overflow = NSImageView(frame: .zero)
+    private let overflow = CALayer()
     private struct LayoutKey: Equatable {
         let ends: [WorkEnd]
         let offset: Int
         let placement: PetPlacement
         let petSize: Double
+        let distance: Double
     }
     private var lastLayout: LayoutKey?
     private var offset = 0
+    private var orbitUntil: TimeInterval = 0
+    private var lastOrbitActive = false
     var orbitOffset: Int { offset }
     var isClockRunning: Bool { clock != nil }
     private var scrollPolicy = CompanionScrollPolicy()
@@ -109,7 +78,8 @@ import CharCore
     private var spaceLifecycle = CompanionSpaceLifecycle()
     private var occlusionObserver: NSObjectProtocol?
     private var lastPointer: NSPoint?
-    var canCycle: Bool { runtime.snapshot.bubbles.count > 6 }
+    var capacity: Int { CompanionGeometry.capacity(placement: placement, petSize: runtime.petSize, bubbleDistance: runtime.bubbleDistance) }
+    var canCycle: Bool { runtime.snapshot.bubbles.count > capacity }
     var isSpaceFeedbackActive: Bool { spaceAt != nil || pendingSpaceFeedback }
     private(set) var visualOpacity: CGFloat = 1
     private var overflowArtwork: NSImage?
@@ -136,17 +106,14 @@ import CharCore
     init(runtime: CompanionRuntime) {
         self.runtime = runtime
         pet = GraphicButton(kind: .pet, runtime: runtime)
-        // Five regular slots plus up to three fixed miniature slots when folded.
-        buttons = (0..<8).map { _ in GraphicButton(kind: .bubble(.claudeCode), runtime: runtime) }
+        buttons = WorkEnd.allCases.map { GraphicButton(kind: .bubble($0), runtime: runtime) }
         super.init(frame: NSRect(origin: .zero, size: CompanionGeometry.canvasSize))
         wantsLayer = true
-        overflow.wantsLayer = true
-        overflow.layerContentsRedrawPolicy = .onSetNeedsDisplay
-        overflow.imageScaling = .scaleAxesIndependently
-        overflow.setAccessibilityElement(false)
-        addSubview(pet)
-        addSubview(overflow)
-        for button in buttons { addSubview(button) }
+        overflow.contentsScale = 2
+        overflow.actions = ["contents": NSNull(), "bounds": NSNull(), "position": NSNull(), "opacity": NSNull()]
+        layer?.addSublayer(overflow)
+        addSubview(pet); pet.attachArtwork(to: layer!)
+        for button in buttons { addSubview(button); button.attachArtwork(to: layer!) }
         setAccessibilityElement(true)
         setAccessibilityRole(.group)
         setAccessibilityLabel("Agent orbit, scroll or use next and previous actions to cycle bubbles")
@@ -175,16 +142,6 @@ import CharCore
         if let occlusionObserver { NotificationCenter.default.removeObserver(occlusionObserver) }
         occlusionObserver = nil
     }
-    var replacementFrame: NSRect { movement?.frame ?? window?.frame ?? .zero }
-    var replacementPlacement: PetPlacement { movement?.placement ?? placement }
-    func prepareFreshSpaceProbe(placement: PetPlacement, orbitOffset: Int) {
-        self.placement = placement; offset = orbitOffset; lastLayout = nil
-        layoutVisibleBubbles()
-        prepareSpaceAppearance()
-        visualOpacity = reducedMotion ? 0.75 : 0.45
-        applySharedTransform()
-        pet.needsDisplay = true
-    }
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
         if let occlusionObserver { NotificationCenter.default.removeObserver(occlusionObserver) }
@@ -194,11 +151,7 @@ import CharCore
             MainActor.assumeIsolated { self?.occlusionChanged() }
         }
     }
-    private func traceSpace(_ source: String) {
-        OrbitTrace.record("space source=\(source) visible=\(window?.occlusionState.contains(.visible) ?? false) state=\(spaceLifecycle.state) active=\(spaceAt != nil) pending=\(pendingSpaceFeedback)")
-    }
     private func occlusionChanged() {
-        traceSpace("occlusion")
         guard let window, movement == nil else { return }
         if window.occlusionState.contains(.visible) { beginSpaceArrival() }
         else { prepareSpaceAppearance() }
@@ -211,7 +164,6 @@ import CharCore
         if placement != .desktop { pet.edgeRetraction = reducedMotion ? 0 : min(24, pet.frame.width * 0.5) }
         applySharedTransform()
         pet.needsDisplay = true
-        traceSpace("prepare-hidden")
     }
     private func beginSpaceArrival() {
         guard window?.occlusionState.contains(.visible) == true,
@@ -221,8 +173,8 @@ import CharCore
         pet.spaceTuck = reducedMotion ? 0 : 1
         visualOpacity = reducedMotion ? 0.75 : 0.45
         applySharedTransform()
-        pet.needsDisplay = true
-        traceSpace("begin-arrival")
+        pet.refreshPetArtwork()
+        configureIdle()
         ensureClock()
     }
     required init?(coder: NSCoder) { nil }
@@ -231,101 +183,73 @@ import CharCore
         layoutVisibleBubbles()
         pet.setAccessibilityLabel(runtime.snapshot.hold == nil ? "Char 桌宠，当前不可回城" : "回城，返回最初来源，Control+B\(runtime.snapshot.hold?.anchor.accuracy == .application ? "，应用级降级" : "")")
         for button in buttons { button.refreshArtwork() }
-        pet.needsDisplay = true
+        pet.refreshPetArtwork()
+        configureIdle()
         ensureClock()
     }
-    private func layoutVisibleBubbles() {
+    private func layoutVisibleBubbles(animated: Bool = false) {
         let ends = WorkEnd.allCases.filter { end in runtime.snapshot.bubbles.contains { $0.workEnd == end } }
-        offset = ends.count <= 6 ? 0 : CompanionGeometry.normalizedOffset(offset, count: ends.count)
-        let key = LayoutKey(ends: ends, offset: offset, placement: placement, petSize: runtime.petSize)
+        offset = ends.count <= capacity ? 0 : CompanionGeometry.normalizedOffset(offset, count: ends.count)
+        let key = LayoutKey(ends: ends, offset: offset, placement: placement, petSize: runtime.petSize, distance: runtime.bubbleDistance)
         guard key != lastLayout else { return }
         lastLayout = key; lastPointer = nil
-        var presented = Set<GraphicButton>()
         pet.placement = placement
         let petFrame = CompanionGeometry.petFrame(placement: placement, petSize: runtime.petSize)
         if pet.frame != petFrame { pet.frame = petFrame }
-        let slots = CompanionGeometry.layout(count: ends.count, offset: offset, placement: placement, petSize: runtime.petSize)
-        let hasOverflow = slots.contains { $0.primaryIndex == nil }
-        if overflow.isHidden == hasOverflow { overflow.isHidden = !hasOverflow }
-        for (slotIndex, slot) in slots.enumerated() {
-            if let index = slot.primaryIndex {
-                let button = buttons[slotIndex]
-                button.bind(end: ends[index], miniature: false, frame: slot.frame)
-                presented.insert(button)
-            } else {
-                if overflow.frame != slot.frame { overflow.frame = slot.frame }
-                if overflow.isHidden { overflow.isHidden = false }
-                for (miniIndex, pair) in zip(slot.overflowIndices, slot.miniFrames).enumerated() {
-                    let button = buttons[5 + miniIndex]
-                    button.bind(end: ends[pair.0], miniature: true, frame: pair.1)
-                    presented.insert(button)
-                }
+        pet.presentPetFrame(petFrame)
+        let center = NSPoint(x: petFrame.midX, y: petFrame.midY)
+        let slots = CompanionGeometry.layout(count: ends.count, offset: offset, placement: placement, petSize: runtime.petSize, bubbleDistance: runtime.bubbleDistance)
+        var targets: [WorkEnd: (NSRect, Bool)] = [:]
+        var foldingCenter = center
+        overflow.isHidden = !slots.contains { $0.primaryIndex == nil }
+        for slot in slots {
+            if let index = slot.primaryIndex { targets[ends[index]] = (slot.frame, false) }
+            else {
+                overflow.frame = slot.frame; foldingCenter = NSPoint(x: slot.frame.midX, y: slot.frame.midY)
+                for (index, frame) in zip(slot.overflowIndices, slot.miniFrames) { targets[ends[index]] = (frame, true) }
             }
         }
         for button in buttons {
-            let hidden = !presented.contains(button)
-            if button.isHidden != hidden { button.isHidden = hidden }
-            if !hidden { button.refreshArtwork() }
+            guard case let .bubble(end) = button.kind else { continue }
+            if let target = targets[end] {
+                button.presentBubble(frame: target.0, miniature: target.1, visible: true,
+                                     animated: animated && !reducedMotion, orbitCenter: center)
+            } else {
+                button.presentBubble(frame: NSRect(x: foldingCenter.x - 9, y: foldingCenter.y - 9, width: 18, height: 18),
+                                     miniature: true, visible: false, animated: animated && !reducedMotion, orbitCenter: center)
+            }
         }
         updateOverflowArtwork()
         setAccessibilityChildren([pet] + buttons.filter { !$0.isHidden })
+        applySharedTransform()
     }
     override func hitTest(_ point: NSPoint) -> NSView? {
         let local = convert(point, from: superview)
         for button in ([pet] + buttons).reversed() where !button.isHidden {
-            let p = button.convert(local, from: self)
-            if button.containsInteractivePoint(p) { return button }
+            if button.containsSurfacePoint(local) { return button }
         }
         if !overflow.isHidden && overflow.frame.contains(local) { return self }
+        if ProcessInfo.processInfo.systemUptime < orbitUntil {
+            let radius = CompanionGeometry.radius(petSize: runtime.petSize, bubbleDistance: runtime.bubbleDistance)
+            if abs(hypot(local.x - pet.frame.midX, local.y - pet.frame.midY) - radius) < 30 { return self }
+        }
         return nil
     }
     override func scrollWheel(with event: NSEvent) {
-        if OrbitTrace.enabled {
-            OrbitTrace.sequence += 1
-            OrbitTrace.record("input sequence=\(OrbitTrace.sequence) eventTime=\(event.timestamp) dx=\(event.scrollingDeltaX) dy=\(event.scrollingDeltaY) precise=\(event.hasPreciseScrollingDeltas) phase=\(event.phase.rawValue) momentum=\(event.momentumPhase.rawValue) offset=\(offset)")
-        }
         let step = scrollPolicy.step(delta: Double(event.scrollingDeltaY + event.scrollingDeltaX),
                                      precise: event.hasPreciseScrollingDeltas, hasGesturePhase: event.phase != [], momentum: event.momentumPhase != [],
-                                     count: runtime.snapshot.bubbles.count, now: event.timestamp)
-        OrbitTrace.record("policy sequence=\(OrbitTrace.sequence) step=\(step) count=\(runtime.snapshot.bubbles.count)")
+                                     count: runtime.snapshot.bubbles.count, capacity: capacity, now: event.timestamp)
         if step != 0 { _ = cycleBubbles(by: step) }
     }
     @discardableResult func cycleBubbles(by step: Int) -> Bool {
         guard canCycle, step != 0 else { return false }
-            OrbitTrace.activeUntil = ProcessInfo.processInfo.systemUptime + 0.12
-            CATransaction.begin(); CATransaction.setDisableActions(true)
-            offset += step; layoutVisibleBubbles()
-            // AppKit may track a mouse-wheel gesture before the next default-mode
-            // draw. Present this accepted step now instead of waiting for exit.
-            displayIfNeeded()
-            for button in buttons where !button.isHidden { button.displayIfNeeded() }
-            overflow.displayIfNeeded()
-            CATransaction.commit(); CATransaction.flush()
-            traceOrder("appkit-flush-complete")
-            if OrbitTrace.enabled {
-                let sequence = OrbitTrace.sequence
-                let acceptedOffset = offset
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.03) { [weak self] in
-                    guard let self, self.offset == acceptedOffset else { return }
-                    self.traceOrder("presentation-after-30ms", sequence: sequence)
-                }
-            }
+        orbitUntil = reducedMotion ? 0 : ProcessInfo.processInfo.systemUptime + 0.18
+        offset += step; layoutVisibleBubbles(animated: true)
         return true
-    }
-    private func traceOrder(_ boundary: String, sequence: Int? = nil) {
-        guard OrbitTrace.enabled else { return }
-        let order = buttons.filter { !$0.isHidden }.map { button -> String in
-            guard case let .bubble(end) = button.kind else { return "pet" }
-            let layer = button.layer
-            return "\(end.rawValue):mini=\(button.miniature):frame=\(button.frame):model=\(String(describing: layer?.position)):present=\(String(describing: layer?.presentation()?.position))"
-        }.joined(separator: "|")
-        let mode = RunLoop.current.currentMode?.rawValue ?? "none"
-        OrbitTrace.record("\(boundary) sequence=\(sequence ?? OrbitTrace.sequence) offset=\(offset) runloop=\(mode) windowVisible=\(window?.isVisible ?? false) occlusion=\(window?.occlusionState.rawValue ?? 0) ignoresMouse=\(window?.ignoresMouseEvents ?? false) sceneOpacity=\(layer?.opacity ?? 0) surfaceNeedsDisplay=\(needsDisplay) order=\(order)")
     }
     @objc fileprivate func nextBubbles() -> Bool { cycleBubbles(by: 1) }
     @objc fileprivate func previousBubbles() -> Bool { cycleBubbles(by: -1) }
     func spaceFeedback() {
-        traceSpace("workspace-notification")
         // Notifications may arrive after the pet already became visible. A
         // preserved window needs no replay; an observed hidden cycle arrives once.
         guard spaceLifecycle.state == .prepared else { return }
@@ -356,6 +280,7 @@ import CharCore
         if let clock { RunLoop.main.add(clock, forMode: .common); RunLoop.main.add(clock, forMode: .eventTracking) }
     }
     private func animate() {
+        guard window?.isVisible == true else { return }
         let now = ProcessInfo.processInfo.systemUptime
         let reduce = reducedMotion
         let wasAnimating = movement != nil || feedbackAt != nil || spaceAt != nil
@@ -400,7 +325,6 @@ import CharCore
             let duration = reduce ? 0.16 : 0.70
             if t >= duration {
                 spaceAt = nil; spaceLifecycle.finishArrival(); pet.spaceTuck = 0; pet.edgeRetraction = 0; visualOpacity = 1
-                traceSpace("arrival-complete")
             } else {
                 if reduce {
                     pet.spaceTuck = 0
@@ -414,69 +338,63 @@ import CharCore
                 }
             }
         }
-        var interactionChanged = false
         // AppKit hitTest alone does not forward events through a transparent NSWindow.
         if let window {
             let local = convert(window.convertPoint(fromScreen: NSEvent.mouseLocation), from: nil)
-            if local != lastPointer {
+            let orbitActive = now < orbitUntil
+            if local != lastPointer || orbitActive || orbitActive != lastOrbitActive {
                 let desired = hitTest(local) == nil
                 if window.ignoresMouseEvents != desired {
-                    OrbitTrace.record("hit-state sequence=\(OrbitTrace.sequence) ignoresMouse=\(desired) pointer=\(local) runloop=\(RunLoop.current.currentMode?.rawValue ?? "none")")
                     window.ignoresMouseEvents = desired
                 }
                 lastPointer = local
+                lastOrbitActive = orbitActive
             }
             var nearest: GraphicButton?
             var distance: CGFloat = 90
             for button in buttons where !button.isHidden {
-                let d = hypot(local.x - button.frame.midX, local.y - button.frame.midY)
+                let d = hypot(local.x - button.presentationFrame.midX, local.y - button.presentationFrame.midY)
                 if d < distance { nearest = button; distance = d }
-                let target: CGFloat = button.containsInteractivePoint(button.convert(local, from: self)) ? 1 : 0
+                let target: CGFloat = button.containsSurfacePoint(local) ? 1 : 0
                 let oldHover = button.hover
                 button.hover += (target - button.hover) * 0.18
-                interactionChanged = interactionChanged || abs(button.hover - oldHover) > 0.002
+                if abs(button.hover - oldHover) > 0.002 { button.updateHoverRim() }
             }
             let target = nearest == nil ? NSPoint.zero : NSPoint(x: (local.x - pet.frame.midX) / 80, y: (local.y - pet.frame.midY) / 80)
-            let oldGaze = pet.gaze
             pet.gaze.x += (max(-1, min(1, target.x)) - pet.gaze.x) * 0.12
             pet.gaze.y += (max(-1, min(1, target.y)) - pet.gaze.y) * 0.12
-            interactionChanged = interactionChanged || hypot(pet.gaze.x - oldGaze.x, pet.gaze.y - oldGaze.y) > 0.002
         }
-        let redraw = !reduce || lastReduced != reduce || wasAnimating || interactionChanged
-        if redraw {
-            pet.needsDisplay = true
-            CATransaction.begin()
-            CATransaction.setDisableActions(true)
-            for button in buttons where !button.isHidden {
-                guard case let .bubble(end) = button.kind else { continue }
-                let phase = (reduce ? 0 : now - epoch) + Double(WorkEnd.allCases.firstIndex(of: end) ?? 0) * 0.7
-                button.layer?.setAffineTransform(BubbleDrawing.layerTransform(elapsed: phase, hover: button.hover, reduced: reduce))
-                button.updateHoverRim()
-            }
-            if !overflow.isHidden {
-                overflow.layer?.setAffineTransform(BubbleDrawing.layerTransform(elapsed: reduce ? 0 : now - epoch, reduced: reduce))
-            }
-            applySharedTransform()
-            CATransaction.commit()
-        }
+        pet.refreshPetArtwork()
+        if lastReduced != reduce { configureIdle() }
+        if wasAnimating || lastReduced != reduce { applySharedTransform() }
         lastReduced = reduce
         // Keep the single lightweight clock for pointer passthrough; Reduce Motion freezes drawing.
+    }
+    private func configureIdle() {
+        for button in [pet] + buttons { button.configureIdle(reduced: reducedMotion) }
+        if reducedMotion { layer?.removeAnimation(forKey: "scene-idle"); return }
+        guard layer?.animation(forKey: "scene-idle") == nil else { return }
+        let bob = CAKeyframeAnimation(keyPath: "transform.translation.y")
+        bob.values = [0, 2, 0, -1, 0]; bob.isAdditive = true
+        let breathe = CAKeyframeAnimation(keyPath: "transform.scale")
+        breathe.values = [0, 0.006, 0, -0.004, 0]; breathe.isAdditive = true
+        for animation in [bob,breathe] { animation.duration = 4.8; animation.timingFunctions = Array(repeating: CAMediaTimingFunction(name: .easeInEaseOut), count: 4) }
+        let group = CAAnimationGroup(); group.animations = [bob,breathe]; group.duration = 4.8
+        group.repeatCount = .infinity; group.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+        layer?.add(group, forKey: "scene-idle")
     }
     /// One scene pose links the pet, primary bubbles and overflow miniatures.
     /// Layer opacity leaves the native window's occlusion state unchanged.
     private func applySharedTransform() {
         let feedback = reducedMotion ? 0 : pet.feedbackElapsed.map { exp(-8 * $0) * sin(22 * $0) } ?? 0
-        let pulse = reducedMotion ? 0 : sin(pet.elapsed * 1.7)
-        let idlePhase = pet.elapsed.truncatingRemainder(dividingBy: 7)
-        let bounce = reducedMotion || idlePhase > 1.2 ? 0 : sin(.pi * idlePhase / 1.2) * exp(-2 * idlePhase) * sin(12 * idlePhase)
         let baseScale = pet.motionScale * (1 - pet.spaceTuck * 0.45)
-        let sx = baseScale * CGFloat(1 + feedback * 0.06 + pulse * 0.006 + bounce * 0.045)
-        let sy = baseScale * CGFloat(1 - feedback * 0.08 - pulse * 0.006 - bounce * 0.045)
+        let sx = baseScale * CGFloat(1 + feedback * 0.06)
+        let sy = baseScale * CGFloat(1 - feedback * 0.08)
         // AppKit backing layers commonly use (0,0), unlike ordinary CALayer defaults.
         let layerAnchor = layer?.anchorPoint ?? .zero
         let pivot = NSPoint(x: pet.frame.midX - bounds.width * layerAnchor.x,
                             y: pet.frame.midY - bounds.height * layerAnchor.y)
-        var dx: CGFloat = 0, dy = CGFloat(pulse * 1.8 + bounce * 12)
+        var dx: CGFloat = 0, dy: CGFloat = 0
         switch placement {
         case .left: dx = -pet.edgeRetraction
         case .right: dx = pet.edgeRetraction
@@ -493,7 +411,7 @@ import CharCore
     }
     private func updateOverflowArtwork() {
         guard !overflow.isHidden else { return }
-        let count = max(0, runtime.snapshot.bubbles.count - 5)
+        let count = max(0, runtime.snapshot.bubbles.count - (capacity - 1))
         if overflowCount == count, overflowArtwork != nil { return }
         overflowCount = count
         overflowArtwork = BubbleDrawing.raster(size: overflow.frame.size) {
@@ -504,15 +422,27 @@ import CharCore
                             withAttributes: [.font: NSFont.systemFont(ofSize: 9, weight: .bold),
                                              .foregroundColor: NSColor.labelColor, .paragraphStyle: style])
         }
-        overflow.image = overflowArtwork
+        overflow.contents = overflowArtwork?.cgImage(forProposedRect: nil, context: nil, hints: nil)
     }
 }
 
-@MainActor final class GraphicButton: NSButton {
+@MainActor final class GraphicButton: NSView {
     // All vector and manifest-anchor geometry uses AppKit's bottom-left coordinates.
     override var isFlipped: Bool { false }
+    override var isOpaque: Bool { false }
     enum Kind { case pet, bubble(WorkEnd) }
-    private(set) var kind: Kind
+    let kind: Kind
+    var isEnabled = true
+    let graphicLayer = CALayer()
+    private let textureLayer = CALayer()
+    private let hoverLayer = CALayer()
+    private var externalArtwork = false
+    private var petArtworkKey = ""
+    private var customImageIdentity: ObjectIdentifier?
+    private var presentationGeneration = 0
+    var renderedWorkEnd: WorkEnd? { if case let .bubble(end) = kind { return end }; return nil }
+    var hasOwnedImage: Bool { textureLayer.contents != nil }
+    var presentationFrame: NSRect { graphicLayer.presentation()?.frame ?? graphicLayer.frame }
     unowned let runtime: CompanionRuntime
     private struct ArtworkKey: Equatable {
         let workEnd: WorkEnd
@@ -530,18 +460,13 @@ import CharCore
         guard case let .bubble(end) = kind else { return }
         let next = ArtworkKey(workEnd: end, bubble: runtime.snapshot.bubbles.first { $0.workEnd == end },
                               icon: runtime.agentIcon(for: end).map(ObjectIdentifier.init), miniature: miniature, size: bounds.size)
-        if next != artworkKey { artworkKey = next; artwork = nil; needsDisplay = true }
+        if next != artworkKey {
+            artworkKey = next
+            artwork = BubbleDrawing.raster(size: NSSize(width: 44, height: 44)) { drawBubbleContent(end) }
+            textureLayer.contents = artwork?.cgImage(forProposedRect: nil, context: nil, hints: nil)
+        }
         let bubble = next.bubble
         setAccessibilityLabel("\(end.title): \(bubble?.count ?? 0) unviewed, \(bubble?.runningCount ?? 0) running\(bubble?.head.map { ", \($0.reason.title)\($0.isPast ? ", past" : "")\($0.navigationOutcome == .fallback ? ", application fallback" : "")" } ?? "")")
-    }
-    func bind(end: WorkEnd, miniature: Bool, frame: NSRect) {
-        if case let .bubble(previous) = kind, previous != end {
-            kind = .bubble(end)
-            artworkKey = nil; artwork = nil
-        }
-        self.miniature = miniature
-        if self.frame != frame { self.frame = frame }
-        refreshArtwork()
     }
     var reducedMotion = NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
     private static let defaultBody = BubbleDrawing.raster(size: NSSize(width: 76, height: 76)) {
@@ -556,8 +481,11 @@ import CharCore
     private let hoverRim = CAShapeLayer()
     private var rimBounds = NSRect.zero
     func updateHoverRim() {
-        if rimBounds != bounds { rimBounds = bounds; hoverRim.path = CGPath(ellipseIn: bounds.insetBy(dx: 2, dy: 2), transform: nil) }
+        if rimBounds != textureLayer.bounds { rimBounds = textureLayer.bounds; hoverRim.path = CGPath(ellipseIn: textureLayer.bounds.insetBy(dx: 2, dy: 2), transform: nil) }
+        CATransaction.begin(); CATransaction.setDisableActions(true)
         hoverRim.opacity = Float(hover)
+        hoverLayer.setAffineTransform(CGAffineTransform(translationX: 0, y: hover * 3).scaledBy(x: 1 + hover * 0.09, y: 1 + hover * 0.09))
+        CATransaction.commit()
     }
     var spaceTuck: CGFloat = 0
     var miniature = false
@@ -584,8 +512,13 @@ import CharCore
         self.kind = kind; self.runtime = runtime
         super.init(frame: .zero)
         wantsLayer = true
-        layerContentsRedrawPolicy = .onSetNeedsDisplay
-        isBordered = false; title = ""; target = self; action = #selector(performClickAction)
+        graphicLayer.bounds = NSRect(x: 0, y: 0, width: 44, height: 44)
+        hoverLayer.frame = graphicLayer.bounds
+        textureLayer.frame = graphicLayer.bounds
+        textureLayer.contentsScale = 2
+        graphicLayer.addSublayer(hoverLayer); hoverLayer.addSublayer(textureLayer); layer?.addSublayer(graphicLayer)
+        let actions: [String: CAAction] = ["contents": NSNull(), "bounds": NSNull(), "position": NSNull(), "transform": NSNull(), "opacity": NSNull()]
+        graphicLayer.actions = actions; textureLayer.actions = actions; hoverLayer.actions = actions
         setAccessibilityRole(.button)
         switch kind {
         case .pet:
@@ -597,12 +530,15 @@ import CharCore
             hoverRim.fillColor = NSColor.clear.cgColor
             hoverRim.strokeColor = NSColor.white.withAlphaComponent(0.95).cgColor
             hoverRim.lineWidth = 2; hoverRim.opacity = 0
-            layer?.addSublayer(hoverRim)
+            textureLayer.addSublayer(hoverRim)
             setAccessibilityCustomActions([NSAccessibilityCustomAction(name: "Ignore first attention item", target: self, selector: #selector(accessibleIgnore))])
         }
     }
     required init?(coder: NSCoder) { nil }
+    func performClick(_ sender: Any?) { performClickAction() }
+    override func accessibilityPerformPress() -> Bool { guard isEnabled else { return false }; performClickAction(); return true }
     @objc private func performClickAction() {
+        guard isEnabled else { return }
         switch kind {
         case .pet:
             if runtime.snapshot.hold == nil { (superview as? CompanionSurface)?.pressFeedback() }
@@ -610,10 +546,12 @@ import CharCore
         case let .bubble(end): runtime.visit(end)
         }
     }
+    override func hitTest(_ point: NSPoint) -> NSView? { isEnabled ? super.hitTest(point) : nil }
     override func mouseDown(with event: NSEvent) {
+        guard isEnabled else { return }
         if case .pet = kind {
             dragStart = NSEvent.mouseLocation; initialOrigin = window?.frame.origin; didDrag = false
-        } else { super.mouseDown(with: event) }
+        } else { responding = true }
     }
     override func mouseDragged(with event: NSEvent) {
         guard case .pet = kind, let start = dragStart, let origin = initialOrigin else { return }
@@ -623,7 +561,7 @@ import CharCore
         if didDrag { window?.setFrameOrigin(NSPoint(x: origin.x + dx, y: origin.y + dy)) }
     }
     override func mouseUp(with event: NSEvent) {
-        guard case .pet = kind else { super.mouseUp(with: event); return }
+        guard case .pet = kind else { if responding { responding = false; performClickAction() }; return }
         if didDrag { runtime.saveDraggedPosition() } else { performClickAction() }
         dragStart = nil; initialOrigin = nil
     }
@@ -661,15 +599,121 @@ import CharCore
     @objc private func endAction() { runtime.endHold() }
     @objc private func quitAction() { NSApp.terminate(nil) }
 
-    override func draw(_ dirtyRect: NSRect) {
-        switch kind { case .pet: drawPet(); case let .bubble(end): drawBubble(end) }
+    override var wantsUpdateLayer: Bool { true }
+    override func updateLayer() { if case .pet = kind { refreshPetArtwork() } else { refreshArtwork() } }
+    override func layout() {
+        super.layout()
+        if !externalArtwork {
+            graphicLayer.bounds = bounds; graphicLayer.position = NSPoint(x: bounds.midX, y: bounds.midY)
+            hoverLayer.frame = graphicLayer.bounds
+            textureLayer.frame = graphicLayer.bounds
+            refreshPetArtwork()
+        }
+    }
+    func attachArtwork(to host: CALayer) {
+        externalArtwork = true
+        graphicLayer.removeFromSuperlayer(); host.addSublayer(graphicLayer)
+    }
+    func containsSurfacePoint(_ point: NSPoint) -> Bool {
+        guard !isHidden else { return false }
+        let frame = presentationFrame
+        guard frame.contains(point) else { return false }
+        if case .pet = kind { return true }
+        let x = (point.x-frame.midX)/(frame.width/2), y = (point.y-frame.midY)/(frame.height/2)
+        return x*x+y*y <= 1
+    }
+    func presentPetFrame(_ frame: NSRect) {
+        CATransaction.begin(); CATransaction.setDisableActions(true)
+        graphicLayer.bounds = NSRect(origin: .zero, size: frame.size)
+        graphicLayer.position = NSPoint(x: frame.midX, y: frame.midY)
+        hoverLayer.frame = graphicLayer.bounds
+        textureLayer.frame = graphicLayer.bounds
+        CATransaction.commit()
+        refreshPetArtwork()
+    }
+    func presentBubble(frame: NSRect, miniature: Bool, visible: Bool, animated: Bool, orbitCenter: NSPoint) {
+        let start = graphicLayer.presentation() ?? graphicLayer
+        let position = start.position
+        let scale = CGFloat((start.value(forKeyPath: "transform.scale") as? NSNumber)?.doubleValue ?? 1)
+        let opacity = start.opacity
+        self.miniature = miniature; self.frame = frame
+        isHidden = !visible
+        presentationGeneration += 1; let generation = presentationGeneration
+        graphicLayer.isHidden = !visible && (!animated || opacity <= 0)
+        let target = NSPoint(x: frame.midX, y: frame.midY)
+        let targetScale: CGFloat = visible ? frame.width/44 : 0.01
+        CATransaction.begin(); CATransaction.setDisableActions(true)
+        graphicLayer.bounds = NSRect(x: 0, y: 0, width: 44, height: 44)
+        hoverLayer.frame = graphicLayer.bounds
+        textureLayer.frame = graphicLayer.bounds
+        graphicLayer.position = target
+        graphicLayer.setAffineTransform(CGAffineTransform(scaleX: targetScale, y: targetScale))
+        graphicLayer.opacity = visible ? 1 : 0
+        graphicLayer.removeAnimation(forKey: "orbit")
+        refreshArtwork()
+        if animated && (opacity > 0 || visible) {
+            let initial = position
+            let path = CAKeyframeAnimation(keyPath: "position")
+            let a = atan2(initial.y-orbitCenter.y, initial.x-orbitCenter.x)
+            let b = atan2(target.y-orbitCenter.y, target.x-orbitCenter.x)
+            var delta = b-a
+            while delta > .pi { delta -= 2 * .pi }; while delta < -.pi { delta += 2 * .pi }
+            let r0 = hypot(initial.x-orbitCenter.x, initial.y-orbitCenter.y), r1 = hypot(target.x-orbitCenter.x, target.y-orbitCenter.y)
+            path.values = (0...24).map { index in
+                let t = CGFloat(index)/24, radius = r0+(r1-r0)*t, angle = a+delta*t
+                return NSValue(point: NSPoint(x: orbitCenter.x+cos(angle)*radius, y: orbitCenter.y+sin(angle)*radius))
+            }
+            path.calculationMode = .linear
+            let grow = CABasicAnimation(keyPath: "transform.scale")
+            grow.fromValue = scale; grow.toValue = targetScale
+            let fade = CABasicAnimation(keyPath: "opacity")
+            fade.fromValue = opacity; fade.toValue = visible ? 1 : 0
+            for animation in [path, grow, fade] { animation.duration = 0.18; animation.timingFunction = CAMediaTimingFunction(name: .linear) }
+            let group = CAAnimationGroup(); group.animations = [path, grow, fade]; group.duration = 0.18
+            group.timingFunction = CAMediaTimingFunction(name: .linear)
+            graphicLayer.add(group, forKey: "orbit")
+            if !visible {
+                DispatchQueue.main.asyncAfter(deadline: .now()+0.18) { [weak self] in
+                    guard let self, self.presentationGeneration == generation else { return }
+                    self.graphicLayer.isHidden = true
+                }
+            }
+        }
+        CATransaction.commit()
+    }
+    func refreshPetArtwork() {
+        guard case .pet = kind, bounds.width > 0 else { return }
+        let imageClip = feedbackElapsed == nil ? clip : feedbackClip
+        if let custom = runtime.customPetImage(clip: imageClip, elapsed: feedbackElapsed ?? clipElapsed) {
+            let identity = ObjectIdentifier(custom)
+            guard identity != customImageIdentity || petArtworkKey != "custom/\(bounds.size)/\(placement)" else { return }
+            customImageIdentity = identity; petArtworkKey = "custom/\(bounds.size)/\(placement)"
+        } else {
+            let blink = !reducedMotion && elapsed.truncatingRemainder(dividingBy: 5.2) > 5.04
+            let key = "\(bounds.size)/\(placement)/\(Int(gaze.x*30))/\(Int(gaze.y*30))/\(blink)/\(responding)/\(runtime.sourceBadgeAnchor?.bundleIdentifier ?? "")/\(Int(runtime.sourceBadgeOpacity*30))/\(String(describing: runtime.snapshot.navigationFeedback))"
+            guard petArtworkKey != key else { return }
+            customImageIdentity = nil; petArtworkKey = key
+        }
+        let image = BubbleDrawing.raster(size: bounds.size) { drawPet() }
+        textureLayer.contents = image.cgImage(forProposedRect: nil, context: nil, hints: nil)
+    }
+    func configureIdle(reduced: Bool) {
+        if reduced { textureLayer.removeAnimation(forKey: "idle"); return }
+        guard textureLayer.animation(forKey: "idle") == nil else { return }
+        let rotate = CAKeyframeAnimation(keyPath: "transform.rotation.z")
+        rotate.values = [0, 0.035, 0, -0.025, 0]
+        let x = CAKeyframeAnimation(keyPath: "transform.scale.x"); x.values = [1, 1.025, 1, 0.975, 1]
+        let y = CAKeyframeAnimation(keyPath: "transform.scale.y"); y.values = [1, 0.975, 1, 1.025, 1]
+        for animation in [rotate,x,y] { animation.duration = 4.8; animation.timingFunctions = Array(repeating: CAMediaTimingFunction(name: .easeInEaseOut), count: 4) }
+        let group = CAAnimationGroup(); group.animations = [rotate,x,y]; group.duration = 4.8
+        group.repeatCount = .infinity; group.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+        textureLayer.add(group, forKey: "idle")
     }
     private func drawPet() {
         let reduce = reducedMotion
-        let pulse = reduce ? 0 : sin(elapsed * 1.7)
-        let idlePhase = elapsed.truncatingRemainder(dividingBy: 7)
-        let idleBounce = reduce || idlePhase > 1.2 ? 0 : sin(.pi * idlePhase / 1.2) * exp(-2 * idlePhase) * sin(12 * idlePhase)
-        let feedback = reduce ? 0 : feedbackElapsed.map { exp(-8 * $0) * sin(22 * $0) } ?? 0
+        let pulse = 0.0
+        let idleBounce = 0.0
+        let feedback = 0.0
         NSGraphicsContext.saveGraphicsState()
         let transform = NSAffineTransform()
         let imageClip = feedbackElapsed == nil ? clip : feedbackClip
@@ -678,7 +722,7 @@ import CharCore
         let anchor = NSPoint(x: bounds.midX, y: bounds.midY)
         transform.translateX(by: anchor.x, yBy: anchor.y)
         let edgeTilt: CGFloat = placement == .left ? -8 : placement == .right ? 8 : 0
-        transform.rotate(byDegrees: edgeTilt + CGFloat(reduce ? 0 : sin(elapsed * 0.8) * 2.5 + idleBounce * 6 + feedback * 7))
+        transform.rotate(byDegrees: edgeTilt + CGFloat(reduce ? 0 : 0 + idleBounce * 6 + feedback * 7))
         let widthPose = CGFloat(1 + pulse * 0.018 + idleBounce * 0.28 + feedback * 0.1)
         let heightPose = CGFloat(1 - pulse * 0.025 - idleBounce * 0.28 - feedback * 0.1)
         transform.scaleX(by: widthPose,
@@ -738,14 +782,8 @@ import CharCore
         }
         NSGraphicsContext.restoreGraphicsState()
     }
-    private func drawBubble(_ end: WorkEnd) {
-        if artwork == nil {
-            artwork = BubbleDrawing.raster(size: bounds.size) { drawBubbleContent(end) }
-        }
-        artwork?.draw(in: bounds)
-        OrbitTrace.rendered(end, frame: frame)
-    }
     private func drawBubbleContent(_ end: WorkEnd) {
+        let bounds = NSRect(x: 0, y: 0, width: 44, height: 44)
         guard let bubble = runtime.snapshot.bubbles.first(where: { $0.workEnd == end }) else { return }
         BubbleDrawing.shell(in: bounds, tint: .clear)
         let iconRect = bounds.insetBy(dx: miniature ? 3 : 7, dy: miniature ? 3 : 7)

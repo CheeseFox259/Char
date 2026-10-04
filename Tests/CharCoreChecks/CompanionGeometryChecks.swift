@@ -5,6 +5,7 @@ import CharCore
 struct CompanionGeometryChecks {
     func run() throws {
         let bounds = CGRect(origin: .zero, size: CompanionGeometry.canvasSize)
+        for distance in [8.0, 20.0, 72.0] {
         for size in [36.0, 48.0, 88.0] {
         for placement in PetPlacement.allCases {
             // Edge pet frames may extend past the panel; the physical screen clips the authored peek.
@@ -20,8 +21,8 @@ struct CompanionGeometryChecks {
             case .bottom: physical = CGRect(x: 0, y: 30, width: 340, height: 310)
             }
             for count in 0...16 {
-                let slots = CompanionGeometry.layout(count: count, offset: -2, placement: placement, petSize: size)
-                try checkEqual(slots.count, min(count, 6))
+                let slots = CompanionGeometry.layout(count: count, offset: -2, placement: placement, petSize: size, bubbleDistance: distance)
+                try checkEqual(slots.count, min(count, CompanionGeometry.capacity(placement: placement, petSize: size, bubbleDistance: distance)))
                 for slot in slots {
                     try check(bounds.contains(slot.frame), "edge slot must stay inside panel")
                     try check(slot.miniFrames.allSatisfy(bounds.contains))
@@ -31,6 +32,13 @@ struct CompanionGeometryChecks {
             }
         }
         }
+        }
+        for placement in PetPlacement.allCases {
+            try check(CompanionGeometry.capacity(placement: placement, bubbleDistance: 72) > CompanionGeometry.capacity(placement: placement, bubbleDistance: 8))
+        }
+        var gated = CompanionScrollPolicy()
+        try checkEqual(gated.step(delta: 40, precise: true, momentum: false, count: 7, capacity: 8, now: 0), 0)
+        try checkEqual(gated.step(delta: 40, precise: true, momentum: false, count: 7, capacity: 4, now: 1), 1)
         var wheel = CompanionScrollPolicy()
         try checkEqual(wheel.step(delta: 80, precise: true, momentum: false, count: 6, now: 0), 0)
         try checkEqual(wheel.step(delta: 5, precise: true, momentum: false, count: 7, now: 0), 0)

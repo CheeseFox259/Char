@@ -8,8 +8,8 @@ public struct CompanionScrollPolicy: Sendable {
     private var awaitingFirstStep = true
     private var lastBurstDelta = 0.0
     public init() {}
-    public mutating func step(delta: Double, precise: Bool, hasGesturePhase: Bool = true, momentum: Bool, count: Int, now: TimeInterval) -> Int {
-        guard count > 6 else { accumulated = 0; awaitingFirstStep = true; lastInput = -Double.infinity; lastBurstDelta = 0; return 0 }
+    public mutating func step(delta: Double, precise: Bool, hasGesturePhase: Bool = true, momentum: Bool, count: Int, capacity: Int = 6, now: TimeInterval) -> Int {
+        guard count > capacity else { accumulated = 0; awaitingFirstStep = true; lastInput = -Double.infinity; lastBurstDelta = 0; return 0 }
         guard !momentum, delta != 0 else { return 0 }
         if precise && !hasGesturePhase {
             // Some mouse drivers interpolate one detent into a decaying precise

@@ -30,30 +30,41 @@ public enum CompanionGeometry {
         guard count > 0 else { return 0 }
         return ((offset % count) + count) % count
     }
-    public static func layout(count: Int, offset: Int, placement: PetPlacement, petSize: Double = 48) -> [Slot] {
+    public static func radius(petSize: Double = 48, bubbleDistance: Double = 20) -> Double {
+        min(88, max(36, petSize)) / 2 + 22 + min(72, max(8, bubbleDistance))
+    }
+    public static func capacity(placement: PetPlacement, petSize: Double = 48, bubbleDistance: Double = 20) -> Int {
+        let r = radius(petSize: petSize, bubbleDistance: bubbleDistance)
+        let minimumAngle = 2 * asin(min(1, 48 / (2 * r)))
+        return placement == .desktop ? max(3, Int(floor(2 * .pi / minimumAngle)))
+            : max(2, Int(floor(edgeSpan(radius: r) / minimumAngle)) + 1)
+    }
+    private static func edgeSpan(radius: Double) -> Double { min(140 * .pi / 180, 2 * acos(min(1, 18 / radius))) }
+    public static func angle(slot: Int, number: Int, placement: PetPlacement, radius: Double = 66) -> Double {
+        let fraction = number == 1 ? 0.5 : Double(slot) / Double(number - 1)
+        let span = edgeSpan(radius: radius)
+        switch placement {
+        case .desktop: return .pi / 2 + Double(slot) * 2 * .pi / Double(max(1, number))
+        case .left: return -span / 2 + fraction * span
+        case .right: return .pi - span / 2 + fraction * span
+        case .top: return 3 * .pi / 2 - span / 2 + fraction * span
+        case .bottom: return .pi / 2 - span / 2 + fraction * span
+        }
+    }
+    public static func layout(count: Int, offset: Int, placement: PetPlacement, petSize: Double = 48, bubbleDistance: Double = 20) -> [Slot] {
         guard count > 0 else { return [] }
-        let number = min(count, 6)
+        let capacity = capacity(placement: placement, petSize: petSize, bubbleDistance: bubbleDistance)
+        let number = min(count, capacity)
         let pet = petFrame(placement: placement, petSize: petSize)
         let center = CGPoint(x: pet.midX, y: pet.midY)
         let order = (0..<count).map { normalizedOffset($0 + offset, count: count) }
+        let radius = radius(petSize: petSize, bubbleDistance: bubbleDistance)
         return (0..<number).map { index in
-            let fraction = number == 1 ? 0.5 : Double(index) / Double(number - 1)
-            let angle: Double
-            // Trim the semicircle tips inward: the pet panel extends 30pt off-screen.
-            // 140 degrees preserves 52pt hit areas on the physical screen at all edges.
-            let span = 140.0 * .pi / 180
-            switch placement {
-            case .desktop: angle = .pi / 2 + Double(index) * 2 * .pi / Double(number)
-            case .left: angle = -span / 2 + fraction * span
-            case .right: angle = .pi - span / 2 + fraction * span
-            case .top: angle = 3 * .pi / 2 - span / 2 + fraction * span
-            case .bottom: angle = .pi / 2 - span / 2 + fraction * span
-            }
-            let radius = placement == .desktop ? max(66, petSize / 2 + 30) : 94.0
-            let point = CGPoint(x: center.x + cos(angle) * radius, y: center.y + sin(angle) * radius)
+            let a = angle(slot: index, number: number, placement: placement, radius: radius)
+            let point = CGPoint(x: center.x + cos(a) * radius, y: center.y + sin(a) * radius)
             let frame = CGRect(x: point.x - 22, y: point.y - 22, width: 44, height: 44)
-            let overflow = count > 6 && index == 5
-            let indices = overflow ? Array(order.dropFirst(5).prefix(3)) : []
+            let overflow = count > capacity && index == number - 1
+            let indices = overflow ? Array(order.dropFirst(number - 1).prefix(3)) : []
             let mini = indices.indices.map { miniIndex -> CGRect in
                 let a = .pi / 2 + Double(miniIndex) * 2 * .pi / 3
                 return CGRect(x: point.x + cos(a) * 11 - 9, y: point.y + sin(a) * 11 - 9, width: 18, height: 18)
