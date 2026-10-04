@@ -62,8 +62,9 @@ private func tabbitAutomationStatus(askUser: Bool) -> TabbitAutomationStatus {
     public func contains(tabID: String) -> Bool? {
         guard let result = evaluate("""
         repeat with w in windows
-            repeat with t in tabs of w
-                if (id of t as text) is \(literal(tabID)) then return "yes"
+            set tabIDs to get id of tabs of w
+            repeat with tabIDValue in tabIDs
+                if (tabIDValue as text) is \(literal(tabID)) then return "yes"
             end repeat
         end repeat
         return "no"
@@ -74,8 +75,9 @@ private func tabbitAutomationStatus(askUser: Bool) -> TabbitAutomationStatus {
     public func focus(tabID: String) -> Bool {
         evaluate("""
         repeat with w in windows
-            repeat with i from 1 to count of tabs of w
-                if (id of tab i of w as text) is \(literal(tabID)) then
+            set tabIDs to get id of tabs of w
+            repeat with i from 1 to count of tabIDs
+                if (item i of tabIDs as text) is \(literal(tabID)) then
                     set active tab index of w to i
                     set index of w to 1
                     return "yes"
