@@ -65,6 +65,7 @@ actor ObservationWorker {
     @Published var skins: [PetSkinManifest] = []
     @Published var selectedSkinID = "char.default"
     @Published var petPlacement: PetPlacement = .desktop
+    @Published var petSize: Double = 48
     private var companionPreferences = CompanionPreferences()
     private let companionPreferencesURL: URL
     @Published var settings: CharSettings
@@ -79,6 +80,8 @@ actor ObservationWorker {
     private var fixtureHotKey: FixtureHomeHotKeyService?
     private var timer: Timer?
     private var polling = false
+    private var displayTimer: Timer?
+    private var statusBar: StatusBarController?
     private var retainedAnchor: ReturnAnchor?
     private(set) var sourceBadgeAnchor: ReturnAnchor?
     private(set) var sourceBadgeOpacity: CGFloat = 0
@@ -127,7 +130,7 @@ actor ObservationWorker {
         refreshSkins()
         if let data = try? Data(contentsOf: companionPreferencesURL),
            let saved = try? JSONDecoder().decode(CompanionPreferences.self, from: data) {
-            companionPreferences = saved; petPlacement = saved.placement
+            companionPreferences = saved; petPlacement = saved.placement; petSize = saved.petSize
         }
 
     }
@@ -136,6 +139,8 @@ actor ObservationWorker {
         panel = CompanionPanel(runtime: self)
         place(on: NSScreen.main ?? NSScreen.screens.first, animated: false)
         panel.orderFrontRegardless()
+        statusBar = StatusBarController(runtime: self)
+        installDesktopTracking()
         if demo { injectFixtures() }
         else {
             refreshStatus()
@@ -192,10 +197,6 @@ actor ObservationWorker {
         if let platform {
             if let anchor = router.snapshot.hold?.anchor, platform.isAnchorValid(anchor) == false { router.invalidateAnchor(id: anchor.id) }
             router.updateFocus(platform.focusContext(for: router.snapshot.hold?.anchor), at: Date())
-            if let id = platform.foreground()?.displayID,
-               let screen = NSScreen.screens.first(where: { ($0.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber)?.uint32Value == id }) {
-                place(on: screen, animated: true)
-            }
         } else { router.advance(to: Date()) }
         publish()
     }
@@ -349,6 +350,7 @@ actor ObservationWorker {
         homeShortcut.updateHold(next.hold != nil)
         refreshHomeShortcutStatus()
         panel?.surface.refresh()
+        statusBar?.refresh()
         for effect in router.drainEffects() {
             if effect == .playSound {
                 if demo { demoSoundCount += 1 }
@@ -385,6 +387,38 @@ actor ObservationWorker {
         }
     }
 
+    func setPetSize(_ size: Double) {
+        companionPreferences.setSize(size)
+        petSize = companionPreferences.petSize
+        if let screen = panel.screen ?? NSScreen.main {
+            position(on: screen, center: companionPreferences.center(in: screen.visibleFrame), placement: petPlacement, animated: false)
+        }
+        panel.surface.refresh()
+        saveCompanionPreferences()
+    }
+    func showPet() { panel.orderFrontRegardless() }
+    private func installDesktopTracking() {
+        let center = NSWorkspace.shared.notificationCenter
+        center.addObserver(self, selector: #selector(workspaceActivated), name: NSWorkspace.didActivateApplicationNotification, object: nil)
+        center.addObserver(self, selector: #selector(spaceChanged), name: NSWorkspace.activeSpaceDidChangeNotification, object: nil)
+        guard !demo else { return }
+        displayTimer = Timer.scheduledTimer(withTimeInterval: 0.15, repeats: true) { [weak self] _ in
+            MainActor.assumeIsolated { self?.trackFocusedDisplay() }
+        }
+        if let displayTimer { RunLoop.main.add(displayTimer, forMode: .common) }
+    }
+    @objc private func workspaceActivated() { trackFocusedDisplay() }
+    @objc private func spaceChanged() {
+        trackFocusedDisplay()
+        panel.surface.spaceFeedback()
+    }
+    private func trackFocusedDisplay() {
+        // With one screen there can be no migration, so avoid repeated AX/CG window queries.
+        guard NSScreen.screens.count > 1, let id = platform?.foreground()?.displayID,
+              let screen = NSScreen.screens.first(where: { ($0.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber)?.uint32Value == id }) else { return }
+        place(on: screen, animated: true)
+    }
+
     func setPlacement(_ placement: PetPlacement) {
         petPlacement = placement
         companionPreferences.placement = placement
@@ -407,6 +441,7 @@ actor ObservationWorker {
         let placement: PetPlacement = nearest.1 < 64 ? nearest.0 : .desktop
         petPlacement = placement
         companionPreferences.placement = placement
+        companionPreferences.remember(center: center, in: screen.visibleFrame)
         position(on: screen, center: center, placement: placement, animated: true)
         saveCompanionPreferences()
     }
@@ -418,7 +453,7 @@ actor ObservationWorker {
         currentDisplay = displayKey(screen)
         let area = screen.visibleFrame
         let size = CompanionGeometry.canvasSize
-        let pet = CompanionGeometry.petFrame(placement: placement)
+        let pet = CompanionGeometry.petFrame(placement: placement, petSize: petSize)
         var point = center
         switch placement {
         case .desktop:
@@ -430,7 +465,7 @@ actor ObservationWorker {
         case .bottom: point.y = area.minY + 8; point.x = min(max(point.x, area.minX+170), area.maxX-170)
         }
         let frame = NSRect(x: point.x-pet.midX, y: point.y-pet.midY, width: size.width, height: size.height)
-        companionPreferences.displays[currentDisplay!] = CompanionPosition(x: point.x, y: point.y, placement: placement)
+
         panel.transition(to: frame, placement: placement, animated: animated)
     }
     private func displayKey(_ screen: NSScreen) -> String {
@@ -440,12 +475,8 @@ actor ObservationWorker {
         guard let screen else { return }
         let id = displayKey(screen)
         guard id != currentDisplay else { return }
-        let saved = companionPreferences.displays[id]
-        let placement = saved?.placement ?? companionPreferences.placement
-        petPlacement = placement
-        let point = NSPoint(x: saved?.x ?? screen.visibleFrame.maxX-200,
-                            y: saved?.y ?? screen.visibleFrame.minY+200)
-        position(on: screen, center: point, placement: placement, animated: animated)
+        let point = companionPreferences.center(in: screen.visibleFrame)
+        position(on: screen, center: point, placement: companionPreferences.placement, animated: animated)
     }
     private func runSmoke() async {
         func fail(_ message: String) -> Never {

@@ -60,6 +60,13 @@ struct AppearanceSettingsView: View {
                 Text("上边缘").tag(PetPlacement.top)
                 Text("下边缘").tag(PetPlacement.bottom)
             }
+            HStack {
+                Text("桌宠大小")
+                Slider(value: Binding(get: { runtime.petSize }, set: { runtime.setPetSize($0) }), in: 36...88, step: 2)
+                    .accessibilityLabel("桌宠大小")
+                Text("\(Int(runtime.petSize)) pt").monospacedDigit().frame(width: 46)
+                Button("重置") { runtime.setPetSize(48) }
+            }
             Picker("桌宠形象", selection: Binding(get: { runtime.selectedSkinID }, set: { runtime.selectSkin($0) })) {
                 ForEach(runtime.skins, id: \.id) { skin in Text(skin.name).tag(skin.id) }
             }
@@ -71,7 +78,7 @@ struct AppearanceSettingsView: View {
                 Button("导入形象…") { runtime.importSkin() }
                 Button("删除当前形象") { runtime.deleteSkin(runtime.selectedSkinID) }.disabled(runtime.selectedSkinID == "char.default")
             }
-            Text("拖动桌宠靠近屏幕边缘可吸附。滚轮循环切换气泡；末尾气泡最多显示 3 个小气泡。切换桌面时桌宠持续存在。系统的整屏桌面切换由 macOS 控制。")
+            Text("拖动桌宠靠近屏幕边缘可吸附。有折叠气泡时才可用滚轮缓慢循环；末尾气泡最多显示 3 个小气泡。所有屏幕共享放置方式。切换桌面时桌宠轻缩再探出。系统的整屏桌面切换由 macOS 控制。")
                 .font(.caption).foregroundStyle(.secondary)
         }
     }

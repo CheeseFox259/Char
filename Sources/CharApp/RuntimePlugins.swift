@@ -11,8 +11,8 @@ extension CompanionRuntime {
         return NSPoint(x: anchor?.x ?? 0.5, y: 1 - (anchor?.y ?? 0.5))
     }
     var customPetSize: NSSize {
-        guard let size = skinStore?.selectedSkin.canvasSize else { return NSSize(width: 76, height: 76) }
-        let scale = 76 / Double(max(size.width, size.height))
+        guard let size = skinStore?.selectedSkin.canvasSize else { return NSSize(width: petSize, height: petSize) }
+        let scale = petSize / Double(max(size.width, size.height))
         return NSSize(width: Double(size.width)*scale, height: Double(size.height)*scale)
     }
     func agentIcon(for end: WorkEnd) -> NSImage? {
@@ -44,11 +44,11 @@ extension CompanionRuntime {
                     let line = NSBezierPath(); line.lineWidth = 5; line.lineCapStyle = .round
                     line.move(to: NSPoint(x: center.x + cos(angle)*10, y: center.y + sin(angle)*10))
                     line.line(to: NSPoint(x: center.x + cos(angle)*23, y: center.y + sin(angle)*23))
-                    NSColor.white.setStroke(); line.stroke()
+                    NSColor(calibratedRed: 0.85, green: 0.47, blue: 0.34, alpha: 1).setStroke(); line.stroke()
                 }
             } else {
                 let label = end == .pi ? "π" : end == .deepseekDesktop ? "D" : end == .kimiCLI || end == .kimiDesktop ? "K" : "C"
-                let attrs: [NSAttributedString.Key: Any] = [.font: NSFont.systemFont(ofSize: 43, weight: .bold), .foregroundColor: NSColor.white]
+                let attrs: [NSAttributedString.Key: Any] = [.font: NSFont.systemFont(ofSize: 43, weight: .bold), .foregroundColor: NSColor(calibratedRed: 0.10, green: 0.12, blue: 0.18, alpha: 1)]
                 let size = label.size(withAttributes: attrs)
                 label.draw(at: NSPoint(x: (rect.width-size.width)/2,y: (rect.height-size.height)/2), withAttributes: attrs)
             }

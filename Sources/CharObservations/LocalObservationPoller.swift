@@ -1,4 +1,5 @@
 import Foundation
+import Darwin
 import CharCore
 
 /// Reads local session journals without replaying events present when `start()` is called.
@@ -37,9 +38,9 @@ public final class LocalObservationPoller {
 
     private func baseline(source wanted: Source) {
         for (url, source) in files() where source == wanted {
-            let attributes = try? FileManager.default.attributesOfItem(atPath: url.path)
-            cursors[url.path] = Cursor(offset: (attributes?[.size] as? NSNumber)?.uint64Value ?? 0,
-                identity: attributes?[.systemFileNumber] as? NSNumber,
+            let metadata = fileMetadata(url)
+            cursors[url.path] = Cursor(offset: metadata?.size ?? 0,
+                identity: metadata?.identity,
                 codexSession: source == .codex ? ObservationClassifier.codexMetadata(in: url) : nil)
         }
     }
@@ -55,9 +56,9 @@ public final class LocalObservationPoller {
         cursors.removeAll()
         lastEvents.removeAll()
         for (url, source) in files() {
-            let attributes = try? FileManager.default.attributesOfItem(atPath: url.path)
-            let size = (attributes?[.size] as? NSNumber)?.uint64Value ?? 0
-            let identity = attributes?[.systemFileNumber] as? NSNumber
+            let metadata = fileMetadata(url)
+            let size = metadata?.size ?? 0
+            let identity = metadata?.identity
             let session = source == .codex ? ObservationClassifier.codexMetadata(in: url) : nil
             cursors[url.path] = Cursor(offset: size, identity: identity, codexSession: session)
         }
@@ -69,9 +70,9 @@ public final class LocalObservationPoller {
         if !started { start(); return [] }
         var events: [ObservationEvent] = []
         for (url, source) in files() {
-            guard let attributes = try? FileManager.default.attributesOfItem(atPath: url.path),
-                  let size = (attributes[.size] as? NSNumber)?.uint64Value else { continue }
-            let identity = attributes[.systemFileNumber] as? NSNumber
+            guard let metadata = fileMetadata(url) else { continue }
+            let size = metadata.size
+            let identity = metadata.identity
             var cursor = cursors[url.path] ?? Cursor(offset: 0, identity: identity, codexSession: nil)
             if size < cursor.offset || (cursor.identity != nil && identity != cursor.identity) {
                 cursor = Cursor(offset: 0, identity: identity, codexSession: nil)
@@ -124,6 +125,18 @@ public final class LocalObservationPoller {
             lastEvents[event.key] = event
             return previous?.state != event.state
         }
+    }
+
+    // Only byte length and inode are needed for append/truncate/replace cursors.
+    // FileManager's broad attribute dictionary also reads extended attributes.
+    private func fileMetadata(_ url: URL) -> (size: UInt64, identity: NSNumber)? {
+        var value = stat()
+        let result = url.withUnsafeFileSystemRepresentation { path -> Int32 in
+            guard let path else { return -1 }
+            return stat(path, &value)
+        }
+        guard result == 0, value.st_size >= 0 else { return nil }
+        return (UInt64(value.st_size), NSNumber(value: value.st_ino))
     }
 
     private enum Source { case claude, codex, hook }

@@ -64,14 +64,13 @@ struct SettingsView: View {
                     }
                 }
                 LazyVGrid(columns: [GridItem(.flexible(), alignment: .leading), GridItem(.flexible(), alignment: .leading)], alignment: .leading, spacing: 9) {
-                    ForEach(StopReason.allCases, id: \.self) { reason in
-                        Label(reason.title, systemImage: reason.symbol)
+                    ForEach(AttentionPresentationGroup.allCases, id: \.self) { group in
+                        Label(group.title, systemImage: group.symbol)
                     }
-                    Label("Past stop", systemImage: "clock.arrow.circlepath")
-                    Label("Application fallback", systemImage: "arrow.triangle.turn.up.right.diamond.fill")
-                    Label("Unavailable", systemImage: "exclamationmark.circle.fill")
+                    Label("CLI 工作端", systemImage: "terminal.fill")
+                    Label("已恢复：状态胶囊变淡", systemImage: "circle.lefthalf.filled")
                 }.font(.caption)
-                Text("The large number is unviewed attention; the small mint number is running sessions. Click a bubble to visit; right-click to ignore its first item. Drag the pet to place it. Its source badge means click or Ctrl+B to 回城; right-click for controls.")
+                Text("气泡只显示一个状态胶囊和未查看数量：等待交互、发生问题、轮次结束。淡色胶囊表示该停顿已恢复；精确原因和运行数量可通过无障碍说明查看。CLI 带小终端标识。点击气泡访问，右键忽略首项；状态栏提供设置与回城入口。")
                     .font(.caption).foregroundStyle(.secondary)
             }
             if !runtime.setupMessage.isEmpty {

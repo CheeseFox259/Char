@@ -56,3 +56,6 @@ print("CharCore: companion physical-edge and playback checks passed")
 
 try ObservationGenerationChecks().run()
 print("CharCore: observation generation checks passed")
+
+try CompanionPreferencesChecks().run()
+print("CharCore: shared-display placement and size migration checks passed")
