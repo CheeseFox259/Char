@@ -2,6 +2,22 @@ import AppKit
 import QuartzCore
 import CharCore
 
+/// Opt-in native input/render boundary trace; contains no session or page data.
+@MainActor private enum OrbitTrace {
+    static let enabled = ProcessInfo.processInfo.environment["CHAR_ORBIT_TRACE"] == "1"
+    static var sequence = 0
+    static var activeUntil: TimeInterval = 0
+    static func record(_ message: @autoclosure () -> String) {
+        guard enabled else { return }
+        let line = "[DEBUG-char-orbit] t=\(ProcessInfo.processInfo.systemUptime) \(message())\n"
+        FileHandle.standardError.write(Data(line.utf8))
+    }
+    static func rendered(_ end: WorkEnd, frame: NSRect) {
+        guard enabled, ProcessInfo.processInfo.systemUptime <= activeUntil else { return }
+        record("draw-complete sequence=\(sequence) end=\(end.rawValue) frame=\(frame)")
+    }
+}
+
 @MainActor private enum BubbleDrawing {
     static func raster(size: NSSize, draw: () -> Void) -> NSImage {
         let scale: CGFloat = 2
@@ -217,10 +233,16 @@ import CharCore
         return nil
     }
     override func scrollWheel(with event: NSEvent) {
+        if OrbitTrace.enabled {
+            OrbitTrace.sequence += 1
+            OrbitTrace.record("input sequence=\(OrbitTrace.sequence) eventTime=\(event.timestamp) dx=\(event.scrollingDeltaX) dy=\(event.scrollingDeltaY) precise=\(event.hasPreciseScrollingDeltas) phase=\(event.phase.rawValue) momentum=\(event.momentumPhase.rawValue) offset=\(offset)")
+        }
         let step = scrollPolicy.step(delta: Double(event.scrollingDeltaY + event.scrollingDeltaX),
                                      precise: event.hasPreciseScrollingDeltas, momentum: event.momentumPhase != [],
                                      count: runtime.snapshot.bubbles.count, now: ProcessInfo.processInfo.systemUptime)
+        OrbitTrace.record("policy sequence=\(OrbitTrace.sequence) step=\(step) count=\(runtime.snapshot.bubbles.count)")
         if step != 0 {
+            OrbitTrace.activeUntil = ProcessInfo.processInfo.systemUptime + 0.12
             CATransaction.begin(); CATransaction.setDisableActions(true)
             offset += step; layoutVisibleBubbles()
             // AppKit may track a mouse-wheel gesture before the next default-mode
@@ -229,7 +251,24 @@ import CharCore
             for button in buttons where !button.isHidden { button.displayIfNeeded() }
             overflow.displayIfNeeded()
             CATransaction.commit(); CATransaction.flush()
+            traceOrder("appkit-flush-complete")
+            if OrbitTrace.enabled {
+                let sequence = OrbitTrace.sequence
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.03) { [weak self] in
+                    guard let self, OrbitTrace.sequence == sequence else { return }
+                    self.traceOrder("presentation-after-30ms")
+                }
+            }
         }
+    }
+    private func traceOrder(_ boundary: String) {
+        guard OrbitTrace.enabled else { return }
+        let order = buttons.filter { !$0.isHidden }.map { button -> String in
+            guard case let .bubble(end) = button.kind else { return "pet" }
+            let layer = button.layer
+            return "\(end.rawValue):mini=\(button.miniature):frame=\(button.frame):model=\(String(describing: layer?.position)):present=\(String(describing: layer?.presentation()?.position))"
+        }.joined(separator: "|")
+        OrbitTrace.record("\(boundary) sequence=\(OrbitTrace.sequence) offset=\(offset) order=\(order)")
     }
     @objc fileprivate func nextBubbles() -> Bool { guard canCycle else { return false }; offset += 1; layoutVisibleBubbles(); return true }
     @objc fileprivate func previousBubbles() -> Bool { guard canCycle else { return false }; offset -= 1; layoutVisibleBubbles(); return true }
@@ -609,6 +648,7 @@ import CharCore
             artwork = BubbleDrawing.raster(size: bounds.size) { drawBubbleContent(end) }
         }
         artwork?.draw(in: bounds)
+        OrbitTrace.rendered(end, frame: frame)
     }
     private func drawBubbleContent(_ end: WorkEnd) {
         guard let bubble = runtime.snapshot.bubbles.first(where: { $0.workEnd == end }) else { return }
