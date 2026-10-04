@@ -1,3 +1,5 @@
+本轮使用反馈修正见 [紧凑视觉与交互验收](companion-polish-verification-2026-10-04.md)，实测开销和优化方案见 [桌宠性能分析](companion-performance-2026-10-04.md)。此前报告保留历史事实，最新尺寸、状态和 Space 局部反馈以本轮为准。
+
 # Product verification
 
 插件与新桌宠视觉的本轮记录见 [2026-10-04 视觉扩展验收](redesign-verification-2026-10-04.md)。这轮与此前原生集成验收分别记录；整屏 Space 动画边界单独跟踪 #15。

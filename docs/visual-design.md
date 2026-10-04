@@ -1,3 +1,7 @@
+# 当前视觉修正（2026-10-04 使用反馈）
+
+以 `docs/companion-polish-verification-2026-10-04.md` 为当前尺寸与状态规则：默认48 pt 无附肢方块、36–88 pt 设置；44 pt 透明玻璃气泡、CLI 小终端角标、紧凑轨道。边缘姿态包含内向眼睛与倾斜；眼睛随指针，悬停抬升和亮边。全局放置跟随所有屏幕，Space 变化给予局部收放反馈。下方早期76/52 pt 彩色气泡描述为历史方案，已被本轮替代。
+
 # Companion visual direction
 
 ## Current direction (2026-10-04)
