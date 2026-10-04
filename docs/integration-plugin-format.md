@@ -42,3 +42,6 @@ Runtime reloads only fully valid catalogs and clears reminders for removed obser
 ## Behavior checks
 
 `Tests/CharCoreChecks/PluginChecks.swift` covers version 1 registry/package migration, tombstones and disabled state, shared-Warp observers, combined capabilities, conflicts, atomic rejection, owned PNG copies and deletion, traversal and symlinks. `Tests/CharPlatformChecks` checks arbitrary and Agent origin capture, PID fallback, precise adapter removal, unavailable precise capture and Char exclusion. `AttentionChecks` verifies the first Agent origin survives another Agent visit and application navigation keeps reminders unviewed. Fixtures use temporary files and mock app controllers; no user profiles or apps are controlled.
+
+
+Developer walkthrough and validation command: [plugin-development.md](plugin-development.md). Complete copyable prompts: [development-prompts.md](development-prompts.md).

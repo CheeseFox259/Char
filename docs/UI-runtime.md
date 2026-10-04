@@ -1,3 +1,5 @@
+> 历史实现记录。当前窗口/轨道/配置与测量请先看 [实现总览](architecture.md) 和 [文档索引](README.md)；下列历史参数和待验收项不覆盖后续版本的结果。
+
 # Companion runtime
 
 Build the ad hoc signed local bundle with `scripts/build-app.sh`. The resulting executable is `build/Char.app/Contents/MacOS/Char`.

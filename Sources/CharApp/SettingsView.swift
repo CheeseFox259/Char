@@ -59,11 +59,6 @@ struct SettingsView: View {
             }
             Section("Graphical legend") {
                 LazyVGrid(columns: [GridItem(.flexible(), alignment: .leading), GridItem(.flexible(), alignment: .leading)], alignment: .leading, spacing: 9) {
-                    ForEach(WorkEnd.allCases, id: \.self) { end in
-                        Label(end.title, systemImage: end.symbol).font(.caption)
-                    }
-                }
-                LazyVGrid(columns: [GridItem(.flexible(), alignment: .leading), GridItem(.flexible(), alignment: .leading)], alignment: .leading, spacing: 9) {
                     ForEach(AttentionPresentationGroup.allCases, id: \.self) { group in
                         Label(group.title, systemImage: group.symbol)
                     }

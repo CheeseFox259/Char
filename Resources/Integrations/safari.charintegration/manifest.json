@@ -1,8 +1,7 @@
 {
-  "schemaVersion": 1,
+  "schemaVersion": 2,
   "id": "example.source.safari",
   "name": "Safari",
-  "kind": "source",
   "bundleIdentifier": "com.apple.Safari",
-  "sourceAdapter": "application"
+  "returnAdapter": "application"
 }

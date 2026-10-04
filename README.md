@@ -2,7 +2,7 @@
 
 macOS 本机 Agent 注意力桌宠。观察 Claude Code TUI、Codex CLI、Codex Desktop、DeepSeek Harness Desktop、Kimi CLI、Kimi Code App 和 pi 的新状态，为持续停顿显示图形气泡；会话内容不上传，气泡不显示问题或命令原文。
 
-CLI 支持直接在 Warp 或 Warp + tmux 中运行。首版点击气泡激活对应工作端应用最近位置，显示降级标记并保留未查看提醒。精准 Warp pane、Codex 聊天和微信会话能力分别跟踪于 [#10](https://github.com/CheeseFox259/Char/issues/10)、[#11](https://github.com/CheeseFox259/Char/issues/11)、[#12](https://github.com/CheeseFox259/Char/issues/12)。Tabbit 和 VS Code 仅在可用集成能验证准确来源时建立 Hold；微信使用明确降级的应用实例；Warp 应用级来源不建立 Hold。
+CLI 支持直接在 Warp 或 Warp + tmux 中运行。首版点击气泡激活对应工作端应用最近位置，显示降级标记并保留未查看提醒。精准 Warp pane、Codex 聊天和微信会话能力分别跟踪于 [#10](https://github.com/CheeseFox259/Char/issues/10)、[#11](https://github.com/CheeseFox259/Char/issues/11)、[#12](https://github.com/CheeseFox259/Char/issues/12)。任意前台应用（包括其他 Agent、Warp 与微信，Char 自身除外）都可以成为应用级回城起点。Tabbit 和 VS Code 在可用集成能验证准确来源时保存准确锚点，否则明确降级到同一应用实例；连续访问多个 Agent 保留首次来源。
 
 保存来源后的返回行为称为**回城**：点击桌宠或按 **Ctrl+B**。快捷键仅在 Hold 中注册，无 Hold 时释放。
 
@@ -31,9 +31,29 @@ Hook 和扩展均需显式安装；构建、检查和演示不会改写用户 ha
 
 ### 桌宠、插件与自定义形象
 
-右键桌宠 → Settings 可选择桌面或四个边缘放置，管理 Agent / 回城来源插件、导入和切换形象。拖动靠近边缘会吸附；滚轮循环气泡。插件启停和删除立即生效；重新启用只观察新活动。删除配置插件不会修改已经安装在原生 Agent 中的观察 Hook，卸载步骤仍见相应集成 README。
+右键桌宠 → Settings 可选择桌面或四个边缘放置，管理统一集成插件、导入和切换形象。拖动靠近边缘会吸附；只有气泡折叠时滚轮才循环。桌宠大小36–88 pt、气泡距离8–72 pt可调，容量自动适配。插件启停和删除立即生效；重新启用只观察新活动。删除配置插件不会修改已经安装在原生 Agent 中的观察 Hook，卸载步骤仍见相应集成 README。
 
-- [配置插件格式](docs/integration-plugin-format.md)：导入 `.charintegration` 目录；可用 `Resources/Integrations/safari.charintegration` 添加 Safari 应用级回城。
+- [配置插件格式](docs/integration-plugin-format.md)：导入 `.charintegration` 目录；可用 `Resources/Integrations/safari.charintegration` 导入 Safari 应用级回城配置示例；所有前台应用本身无需插件也可应用级回城。
 - [自定义形象格式](docs/pet-skin-format.md)：导入 `.charpet` 目录；`Resources/Skins/example.charpet` 是完整的七动画示例。设置中的导入会直接切换到新形象。
 
 Char 保持显示在所有 Space。桌宠跨屏动作和回城反馈采用弹性动画；整屏 Space 切换速度由 macOS 控制，不提供自定义曲线。
+
+
+## 开发者与完整文档
+
+- [文档索引](docs/README.md)：使用、实现、集成、性能、验收与平台评估。
+- [实现机制与性能摘要](docs/architecture.md)。
+- [集成插件开发指南](docs/plugin-development.md)、[外观包开发指南](docs/appearance-development.md)。
+- [可直接使用的完整开发提示词](docs/development-prompts.md)：配置包、新原生协议/准确返回、七动画形象包。
+- [Windows 移植可行性](docs/windows-feasibility.md)：需要新的桌面壳与平台适配，本版本尚无 Windows 构建。
+
+开发包可调用生产校验器检查，不访问用户目录：
+
+~~~sh
+swift run char-package-check integration Resources/Integrations/safari.charintegration
+swift run char-package-check skin Resources/Skins/example.charpet
+~~~
+
+当前集成是配置包，只选择七种已编译观察协议与内置回城适配器；新增Agent协议或新的准确回城需要源码扩展。形象包仅包含清单和图片，不执行代码。完整格式、限制和安装/回退见开发指南。
+
+正常包的USB接收器滚轮首格、连续、反向和轻动已由用户确认正常；有线连接的输入送达问题仍记录在诊断中。性能历史有效样本与局限见文档，未承诺所有机器相同CPU占用。

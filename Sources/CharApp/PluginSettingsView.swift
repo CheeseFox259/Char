@@ -12,7 +12,7 @@ struct PluginSettingsView: View {
                 HStack {
                     Toggle(entry.plugin.name, isOn: Binding(get: { entry.enabled }, set: { runtime.setPlugin(entry.id, enabled: $0) }))
                     Spacer()
-                    Text(capabilities(entry.plugin)).font(.caption).foregroundStyle(.secondary)
+                    capabilityIcons(entry.plugin)
                     Button { deleteID = entry.id } label: { Image(systemName: "trash") }
                         .accessibilityLabel("删除 \(entry.plugin.name)")
                 }
@@ -29,12 +29,26 @@ struct PluginSettingsView: View {
             Button("删除", role: .destructive) { if let id = deleteID { runtime.deletePlugin(id) }; deleteID = nil }
         } message: { Text("插件将从 Char 移除。已安装在 Agent 客户端的观察 Hook 保留，可按集成文档卸载。") }
     }
-    private func capabilities(_ plugin: IntegrationPlugin) -> String {
-        var labels: [String] = []
-        if plugin.workEnd != nil { labels.append("提醒") }
-        if plugin.returnAdapter == .tabbit || plugin.returnAdapter == .vscode { labels.append("准确回城") }
-        else { labels.append("应用级回城") }
-        return labels.joined(separator: " · ")
+    private func capabilityIcons(_ plugin: IntegrationPlugin) -> some View {
+        HStack(spacing: 8) {
+            if plugin.workEnd != nil {
+                capabilityIcon("bell.fill", label: "提醒")
+            }
+            if plugin.returnAdapter == .tabbit || plugin.returnAdapter == .vscode {
+                capabilityIcon("scope", label: "准确回城能力，需要可用集成及授权")
+            } else {
+                capabilityIcon("macwindow", label: "应用级回城")
+            }
+        }
+        .frame(width: 48, alignment: .trailing)
+        .foregroundStyle(.secondary)
+    }
+    private func capabilityIcon(_ symbol: String, label: String) -> some View {
+        Image(systemName: symbol)
+            .font(.system(size: 14, weight: .medium))
+            .frame(width: 18, height: 22)
+            .accessibilityLabel(label)
+            .help(label)
     }
 
 }
