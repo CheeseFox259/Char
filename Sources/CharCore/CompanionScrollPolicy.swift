@@ -5,20 +5,22 @@ public struct CompanionScrollPolicy: Sendable {
     private var accumulated = 0.0
     private var lastInput = -Double.infinity
     private var lastStep = -Double.infinity
+    private var awaitingFirstStep = true
     public init() {}
     public mutating func step(delta: Double, precise: Bool, momentum: Bool, count: Int, now: TimeInterval) -> Int {
-        guard count > 6 else { accumulated = 0; return 0 }
+        guard count > 6 else { accumulated = 0; awaitingFirstStep = true; lastInput = -Double.infinity; return 0 }
         guard !momentum, delta != 0 else { return 0 }
-        if now - lastInput > 0.25 { accumulated = 0 }
+        if now - lastInput > 0.25 { accumulated = 0; awaitingFirstStep = true }
         lastInput = now
         if precise {
             // A changed direction starts a fresh intentional gesture.
             if accumulated * delta < 0 { accumulated = 0 }
             accumulated += delta
-            guard abs(accumulated) >= 36 else { return 0 }
+            guard abs(accumulated) >= (awaitingFirstStep ? 6 : 36) else { return 0 }
         }
         guard now - lastStep >= 0.18 else { return 0 }
         lastStep = now
+        awaitingFirstStep = false
         accumulated = 0
         return delta > 0 ? 1 : -1
     }

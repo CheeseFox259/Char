@@ -68,6 +68,7 @@ import CharCore
     private var offset = 0
     private var scrollPolicy = CompanionScrollPolicy()
     private var spaceAt: TimeInterval?
+    private var pendingSpaceFeedback = false
     private var lastPointer: NSPoint?
     var canCycle: Bool { runtime.snapshot.bubbles.count > 6 }
     private var overflowArtwork: NSImage?
@@ -187,7 +188,11 @@ import CharCore
     }
     @objc fileprivate func nextBubbles() -> Bool { guard canCycle else { return false }; offset += 1; layoutVisibleBubbles(); return true }
     @objc fileprivate func previousBubbles() -> Bool { guard canCycle else { return false }; offset -= 1; layoutVisibleBubbles(); return true }
-    func spaceFeedback() { spaceAt = ProcessInfo.processInfo.systemUptime; ensureClock() }
+    func spaceFeedback() {
+        if movement != nil { pendingSpaceFeedback = true }
+        else { spaceAt = ProcessInfo.processInfo.systemUptime }
+        ensureClock()
+    }
     func returnFeedback() { pet.feedbackClip = "return"; feedbackAt = ProcessInfo.processInfo.systemUptime; ensureClock() }
     func pressFeedback() { pet.feedbackClip = "press"; feedbackAt = ProcessInfo.processInfo.systemUptime; ensureClock() }
     func transition(to frame: NSRect, placement: PetPlacement, animated: Bool) {
@@ -220,6 +225,7 @@ import CharCore
         pet.feedbackElapsed = feedbackAt.map { reduce ? 0 : now - $0 }
         if let feedbackAt, now - feedbackAt > (runtime.customPetClipDuration(clip: pet.feedbackClip) ?? 0.65) { self.feedbackAt = nil; pet.feedbackElapsed = nil }
         if var motion = movement {
+            if spaceAt != nil { pendingSpaceFeedback = true; spaceAt = nil; pet.spaceTuck = 0 }
             // A placement transition interrupts feedback; its authored departure/arrival wins.
             feedbackAt = nil; pet.feedbackElapsed = nil
             let elapsed = now - motion.started
@@ -245,12 +251,26 @@ import CharCore
             movement = t == 1 ? nil : motion
             if t == 1 { window?.alphaValue = 1; pet.motionScale = 1; pet.edgeRetraction = 0 }
         }
+        if movement == nil, pendingSpaceFeedback {
+            pendingSpaceFeedback = false
+            spaceAt = now
+        }
         if let start = spaceAt, movement == nil {
             let t = now - start
-            if t >= 0.28 { spaceAt = nil; pet.spaceTuck = 0; pet.edgeRetraction = 0 }
-            else {
-                pet.spaceTuck = reduce ? 0 : CGFloat(sin(.pi * t / 0.28))
-                if placement != .desktop { pet.edgeRetraction = pet.spaceTuck * pet.frame.width * 0.25 }
+            let duration = reduce ? 0.16 : 0.40
+            if t >= duration {
+                spaceAt = nil; pet.spaceTuck = 0; pet.edgeRetraction = 0; window?.alphaValue = 1
+            } else {
+                if reduce {
+                    pet.spaceTuck = 0
+                    window?.alphaValue = 1 - CGFloat(sin(.pi * t / duration)) * 0.25
+                } else {
+                    // Visible withdrawal then a spring return; native Space navigation stays immediate.
+                    let tuck = t < 0.12 ? sin(.pi / 2 * t / 0.12) : 1 - CompanionGeometry.arrivalProgress((t - 0.12) / 0.28)
+                    pet.spaceTuck = CGFloat(max(-0.12, tuck))
+                    window?.alphaValue = min(1, 1 - max(0, pet.spaceTuck) * 0.55)
+                    if placement != .desktop { pet.edgeRetraction = pet.spaceTuck * min(24, pet.frame.width * 0.5) }
+                }
             }
         }
         var interactionChanged = false
@@ -482,8 +502,8 @@ import CharCore
         transform.rotate(byDegrees: edgeTilt + CGFloat(reduce ? 0 : sin(elapsed * 0.8) * 2.5 + idleBounce * 6 + feedback * 7))
         let widthPose = CGFloat(1 + pulse * 0.018 + idleBounce * 0.28 + feedback * 0.1)
         let heightPose = CGFloat(1 - pulse * 0.025 - idleBounce * 0.28 - feedback * 0.1)
-        transform.scaleX(by: motionScale * (1 - spaceTuck * 0.10) * widthPose,
-                         yBy: motionScale * (1 - spaceTuck * 0.24) * heightPose)
+        transform.scaleX(by: motionScale * (1 - spaceTuck * 0.45) * widthPose,
+                         yBy: motionScale * (1 - spaceTuck * 0.45) * heightPose)
         transform.translateX(by: -anchor.x, yBy: -anchor.y + CGFloat(pulse * 1.8 + idleBounce * 12))
         transform.concat()
         if let image = custom {
