@@ -25,7 +25,7 @@ pi 需要显式安装被动扩展，普通会话 JSONL 不提供最终 settled �
 - [x] 实体 Ctrl+B 的真实回调、Tabbit 原标签回城及卡顿修复已通过；最终源代码为 `f2b5b4b`。
 - [x] 正常运行的七类气泡均观察到应用级降级状态，包括 DeepSeek、Kimi App、Warp。
 - [x] 七工作端最终组合检查、打包/签名/smoke 已通过；完整 PR 双轴审查及受影响修复检查已完成，见 `review.md`。
-- [ ] 当前能力、明确安装步骤和剩余环境项同步到 PR。
+- [x] 当前能力、明确安装步骤和剩余环境项已同步到 PR #2，并标记 ready for review；未合并或发布。
 
 `scripts/check.sh`、`scripts/build-app.sh`、`codesign --verify --deep --strict --verbose=2 build/Char.app`、实际包 `--smoke` 及 `git diff --check` 在最终实现 `f2b5b4b` 通过。Smoke 的七工作端/回城导航为 fixture，不是原生客户端证明。双轴审查发现 Kimi 在 SessionStart 绑定迟到时可能提前消费 wire 事件；回归已在原实现复现，修复已合并为 `1e5ac25`，根目录实际 poller/router 11 组契约通过。
 
@@ -42,3 +42,7 @@ pi 需要显式安装被动扩展，普通会话 JSONL 不提供最终 settled �
 最终包已正常运行，实际源根与共享 Hook 流已接入；只隔离 Char 偏好（0 秒过滤、声音及登录项关闭），未继续注入演示事件。安装后使用者反馈“功能正常”。真实私有共享流随后出现 Kimi Desktop SessionStart（两条）及 pi running → turnEnded，文件为 0600；正常 Char 的 AX 实际显示 Kimi Code Desktop / pi 的 Turn ended 气泡与应用降级。没有注入新的演示数据。此证据证明两者安装后的实际提醒，不扩大为所有客户端、所有停顿类别与关闭序列通过。DeepSeek 暂无独立原生事件记录，实际生命周期继续保留为未确认；重载由用户安排。
 
 完成的三个 managed implementer worktree 已归档，主 checkout 与最终运行包保留。私有集成备份保留；隔离偏好目录仍被最终实例使用，未删除。
+
+## PR 与跟踪状态
+
+PR #2 已可评审；#6/#7/#13 在合并时关闭。#5 为用户批准后的后续类别覆盖，继续开放；#1 为完整产品验收父事项，#4/#8/#9 的剩余实机门槛开放，#10–12 精确导航延期。私有备份与实际配置不提交到 Git。生成的临时计时可执行文件及仪器化源码副本已删除，纯耗时/限定日志作为本地历史证据保留；生产源码、测试和脚本没有临时 debug marker。
