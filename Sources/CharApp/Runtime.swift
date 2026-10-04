@@ -143,6 +143,10 @@ actor ObservationWorker {
         panel = CompanionPanel(runtime: self)
         place(on: NSScreen.main ?? NSScreen.screens.first, animated: false)
         panel.orderFrontRegardless()
+        if panel.usesActivatingWindow {
+            NSApp.activate(ignoringOtherApps: true)
+            panel.makeKeyAndOrderFront(nil)
+        }
         statusBar = StatusBarController(runtime: self)
         installDesktopTracking()
         if demo { injectFixtures() }

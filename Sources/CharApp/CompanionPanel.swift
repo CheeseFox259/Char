@@ -34,10 +34,13 @@ import CharCore
 
 @MainActor final class CompanionPanel: NSPanel {
     let surface: CompanionSurface
+    // [DEBUG-char-wheel-deep] Native activation counterfactual, not a product mode.
+    let usesActivatingWindow = ProcessInfo.processInfo.environment["CHAR_ACTIVATING_WINDOW"] == "1"
     init(runtime: CompanionRuntime) {
         surface = CompanionSurface(runtime: runtime)
         super.init(contentRect: NSRect(origin: .zero, size: CompanionGeometry.canvasSize),
-                   styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
+                   styleMask: usesActivatingWindow ? [.titled] : [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
+        if usesActivatingWindow { title = "Char 滚轮窗口对照" }
         isOpaque = false; backgroundColor = .clear; hasShadow = false
         level = .statusBar; hidesOnDeactivate = false; isMovableByWindowBackground = false
         collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary]
@@ -47,8 +50,8 @@ import CharCore
         }
         contentView = surface
     }
-    override var canBecomeKey: Bool { false }
-    override var canBecomeMain: Bool { false }
+    override var canBecomeKey: Bool { usesActivatingWindow }
+    override var canBecomeMain: Bool { usesActivatingWindow }
     func transition(to frame: NSRect, placement: PetPlacement, animated: Bool) {
         surface.transition(to: frame, placement: placement, animated: animated)
     }

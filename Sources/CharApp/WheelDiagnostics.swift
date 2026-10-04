@@ -42,7 +42,7 @@ import QuartzCore
         write(["kind": kind, "now": ProcessInfo.processInfo.systemUptime, "eventTime": event.timestamp,
                "dy": event.scrollingDeltaY, "dx": event.scrollingDeltaX, "point": [point.x,point.y],
                "accepts": !window.ignoresMouseEvents, "eventWindow": event.windowNumber,
-               "panelWindow": window.windowNumber, "appActive": NSApp.isActive,
+               "panelWindow": window.windowNumber, "appActive": NSApp.isActive, "panelKey": window.isKeyWindow,
                "sourcePID": event.cgEvent?.getIntegerValueField(.eventSourceUnixProcessID) ?? -1])
     }
     func input(_ event: NSEvent, offset: Int) -> Int {

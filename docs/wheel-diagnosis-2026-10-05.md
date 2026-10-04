@@ -80,3 +80,5 @@ Apple区分AppKit管理的backing layer与自主管理的hosting layer；后者�
 退出工具第二段用户确认只移开后补滚；sequence6在此阶段才到达，仍为普通非连续鼠标事件，App入口到surface约0.888 ms。退出BetterMouse没有解决送达滞后。通过CUA重新打开BetterMouse（初始AX超时，但进程66582确认恢复），未改其配置。
 
 下一组打包并启用`CHAR_STATIC_MOUSE_ROUTING=1`（其余hosted/诊断/私有fixture配置保持），进程71420；CUA确认七泡可见，启动日志accepts=true且始终不切换穿透。已说明透明画布暂接收鼠标并发出单格停住采集；边界`/tmp/char-wheel-static-route-held.capture-start.json`，等待完成回复。
+
+固定路由组用户回复“首格没有立刻切换”。采集段只出现accepts=true且target=codexCLI，全部本App local探针、global探针及surface输入均无事件。这组也失败。无需重复已有的移开复现，改验证`CHAR_ACTIVATING_WINDOW=1`：初始化为带标题栏、可成为key/main的激活面板；固定原生接收、hosted绘制、策略与七泡fixture保持。启动可激活，要求用户采集前点击标题栏；入口日志增加panelKey以核对该反事实实际成立。未将此诊断窗口形态选作产品方案。
