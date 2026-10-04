@@ -43,6 +43,6 @@ File: docs/windows-feasibility.md.
 ### Task 6: Verification and delivery
 - [x] Run scripts/check.sh, release build, both package validations, native smoke and strict codesign.
 - [x] Use CUA for actual settings and icon/legend check. Record the checks actually run.
-- [x] Check local Markdown links and diff, commit, push feat/char-v1 to CheeseFox259/Char, update existing PR #2. Do not merge or mark unrelated historical gates complete.
+- [ ] Finish remote delivery: local Markdown links/diff and commit are complete. GitHub authentication is invalid; after the user reauthenticates, push feat/char-v1 and update PR #2. Do not merge or mark unrelated historical gates complete.
 
 Execution evidence: docs/developer-docs-verification-2026-10-05.md. Complete smoke was run twice and FAILED at the existing Space assertion; it is not counted as success.
