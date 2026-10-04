@@ -5,7 +5,7 @@ import CharCore
 /// SessionStart identifies the owning native client; only the main Agent's durable wire is read.
 public final class KimiObservationPoller {
     private struct Cursor { var offset: UInt64; var inode: NSNumber? }
-    private let root: URL
+    private let directoryIndex: JournalDirectoryIndex
     private let hooks: URL
     private var cursors: [String: Cursor] = [:]
     private var bindings: [String: KimiHookRecord] = [:]
@@ -15,7 +15,10 @@ public final class KimiObservationPoller {
     private var pendingQuestions: [String: Set<String>] = [:]
 
     public init(kimiSessionsRoot: URL, hookEventsFile: URL) {
-        root = kimiSessionsRoot
+        directoryIndex = JournalDirectoryIndex(root: kimiSessionsRoot) {
+            $0.lastPathComponent == "wire.jsonl" && $0.deletingLastPathComponent().lastPathComponent == "main"
+                && $0.deletingLastPathComponent().deletingLastPathComponent().lastPathComponent == "agents"
+        }
         hooks = hookEventsFile
     }
 
@@ -152,11 +155,7 @@ public final class KimiObservationPoller {
     }
 
     private func files() -> [URL] {
-        guard let enumerator = FileManager.default.enumerator(at: root, includingPropertiesForKeys: nil, options: [.skipsHiddenFiles]) else { return [] }
-        return enumerator.compactMap { $0 as? URL }.filter {
-            $0.lastPathComponent == "wire.jsonl" && $0.deletingLastPathComponent().lastPathComponent == "main"
-                && $0.deletingLastPathComponent().deletingLastPathComponent().lastPathComponent == "agents"
-        }.sorted { $0.path < $1.path }
+        directoryIndex.files()
     }
 
     private func baseline(_ file: URL) {

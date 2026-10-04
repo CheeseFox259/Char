@@ -12,8 +12,8 @@ public final class LocalObservationPoller {
         var pendingQuestionCallIDs: Set<String> = []
     }
 
-    private let claudeProjectsRoot: URL
-    private let codexSessionsRoot: URL
+    private let claudeIndex: JournalDirectoryIndex
+    private let codexIndex: JournalDirectoryIndex
     private let kimiPoller: KimiObservationPoller?
     private let hookEventsFile: URL?
     private var cursors: [String: Cursor] = [:]
@@ -46,8 +46,8 @@ public final class LocalObservationPoller {
     }
 
     public init(claudeProjectsRoot: URL, codexSessionsRoot: URL, hookEventsFile: URL? = nil, kimiSessionsRoot: URL? = nil) {
-        self.claudeProjectsRoot = claudeProjectsRoot
-        self.codexSessionsRoot = codexSessionsRoot
+        self.claudeIndex = JournalDirectoryIndex(root: claudeProjectsRoot) { $0.pathExtension == "jsonl" }
+        self.codexIndex = JournalDirectoryIndex(root: codexSessionsRoot) { $0.pathExtension == "jsonl" }
         self.hookEventsFile = hookEventsFile
         self.kimiPoller = kimiSessionsRoot.flatMap { root in hookEventsFile.map { KimiObservationPoller(kimiSessionsRoot: root, hookEventsFile: $0) } }
     }
@@ -143,12 +143,10 @@ public final class LocalObservationPoller {
 
     private func files() -> [(URL, Source)] {
         var result: [(URL, Source)] = []
-        for (root, source) in [(claudeProjectsRoot, Source.claude), (codexSessionsRoot, Source.codex)] {
+        for (index, source) in [(claudeIndex, Source.claude), (codexIndex, Source.codex)] {
             if source == .claude && !enabledWorkEnds.contains(.claudeCode) { continue }
             if source == .codex && enabledWorkEnds.isDisjoint(with: [.codexCLI, .codexDesktop]) { continue }
-            if let enumerator = FileManager.default.enumerator(at: root, includingPropertiesForKeys: nil, options: [.skipsHiddenFiles]) {
-                for case let url as URL in enumerator where url.pathExtension == "jsonl" { result.append((url, source)) }
-            }
+            result.append(contentsOf: index.files().map { ($0, source) })
         }
         if !enabledWorkEnds.isEmpty, let hookEventsFile, FileManager.default.fileExists(atPath: hookEventsFile.path) { result.append((hookEventsFile, .hook)) }
         return result.sorted { $0.0.path < $1.0.path }
