@@ -235,11 +235,20 @@ import CharCore
         }
         return nil
     }
+    private let wheelDiagnostics = WheelDiagnostics()
     override func scrollWheel(with event: NSEvent) {
+        let sequence = wheelDiagnostics.input(event, offset: offset)
+        let tracked = buttons.first { !$0.isHidden && !$0.miniature }
+        wheelDiagnostics.handler(sequence, layer: tracked?.graphicLayer)
+        let before = tracked.map { ($0.graphicLayer.presentation() ?? $0.graphicLayer).position }
         let step = scrollPolicy.step(delta: Double(event.scrollingDeltaY + event.scrollingDeltaX),
                                      precise: event.hasPreciseScrollingDeltas, hasGesturePhase: event.phase != [], momentum: event.momentumPhase != [],
                                      count: runtime.snapshot.bubbles.count, capacity: capacity, now: event.timestamp)
-        if step != 0 { _ = cycleBubbles(by: step) }
+        if step != 0 {
+            _ = cycleBubbles(by: step)
+            wheelDiagnostics.accepted(sequence, step: step, offset: offset, layer: tracked?.graphicLayer,
+                center: NSPoint(x: pet.frame.midX, y: pet.frame.midY), before: before)
+        }
     }
     @discardableResult func cycleBubbles(by step: Int) -> Bool {
         guard canCycle, step != 0 else { return false }
@@ -280,6 +289,7 @@ import CharCore
         if let clock { RunLoop.main.add(clock, forMode: .common); RunLoop.main.add(clock, forMode: .eventTracking) }
     }
     private func animate() {
+        wheelDiagnostics.tick()
         guard window?.isVisible == true else { return }
         let now = ProcessInfo.processInfo.systemUptime
         let reduce = reducedMotion
