@@ -508,7 +508,7 @@ import CharCore
             Self.defaultBody.draw(in: NSRect(x: 0, y: 0, width: 76, height: 76))
             ink.setFill()
             let blink = !reduce && elapsed.truncatingRemainder(dividingBy: 5.2) > 5.04
-            let faceX: CGFloat = placement == .left ? 16 : placement == .right ? -23 : 0
+            let faceX: CGFloat = placement == .left ? 16 : placement == .right ? -17 : 0
             let faceY: CGFloat = placement == .bottom ? 15 : placement == .top ? -20 : 0
             for x in [27.0, 46.0] {
                 NSBezierPath(roundedRect: NSRect(x: x + faceX + gaze.x * 3, y: (blink || responding ? 38 : 33) + faceY + gaze.y * 3,
