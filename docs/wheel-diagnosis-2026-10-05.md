@@ -46,3 +46,11 @@ Apple区分AppKit管理的backing layer与自主管理的hosting layer；后者�
 `27b27a8`构建通过。默认显示路径的完整smoke运行在Space可见性检查失败，随后CUA明确报告Mac锁定；不计为通过。此前解锁完成的图层路径及缩放检查有效。
 
 第一组已准备在隔离正常模式：右边缘、48 pt桌宠、20 pt距离、七个私有合成观察，应用激活为真实平台。用户实际日志未注入，无模型请求。待手动解锁确认可见后，先测试两项修正但保留原显示路径，再只切换hosting flag重复。期间不重做用户已接受的Space方案。
+
+### 第一组：两项修正＋原显示路径
+
+用户完成采集后反馈：“首格滞后，反向先走错一步，移开补滚”，声明 BetterMouse 平滑滚动开启。采集边界后的7个实际事件均被接受，事件源PID0；平均输入延迟8.23 ms，最高14.16 ms。普通图层14–18 ms开始、181–185 ms到位；折叠跨越的早期压缩按设计保持位置，67–69 ms开始转移。日志`/tmp/char-wheel-fixed-baseline-capture.log`。两项修正没有解决整体可见滞后。
+
+### 第二组：仅切换hosting
+
+同一`27b27a8`二进制的hosted完整smoke在解锁状态通过（`/tmp/char-wheel-hosted-smoke.log`），包含无视图子项的hosting归属检查及原有产品路径。随后启动正常私有fixture，保留第一组48 pt/right/20 pt与七个气泡，仅启用`CHAR_HOSTED_SCENE=1`，CUA确认气泡可见。已发起相同步骤的实体采集问题，等待用户完成后才读取并分析采集段。日志`/tmp/char-wheel-hosted.log`，边界`/tmp/char-wheel-hosted.capture-start.json`。
