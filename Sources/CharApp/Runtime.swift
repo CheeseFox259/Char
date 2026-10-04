@@ -48,7 +48,7 @@ actor ObservationWorker {
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { false }
 }
 
-@MainActor final class CompanionRuntime: NSObject, ObservableObject {
+@MainActor final class CompanionRuntime: NSObject, ObservableObject, NSWindowDelegate {
     let demo: Bool
     let smoke: Bool
     let store: CharSettingsStore
@@ -324,12 +324,20 @@ actor ObservationWorker {
                                   styleMask: [.titled, .closable, .resizable], backing: .buffered, defer: false)
             window.title = "Char Settings"
             window.isReleasedWhenClosed = false
+            window.delegate = self
             window.contentView = NSHostingView(rootView: SettingsView(runtime: self))
             window.center()
             settingsWindow = window
         }
         NSApp.activate(ignoringOtherApps: true)
         settingsWindow?.makeKeyAndOrderFront(nil)
+    }
+
+    func windowWillClose(_ notification: Notification) {
+        guard let window = notification.object as? NSWindow, window === settingsWindow else { return }
+        // A closed TimelineView otherwise keeps an offscreen SwiftUI layout/render loop alive.
+        window.contentView = nil
+        settingsWindow = nil
     }
 
     private func fixtureAnchor() -> ReturnAnchor {
@@ -346,7 +354,7 @@ actor ObservationWorker {
             fadeSourceBadge(old)
         }
         retainedAnchor = next.hold?.anchor
-        snapshot = next
+        if snapshot != next { snapshot = next }
         homeShortcut.updateHold(next.hold != nil)
         refreshHomeShortcutStatus()
         panel?.surface.refresh()
