@@ -103,17 +103,35 @@ import CharCore
     }
     private var movement: Transition?
     private var placement: PetPlacement = .desktop
+    // [DEBUG-char-wheel-deep] Temporary display-ownership A/B. Host contains only layers.
+    let usesHostedScene = ProcessInfo.processInfo.environment["CHAR_HOSTED_SCENE"] == "1"
+    private(set) var sceneHost: NSView?
+    var sceneLayer: CALayer? { sceneHost?.layer ?? layer }
+    var hostedSceneInvariant: Bool {
+        guard usesHostedScene else { return true }
+        guard let sceneHost, let sceneLayer, sceneHost.superview === self,
+              sceneHost.subviews.isEmpty, !wantsLayer else { return false }
+        return ([pet] + buttons).allSatisfy { $0.superview === self && !$0.wantsLayer && $0.graphicLayer.superlayer === sceneLayer }
+            && overflow.superlayer === sceneLayer
+    }
     init(runtime: CompanionRuntime) {
         self.runtime = runtime
         pet = GraphicButton(kind: .pet, runtime: runtime)
         buttons = WorkEnd.allCases.map { GraphicButton(kind: .bubble($0), runtime: runtime) }
         super.init(frame: NSRect(origin: .zero, size: CompanionGeometry.canvasSize))
-        wantsLayer = true
+        if usesHostedScene {
+            let host = NSView(frame: bounds)
+            let owned = CALayer(); owned.anchorPoint = .zero; owned.frame = bounds
+            // AppKit's documented layer-hosting order is significant.
+            host.layer = owned; host.wantsLayer = true
+            host.setAccessibilityElement(false)
+            sceneHost = host; addSubview(host)
+        } else { wantsLayer = true }
         overflow.contentsScale = 2
         overflow.actions = ["contents": NSNull(), "bounds": NSNull(), "position": NSNull(), "opacity": NSNull()]
-        layer?.addSublayer(overflow)
-        addSubview(pet); pet.attachArtwork(to: layer!)
-        for button in buttons { addSubview(button); button.attachArtwork(to: layer!) }
+        sceneLayer?.addSublayer(overflow)
+        addSubview(pet); pet.attachArtwork(to: sceneLayer!, eventOnly: usesHostedScene)
+        for button in buttons { addSubview(button); button.attachArtwork(to: sceneLayer!, eventOnly: usesHostedScene) }
         setAccessibilityElement(true)
         setAccessibilityRole(.group)
         setAccessibilityLabel("Agent orbit, scroll or use next and previous actions to cycle bubbles")
@@ -417,8 +435,8 @@ import CharCore
     }
     private func configureIdle() {
         for button in [pet] + buttons { button.configureIdle(reduced: reducedMotion) }
-        if reducedMotion { layer?.removeAnimation(forKey: "scene-idle"); return }
-        guard layer?.animation(forKey: "scene-idle") == nil else { return }
+        if reducedMotion { sceneLayer?.removeAnimation(forKey: "scene-idle"); return }
+        guard sceneLayer?.animation(forKey: "scene-idle") == nil else { return }
         let bob = CAKeyframeAnimation(keyPath: "transform.translation.y")
         bob.values = [0, 2, 0, -1, 0]; bob.isAdditive = true
         let breathe = CAKeyframeAnimation(keyPath: "transform.scale")
@@ -426,7 +444,7 @@ import CharCore
         for animation in [bob,breathe] { animation.duration = 4.8; animation.timingFunctions = Array(repeating: CAMediaTimingFunction(name: .easeInEaseOut), count: 4) }
         let group = CAAnimationGroup(); group.animations = [bob,breathe]; group.duration = 4.8
         group.repeatCount = .infinity; group.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
-        layer?.add(group, forKey: "scene-idle")
+        sceneLayer?.add(group, forKey: "scene-idle")
     }
     /// One scene pose links the pet, primary bubbles and overflow miniatures.
     /// Layer opacity leaves the native window's occlusion state unchanged.
@@ -436,7 +454,7 @@ import CharCore
         let sx = baseScale * CGFloat(1 + feedback * 0.06)
         let sy = baseScale * CGFloat(1 - feedback * 0.08)
         // AppKit backing layers commonly use (0,0), unlike ordinary CALayer defaults.
-        let layerAnchor = layer?.anchorPoint ?? .zero
+        let layerAnchor = sceneLayer?.anchorPoint ?? .zero
         let pivot = NSPoint(x: pet.frame.midX - bounds.width * layerAnchor.x,
                             y: pet.frame.midY - bounds.height * layerAnchor.y)
         var dx: CGFloat = 0, dy: CGFloat = 0
@@ -450,8 +468,8 @@ import CharCore
         let transform = CGAffineTransform(a: sx, b: 0, c: 0, d: sy,
                                           tx: pivot.x * (1 - sx) + dx, ty: pivot.y * (1 - sy) + dy)
         CATransaction.begin(); CATransaction.setDisableActions(true)
-        layer?.setAffineTransform(transform)
-        layer?.opacity = Float(visualOpacity)
+        sceneLayer?.setAffineTransform(transform)
+        sceneLayer?.opacity = Float(visualOpacity)
         CATransaction.commit()
     }
     private func updateOverflowArtwork() {
@@ -672,9 +690,10 @@ import CharCore
             refreshPetArtwork()
         }
     }
-    func attachArtwork(to host: CALayer) {
+    func attachArtwork(to host: CALayer, eventOnly: Bool = false) {
         externalArtwork = true
         graphicLayer.removeFromSuperlayer(); host.addSublayer(graphicLayer)
+        if eventOnly { wantsLayer = false }
     }
     func containsSurfacePoint(_ point: NSPoint) -> Bool {
         guard !isHidden else { return false }

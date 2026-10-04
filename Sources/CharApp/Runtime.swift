@@ -503,6 +503,7 @@ actor ObservationWorker {
         func fail(_ message: String) -> Never {
             FileHandle.standardError.write(Data("Char fixture smoke failed: \(message)\n".utf8)); exit(1)
         }
+        guard panel.surface.hostedSceneInvariant else { fail("owned scene host contains event views or duplicate backing artwork") }
         if CommandLine.arguments.contains("--orbit-path-check") {
             setBubbleDistance(8)
             var findings: [String] = []
@@ -611,7 +612,7 @@ actor ObservationWorker {
         panel.surface.spaceFeedback()
         guard panel.surface.isSpaceFeedbackActive else { fail("second hidden cycle did not begin a fresh arrival") }
         try? await Task.sleep(nanoseconds: 800_000_000)
-        guard !panel.surface.isSpaceFeedbackActive, panel.surface.pet.spaceTuck == 0, panel.surface.visualOpacity == 1, panel.surface.layer?.opacity == 1, panel.alphaValue == 1 else { fail("Space feedback completion") }
+        guard !panel.surface.isSpaceFeedbackActive, panel.surface.pet.spaceTuck == 0, panel.surface.visualOpacity == 1, panel.surface.sceneLayer?.opacity == 1, panel.alphaValue == 1 else { fail("Space feedback completion") }
         panel.surface.spaceFeedback()
         guard !panel.surface.isSpaceFeedbackActive else { fail("completed Space arrival replayed") }
         if let sample = Bundle.main.resourceURL?.appendingPathComponent("Skins/example.charpet"), let skinStore {
