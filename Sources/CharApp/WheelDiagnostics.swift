@@ -14,7 +14,7 @@ import QuartzCore
         guard enabled else { return }
         if let token = NSEvent.addLocalMonitorForEvents(matching: .scrollWheel, handler: { [weak self, weak surface] event in
             MainActor.assumeIsolated {
-                if let surface, event.window === surface.window { self?.ingress(event, surface: surface, kind: "ingressLocal") }
+                if let surface { self?.ingress(event, surface: surface, kind: "ingressLocal") }
             }
             return event
         }) { monitors.append(token) }

@@ -64,3 +64,19 @@ Apple区分AppKit管理的backing layer与自主管理的hosting layer；后者�
 用户按约定只滚一格并停住，回复“单格已停”后，采集段无任何`input`或`accepted`；CUA画面保留offset0的Claude/Codex排列。对该实际采集执行“单格应收到一次input”断言，输出`expected=1 received=0`并exit1。日志`/tmp/char-wheel-held-capture.log`。随后单独要求只移开、不滚轮；用户确认有补滚，日志此时才收到sequence17、dy=-30并接受-1，输入到handler约10.5 ms，动画约187 ms到位（`/tmp/char-wheel-exit-capture.log`）。事件时间也接近移开阶段。这次直接证据把调查边界提前到输入送达，不能继续将全部延迟解释为绘制。
 
 临时增加不消费、不重发事件的NSEvent local/global scroll monitors，比较App入口、气泡入口和`ignoresMouseEvents`/指针目标转换；全局观察仅记录指针位于Char画布时的滚轮数值和坐标，没有键盘/内容监控。按[Apple事件监控说明](https://developer.apple.com/library/archive/documentation/Cocoa/Conceptual/EventOverview/MonitoringEvents/MonitoringEvents.html)，local对应本App派发前，global对应其他App。当前保留相同hosting路径以隔离诊断改动，未修改滚动策略。release编译/打包通过；七个私有气泡经CUA确认，入口采集问题已发出，等待完成回复后分析。
+
+入口采集用户说明第一遍误滚两格、第二遍正确且问题不变。日志合计3个App入口输入，均在约0.2–1.2 ms内到达surface，并各接受一步；不存在App入口已收到但surface等待下一格的证据。global入口未收到这一段Char画布内的滚轮。最后一次事件点`[270.8125,230.082]`随后连续变为移开路径，说明输入需继续向App入口前追查；没有独立HID时序，暂不能把原因归给某个工具。
+
+按顺序验证鼠标转换工具、透明窗口穿透切换、非激活面板派发三项。尝试CUA连接BetterMouse超时，未声称已经退出，改由用户从菜单正常退出并做一格停住/只移开对照；不是更改其设置。问题已发出，待完成回复后核对进程并分析。
+
+用户随后要求先重采精准数据。退出BetterMouse的采集暂停，进程确认BetterMouse3094和Char51025仍运行，未退出或改设置。新采集按两段独立问题进行：第一段在当前中间Kimi Desktop泡中心悬停3秒、下滚一个刻度、完全停住5秒、键盘回复；收到回复后才分析，然后另行采集不滚轮只移开。CUA已保存当前offset4的画面对照，第一段边界`/tmp/char-wheel-precise-held.capture-start.json`。
+
+精准第一段用户回复“第一段已停”。仅记录进入KimiDesktop目标时从accepts=false到true的两帧转换，此后无panel local/global入口或surface输入；目标稳定时窗口已允许接收。CUA画面保持offset4，当前日志`/tmp/char-wheel-precise-held-capture.log`。第二段单独要求不再滚、只移开，等待回复后核对。注意local探针目前仅记录event.window为panel的事件，仍需考虑App收到不同/空window事件的情况，不能仅凭此排除App派发前的窗口关联问题。
+
+精准第二段用户确认“第二段已移开，补滚”。此时才出现sequence4、dy=-30，panel local入口与surface入口相差0.815 ms，接受step=-1、offset4→3。两次严格分段均复现首格未送达、只移动后送达；日志`/tmp/char-wheel-precise-exit-capture.log`。下一项仍是完全退出BetterMouse的同二进制对照，未把它预先认定为原因。
+
+退出工具对照：用户说明第一遍意外移开、第二遍停住成功。回复后进程确认BetterMouse完全退出。第一遍移开路径附近收到sequence5，改为precise=false、continuous0、dy=0.100006、CGline1，立即接受一步；第二遍进入KimiDesktop并静止后无新的panel入口/surface输入。等待第二段只移开确认，不更改鼠标设置。准备下一反事实`CHAR_STATIC_MOUSE_ROUTING=1`固定原生窗口接收，关闭60Hz指针穿透开关，默认仍OFF；local探针扩至全部本App滚轮，避免空/不同window事件漏观测。当前运行包未替换，等待采集完成后才启用反事实。
+
+退出工具第二段用户确认只移开后补滚；sequence6在此阶段才到达，仍为普通非连续鼠标事件，App入口到surface约0.888 ms。退出BetterMouse没有解决送达滞后。通过CUA重新打开BetterMouse（初始AX超时，但进程66582确认恢复），未改其配置。
+
+下一组打包并启用`CHAR_STATIC_MOUSE_ROUTING=1`（其余hosted/诊断/私有fixture配置保持），进程71420；CUA确认七泡可见，启动日志accepts=true且始终不切换穿透。已说明透明画布暂接收鼠标并发出单格停住采集；边界`/tmp/char-wheel-static-route-held.capture-start.json`，等待完成回复。

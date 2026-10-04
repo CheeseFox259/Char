@@ -106,6 +106,8 @@ import CharCore
     private var placement: PetPlacement = .desktop
     // [DEBUG-char-wheel-deep] Temporary display-ownership A/B. Host contains only layers.
     let usesHostedScene = ProcessInfo.processInfo.environment["CHAR_HOSTED_SCENE"] == "1"
+    // [DEBUG-char-wheel-deep] Counterfactual: keep the panel's native mouse route stable.
+    private let usesStaticMouseRouting = ProcessInfo.processInfo.environment["CHAR_STATIC_MOUSE_ROUTING"] == "1"
     private(set) var sceneHost: NSView?
     var sceneLayer: CALayer? { sceneHost?.layer ?? layer }
     var hostedSceneInvariant: Bool {
@@ -415,7 +417,7 @@ import CharCore
             wheelDiagnostics.route(self, point: local, accepts: !window.ignoresMouseEvents)
             let orbitActive = now < orbitUntil
             if local != lastPointer || orbitActive || orbitActive != lastOrbitActive {
-                let desired = hitTest(local) == nil
+                let desired = usesStaticMouseRouting ? false : hitTest(local) == nil
                 if window.ignoresMouseEvents != desired {
                     window.ignoresMouseEvents = desired
                 }
