@@ -5,8 +5,10 @@ import CharCore
 struct CompanionGeometryChecks {
     func run() throws {
         let bounds = CGRect(origin: .zero, size: CompanionGeometry.canvasSize)
+        for size in [36.0, 48.0, 88.0] {
         for placement in PetPlacement.allCases {
-            try check(bounds.contains(CompanionGeometry.petFrame(placement: placement)))
+            // Edge pet frames may extend past the panel; the physical screen clips the authored peek.
+            if placement == .desktop { try check(bounds.contains(CompanionGeometry.petFrame(placement: placement, petSize: size))) }
             // Runtime exposes only 8pt of the pet center past the screen boundary:
             // a 38pt half-size leaves 30pt of the panel beyond the physical screen.
             let physical: CGRect
@@ -18,7 +20,7 @@ struct CompanionGeometryChecks {
             case .bottom: physical = CGRect(x: 0, y: 30, width: 340, height: 310)
             }
             for count in 0...16 {
-                let slots = CompanionGeometry.layout(count: count, offset: -2, placement: placement)
+                let slots = CompanionGeometry.layout(count: count, offset: -2, placement: placement, petSize: size)
                 try checkEqual(slots.count, min(count, 6))
                 for slot in slots {
                     try check(bounds.contains(slot.frame), "edge slot must stay inside panel")
@@ -28,6 +30,18 @@ struct CompanionGeometryChecks {
                 }
             }
         }
+        }
+        var wheel = CompanionScrollPolicy()
+        try checkEqual(wheel.step(delta: 80, precise: true, momentum: false, count: 6, now: 0), 0)
+        try checkEqual(wheel.step(delta: 18, precise: true, momentum: false, count: 7, now: 0), 0)
+        try checkEqual(wheel.step(delta: 18, precise: true, momentum: false, count: 7, now: 0.01), 1)
+        try checkEqual(wheel.step(delta: 80, precise: true, momentum: true, count: 7, now: 0.2), 0)
+        try checkEqual(wheel.step(delta: 80, precise: true, momentum: false, count: 7, now: 0.05), 0)
+        try checkEqual(wheel.step(delta: -40, precise: true, momentum: false, count: 7, now: 0.3), -1)
+        try checkEqual(CompanionPlayback(departure: nil, arrival: nil).duration, 0.24)
+        for reason in [StopReason.question, .approval, .unclassified] { try checkEqual(AttentionPresentationGroup.forReason(reason), .interaction) }
+        for reason in [StopReason.failure, .rateLimit, .contextExhausted] { try checkEqual(AttentionPresentationGroup.forReason(reason), .issue) }
+        try checkEqual(AttentionPresentationGroup.forReason(.turnEnded), .ended)
         for count in 7...16 {
             var reached = Set<Int>()
             for offset in 0..<count {

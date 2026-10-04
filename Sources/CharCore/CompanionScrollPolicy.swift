@@ -1,0 +1,42 @@
+import Foundation
+
+/// Deliberate orbit cycling: trackpads accumulate distance and ignore momentum.
+public struct CompanionScrollPolicy: Sendable {
+    private var accumulated = 0.0
+    private var lastInput = -Double.infinity
+    private var lastStep = -Double.infinity
+    public init() {}
+    public mutating func step(delta: Double, precise: Bool, momentum: Bool, count: Int, now: TimeInterval) -> Int {
+        guard count > 6 else { accumulated = 0; return 0 }
+        guard !momentum, delta != 0 else { return 0 }
+        if now - lastInput > 0.25 { accumulated = 0 }
+        lastInput = now
+        if precise {
+            // A changed direction starts a fresh intentional gesture.
+            if accumulated * delta < 0 { accumulated = 0 }
+            accumulated += delta
+            guard abs(accumulated) >= 36 else { return 0 }
+        }
+        guard now - lastStep >= 0.18 else { return 0 }
+        lastStep = now
+        accumulated = 0
+        return delta > 0 ? 1 : -1
+    }
+}
+
+public enum AttentionPresentationGroup: String, CaseIterable, Sendable {
+    case interaction, issue, ended
+    public static func forReason(_ reason: StopReason) -> Self {
+        switch reason {
+        case .question, .approval, .unclassified: return .interaction
+        case .failure, .rateLimit, .contextExhausted: return .issue
+        case .turnEnded: return .ended
+        }
+    }
+    public var title: String {
+        switch self { case .interaction: return "待回应"; case .issue: return "需处理"; case .ended: return "已完成" }
+    }
+    public var symbol: String {
+        switch self { case .interaction: return "ellipsis.bubble.fill"; case .issue: return "exclamationmark"; case .ended: return "checkmark" }
+    }
+}
