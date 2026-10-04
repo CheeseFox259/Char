@@ -150,3 +150,5 @@ char 是仅在本机运行的 macOS 旁路观察器，不接管原生会话。�
 跨屏移动分为退出和进入，桌面缩小消失，边缘缩回；切换 Space 选择桌宠持续存在。回城动作立即派发应用激活并同时给予弹性反馈，不增加人为等待。macOS 整屏 Space 的切换曲线由系统控制，本实现不使用私有 API 或修改系统设置。
 
 自定义形象使用版本化 `.charpet` 七动画 RGBA PNG 标准，导入验证后本地安装，选择持久化；删除所选形象自动恢复默认。标准与可导入示例见 `docs/pet-skin-format.md`、`Resources/Skins/example.charpet`。配置插件标准与来源示例见 `docs/integration-plugin-format.md`、`Resources/Integrations/safari.charintegration`。
+
+2026-10-04 使用者确认本阶段按上述桌宠反馈和跨屏动画范围交付，整屏 Space 动画另行由 [#15](https://github.com/CheeseFox259/Char/issues/15) 跟踪。该延期不改变其它已记录的实机未运行项。
