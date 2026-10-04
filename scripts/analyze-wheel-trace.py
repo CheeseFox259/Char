@@ -16,7 +16,18 @@ def analyze(records, check_orbit_direction=False):
         samples=[r for r in records if r['kind']=='sample' and r['sequence']==seq and len(r.get('presentation',[]))==2]
         onset=None; arrival=None; wrong=[]
         target_delta=wrap(angle(target,center)-angle(before,center)) if center and before and target else 0
-        if check_orbit_direction and target_delta*a["step"]>0.02: faults.append("fold_path_opposes_neighbor_motion")
+        if check_orbit_direction:
+            # Older capture lacks scale, but identified a full-size primary.
+            if samples and not any('presentationScale' in s for s in samples):
+                if target_delta*a['step']>0.02: faults.append('fold_path_opposes_neighbor_motion')
+            else:
+                previous=before
+                for sample in samples:
+                    point=sample['presentation']
+                    travel=wrap(angle(point,center)-angle(previous,center))
+                    if travel*a['step']>.002 and sample.get('presentationScale',1)>18/44+.05 and sample.get('presentationOpacity',1)>.05:
+                        faults.append('visible_fold_path_opposes_neighbor_motion');break
+                    previous=point
         next_accept=next((b['now'] for b in accepts if b['now']>a['now']),float('inf'))
         complete=next_accept-a['now']>=.24
         for s in samples:

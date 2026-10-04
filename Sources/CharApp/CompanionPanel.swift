@@ -265,12 +265,26 @@ import CharCore
             guard let group = button.graphicLayer.animation(forKey: "orbit") as? CAAnimationGroup,
                   let path = group.animations?.first(where: { ($0 as? CAPropertyAnimation)?.keyPath == "position" }) as? CAKeyframeAnimation,
                   let values = path.values as? [NSValue], let first = values.first?.pointValue, let last = values.last?.pointValue,
-                  let grow = group.animations?.first(where: { ($0 as? CAPropertyAnimation)?.keyPath == "transform.scale" }) as? CABasicAnimation else { continue }
-            let fromScale = (grow.fromValue as? NSNumber)?.doubleValue ?? 0
-            let toScale = (grow.toValue as? NSNumber)?.doubleValue ?? 0
+                  let grow = group.animations?.first(where: { ($0 as? CAPropertyAnimation)?.keyPath == "transform.scale" }) else { continue }
+            let scales: [NSNumber]
+            if let keyframes = grow as? CAKeyframeAnimation, let samples = keyframes.values as? [NSNumber] { scales = samples }
+            else if let basic = grow as? CABasicAnimation, let from = basic.fromValue as? NSNumber, let to = basic.toValue as? NSNumber {
+                scales = values.indices.map { NSNumber(value: from.doubleValue + (to.doubleValue-from.doubleValue)*Double($0)/Double(values.count-1)) }
+            } else { findings.append("missing actual scale samples"); continue }
+            guard scales.count == values.count else { findings.append("mismatched actual scale samples"); continue }
+            let fromScale = scales.first?.doubleValue ?? 0
+            let toScale = scales.last?.doubleValue ?? 0
             var delta = atan2(last.y-center.y, last.x-center.x)-atan2(first.y-center.y, first.x-center.x)
             while delta > .pi { delta -= 2 * .pi }; while delta < -.pi { delta += 2 * .pi }
-            let opposite = fromScale > 0.95 && delta * Double(step) > 0.02
+            let opposite = (1..<values.count).contains { index in
+                let previous = values[index-1].pointValue, point = values[index].pointValue
+                var travel = atan2(point.y-center.y, point.x-center.x)-atan2(previous.y-center.y, previous.x-center.x)
+                while travel > .pi { travel -= 2 * .pi }; while travel < -.pi { travel += 2 * .pi }
+                // Only movement while large matters: growth at a stationary entry
+                // is valid, and compressed/transparent fold transport is valid.
+                let size = max(scales[index-1].doubleValue, scales[index].doubleValue)
+                return travel * Double(step) > 0.002 && size > 18.0/44.0 + 0.05
+            }
             let row = "placement=\(placement) step=\(step) end=\(String(describing: button.renderedWorkEnd)) fromScale=\(fromScale) toScale=\(toScale) angle=\(delta) opposite=\(opposite)"
             FileHandle.standardError.write(Data("[DEBUG-char-wheel-deep] path-check \(row)\n".utf8))
             if opposite { findings.append(row) }
@@ -684,6 +698,7 @@ import CharCore
         let position = start.position
         let scale = CGFloat((start.value(forKeyPath: "transform.scale") as? NSNumber)?.doubleValue ?? 1)
         let opacity = start.opacity
+        let wasMiniature = self.miniature, wasVisible = !isHidden
         self.miniature = miniature; self.frame = frame
         isHidden = !visible
         presentationGeneration += 1; let generation = presentationGeneration
@@ -707,15 +722,33 @@ import CharCore
             var delta = b-a
             while delta > .pi { delta -= 2 * .pi }; while delta < -.pi { delta += 2 * .pi }
             let r0 = hypot(initial.x-orbitCenter.x, initial.y-orbitCenter.y), r1 = hypot(target.x-orbitCenter.x, target.y-orbitCenter.y)
+            // An open edge arc has no visible wrap route. Compress at the old
+            // position, transport while tiny and transparent, then expand at the
+            // fold/entry. Neighboring primary slots keep their linear 180ms orbit.
+            let boundary = abs(delta) > 1.3 && (wasMiniature != miniature || !visible || !wasVisible)
+            let transport: (CGFloat) -> CGFloat = { t in boundary ? min(1, max(0, (t - 0.3) / 0.4)) : t }
             path.values = (0...24).map { index in
-                let t = CGFloat(index)/24, radius = r0+(r1-r0)*t, angle = a+delta*t
+                let t = transport(CGFloat(index)/24), radius = r0+(r1-r0)*t, angle = a+delta*t
                 return NSValue(point: NSPoint(x: orbitCenter.x+cos(angle)*radius, y: orbitCenter.y+sin(angle)*radius))
             }
             path.calculationMode = .linear
-            let grow = CABasicAnimation(keyPath: "transform.scale")
-            grow.fromValue = scale; grow.toValue = targetScale
-            let fade = CABasicAnimation(keyPath: "opacity")
-            fade.fromValue = opacity; fade.toValue = visible ? 1 : 0
+            let grow = CAKeyframeAnimation(keyPath: "transform.scale")
+            let fade = CAKeyframeAnimation(keyPath: "opacity")
+            grow.values = (0...24).map { index -> CGFloat in
+                let t = CGFloat(index)/24
+                if !boundary { return scale + (targetScale-scale)*t }
+                if t < 0.3 { return scale + (0.08-scale)*t/0.3 }
+                if t < 0.7 { return 0.08 }
+                return 0.08 + (targetScale-0.08)*(t-0.7)/0.3
+            }
+            fade.values = (0...24).map { index -> Float in
+                let t = Float(index)/24, target: Float = visible ? 1 : 0
+                if !boundary { return opacity + (target-opacity)*t }
+                if t < 0.3 { return opacity*(1-t/0.3) }
+                if t < 0.7 { return 0 }
+                return target*(t-0.7)/0.3
+            }
+            grow.calculationMode = .linear; fade.calculationMode = .linear
             for animation in [path, grow, fade] { animation.duration = 0.18; animation.timingFunction = CAMediaTimingFunction(name: .linear) }
             let group = CAAnimationGroup(); group.animations = [path, grow, fade]; group.duration = 0.18
             group.timingFunction = CAMediaTimingFunction(name: .linear)
