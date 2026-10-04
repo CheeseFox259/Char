@@ -509,10 +509,11 @@ actor ObservationWorker {
             for placement in PetPlacement.allCases {
                 setPlacement(placement)
                 try? await Task.sleep(nanoseconds: 300_000_000)
-                for step in [1, -1, 1, -1] {
+                let steps = Array(repeating: 1, count: WorkEnd.allCases.count) + Array(repeating: -1, count: WorkEnd.allCases.count) + [1, -1, 1, -1]
+                for (index, step) in steps.enumerated() {
                     findings += panel.surface.debugOrbitPathFindings(step: step)
                     // The second input retargets a live presentation; later steps settle.
-                    try? await Task.sleep(nanoseconds: step == 1 ? 40_000_000 : 230_000_000)
+                    try? await Task.sleep(nanoseconds: index < WorkEnd.allCases.count * 2 || step == -1 ? 230_000_000 : 40_000_000)
                 }
             }
             guard findings.isEmpty else { fail("actual folded layer paths oppose input: \(findings.joined(separator: "; "))") }
