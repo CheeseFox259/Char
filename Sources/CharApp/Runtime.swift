@@ -514,12 +514,22 @@ actor ObservationWorker {
         guard snapshot.hold == nil, homeShortcut.status == .inactive else { fail("source deletion retained Hold") }
         restorePlugins()
         guard pluginEntries.contains(where: { $0.id == "builtin.source.wechat" }) else { fail("source restore") }
+        setPetSize(64)
+        guard petSize == 64, panel.surface.pet.frame.width == 64,
+              let saved = try? JSONDecoder().decode(CompanionPreferences.self, from: Data(contentsOf: companionPreferencesURL)), saved.petSize == 64 else { fail("size apply/persistence") }
+        setPetSize(48)
         for placement in PetPlacement.allCases {
             setPlacement(placement)
             try? await Task.sleep(nanoseconds: 550_000_000)
             guard panel.alphaValue == 1, panel.surface.pet.motionScale == 1 else { fail("placement transition completion") }
         }
         setPlacement(.desktop)
+        try? await Task.sleep(nanoseconds: 300_000_000)
+        NSWorkspace.shared.notificationCenter.post(name: NSWorkspace.activeSpaceDidChangeNotification, object: NSWorkspace.shared)
+        try? await Task.sleep(nanoseconds: 70_000_000)
+        guard panel.surface.pet.spaceTuck > 0 else { fail("Space notification feedback") }
+        try? await Task.sleep(nanoseconds: 500_000_000)
+        guard panel.surface.pet.spaceTuck == 0, panel.alphaValue == 1 else { fail("Space feedback completion") }
         if let sample = Bundle.main.resourceURL?.appendingPathComponent("Skins/example.charpet"), let skinStore {
             do {
                 let skin = try skinStore.importPackage(at: sample)

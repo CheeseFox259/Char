@@ -194,4 +194,7 @@ try testNewAgentHooksAndKimiWire()
 try testKimiWireWaitsForLateClientBinding()
 print("CharObservations: 11 contract checks passed")
 
+try testFileCursorPartialTruncationAndRotation()
+print("CharObservations: partial record, truncation and inode replacement passed")
+
 try pluginObservationChecks()
