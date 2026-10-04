@@ -5,6 +5,7 @@ import CharCore
 /// Opt-in native input/render boundary trace; contains no session or page data.
 @MainActor private enum OrbitTrace {
     static let enabled = ProcessInfo.processInfo.environment["CHAR_ORBIT_TRACE"] == "1"
+    static let windowFlushProbe = ProcessInfo.processInfo.environment["CHAR_ORBIT_WINDOW_FLUSH"] == "1"
     static var sequence = 0
     static var activeUntil: TimeInterval = 0
     static func record(_ message: @autoclosure () -> String) {
@@ -273,24 +274,32 @@ import CharCore
             for button in buttons where !button.isHidden { button.displayIfNeeded() }
             overflow.displayIfNeeded()
             CATransaction.commit(); CATransaction.flush()
+            if OrbitTrace.windowFlushProbe {
+                OrbitTrace.record("window-flush-start sequence=\(OrbitTrace.sequence)")
+                window?.displayIfNeeded()
+                window?.flush()
+                OrbitTrace.record("window-flush-return sequence=\(OrbitTrace.sequence)")
+            }
             traceOrder("appkit-flush-complete")
             if OrbitTrace.enabled {
                 let sequence = OrbitTrace.sequence
+                let acceptedOffset = offset
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.03) { [weak self] in
-                    guard let self, OrbitTrace.sequence == sequence else { return }
-                    self.traceOrder("presentation-after-30ms")
+                    guard let self, self.offset == acceptedOffset else { return }
+                    self.traceOrder("presentation-after-30ms", sequence: sequence)
                 }
             }
         }
     }
-    private func traceOrder(_ boundary: String) {
+    private func traceOrder(_ boundary: String, sequence: Int? = nil) {
         guard OrbitTrace.enabled else { return }
         let order = buttons.filter { !$0.isHidden }.map { button -> String in
             guard case let .bubble(end) = button.kind else { return "pet" }
             let layer = button.layer
             return "\(end.rawValue):mini=\(button.miniature):frame=\(button.frame):model=\(String(describing: layer?.position)):present=\(String(describing: layer?.presentation()?.position))"
         }.joined(separator: "|")
-        OrbitTrace.record("\(boundary) sequence=\(OrbitTrace.sequence) offset=\(offset) order=\(order)")
+        let mode = RunLoop.current.currentMode?.rawValue ?? "none"
+        OrbitTrace.record("\(boundary) sequence=\(sequence ?? OrbitTrace.sequence) offset=\(offset) runloop=\(mode) windowVisible=\(window?.isVisible ?? false) occlusion=\(window?.occlusionState.rawValue ?? 0) ignoresMouse=\(window?.ignoresMouseEvents ?? false) sceneOpacity=\(layer?.opacity ?? 0) surfaceNeedsDisplay=\(needsDisplay) order=\(order)")
     }
     @objc fileprivate func nextBubbles() -> Bool { guard canCycle else { return false }; offset += 1; layoutVisibleBubbles(); return true }
     @objc fileprivate func previousBubbles() -> Bool { guard canCycle else { return false }; offset -= 1; layoutVisibleBubbles(); return true }
@@ -390,7 +399,10 @@ import CharCore
             let local = convert(window.convertPoint(fromScreen: NSEvent.mouseLocation), from: nil)
             if local != lastPointer {
                 let desired = hitTest(local) == nil
-                if window.ignoresMouseEvents != desired { window.ignoresMouseEvents = desired }
+                if window.ignoresMouseEvents != desired {
+                    OrbitTrace.record("hit-state sequence=\(OrbitTrace.sequence) ignoresMouse=\(desired) pointer=\(local) runloop=\(RunLoop.current.currentMode?.rawValue ?? "none")")
+                    window.ignoresMouseEvents = desired
+                }
                 lastPointer = local
             }
             var nearest: GraphicButton?
