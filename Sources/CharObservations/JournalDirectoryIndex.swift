@@ -25,7 +25,9 @@ final class JournalDirectoryIndex {
     }
     func files() -> [URL] {
         var visited = Set<String>()
-        let result = visit(root, visited: &visited)
+        // Foundation refuses contentsOfDirectory on a symlink itself. Resolve at
+        // every poll so replacing the configured root's target is also noticed.
+        let result = visit(root.resolvingSymlinksInPath(), visited: &visited)
         nodes = nodes.filter { visited.contains($0.key) }
         return result.sorted { $0.path < $1.path }
     }
