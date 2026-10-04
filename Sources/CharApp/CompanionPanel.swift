@@ -696,7 +696,7 @@ import CharCore
     func presentBubble(frame: NSRect, miniature: Bool, visible: Bool, animated: Bool, orbitCenter: NSPoint) {
         let start = graphicLayer.presentation() ?? graphicLayer
         let position = start.position
-        let scale = CGFloat((start.value(forKeyPath: "transform.scale") as? NSNumber)?.doubleValue ?? 1)
+        let scale = LayerGeometry.planarScale(of: start)
         let opacity = start.opacity
         let wasMiniature = self.miniature, wasVisible = !isHidden
         self.miniature = miniature; self.frame = frame

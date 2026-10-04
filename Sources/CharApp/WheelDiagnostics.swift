@@ -58,7 +58,7 @@ import QuartzCore
             "keys": layer.animationKeys() ?? [], "begin": animation?.beginTime ?? -1,
             "duration": animation?.duration ?? 0, "caTime": ca,
             "localTime": layer.convertTime(ca, from: nil), "speed": layer.speed,
-            "presentationScale": (presentation?.value(forKeyPath: "transform.scale") as? NSNumber)?.doubleValue ?? -1,
+            "presentationScale": presentation.map { LayerGeometry.planarScale(of: $0) } ?? -1,
             "modelOpacity": layer.opacity, "presentationOpacity": presentation?.opacity ?? -1]
     }
     private func write(_ data: [String: Any]) {
