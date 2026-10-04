@@ -10,6 +10,7 @@ import QuartzCore
     private var lastRoute: String?
     private weak var rawSurface: CompanionSurface?
     private var rawTaps: [(CFMachPort, CFRunLoopSource)] = []
+    private var markers: WheelCaptureMarkers?
     // [DEBUG-char-wheel-deep] Passive input boundaries; never consume or repost events.
     func monitor(_ surface: CompanionSurface) {
         stopMonitoring()
@@ -31,6 +32,10 @@ import QuartzCore
                 return Unmanaged.passUnretained(event)
             })
             write(["kind": "rawTapsInstalled", "count": rawTaps.count, "now": ProcessInfo.processInfo.systemUptime])
+            markers = WheelCaptureMarkers { [weak self] name in
+                self?.write(["kind": "marker", "name": name, "now": ProcessInfo.processInfo.systemUptime])
+            }
+            write(["kind": "markersInstalled", "status": markers?.status ?? -1])
         }
         if let token = NSEvent.addLocalMonitorForEvents(matching: .scrollWheel, handler: { [weak self, weak surface] event in
             MainActor.assumeIsolated {
@@ -54,6 +59,7 @@ import QuartzCore
             CFMachPortInvalidate(tap)
         }
         rawTaps.removeAll(); rawSurface = nil
+        markers?.stop(); markers = nil
     }
     private func installRawTap(location: CGEventTapLocation, placement: CGEventTapPlacement, callback: CGEventTapCallBack) {
         guard let tap = CGEvent.tapCreate(tap: location, place: placement, options: .listenOnly,
@@ -67,7 +73,7 @@ import QuartzCore
         let point = NSPoint(x: event.location.x, y: screenTop-event.location.y)
         guard window.frame.contains(point) else { return }
         write(["kind": kind, "now": ProcessInfo.processInfo.systemUptime,
-               "eventTime": Double(event.timestamp)/1_000_000_000,
+               "nativeTimestamp": String(event.timestamp),
                "screenPoint": [point.x,point.y],
                "line": event.getIntegerValueField(.scrollWheelEventDeltaAxis1),
                "pixels": event.getIntegerValueField(.scrollWheelEventPointDeltaAxis1),

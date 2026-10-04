@@ -88,3 +88,7 @@ Apple区分AppKit管理的backing layer与自主管理的hosting layer；后者�
 准备下一边界：仅scrollWheel的被动CGEvent taps，分别位于HID head与session tail；坐标位于Char画布时才写数值/时间，不监听键盘，不重发/改写事件。启动先调用CGPreflightListenEventAccess，只在现有权限允许且显式diagnostic flag开启时创建tap；拒绝/缺失权限不发起请求。新建权限须先取得用户明确授权。
 
 新普通面板实例77548读取现有listen权限为true，HID/session两个被动tap均成功建立；无新授权请求。前述hosting/static/activating flags全部关闭以恢复普通基线。CUA两次自动化scroll（AX索引与坐标）均返回AXError.notImplemented，日志无滚轮事件；不计作校准成功。七泡布局保持offset0。用户说明不能保持鼠标静止回复，下一采集改为明确3秒悬停→一格→完整5秒静止→只移开→回复，允许鼠标回复，用不同边界时间辨别送达。边界`/tmp/char-wheel-raw-held.capture-start.json`。等待完成回复前不读取采集段。
+
+系统流采集用户补充：鼠标不必移出气泡，只要轻动就会切换。该段实际记录4个HID→session→App→surface输入链（并非约定单格），链内派发很快，不能将每条对应到单格/后续试探。HID层native timestamp与session层单位不同；此机mach timebase为125/3，现改只存nativeTimestamp整数与同一systemUptime callback时钟，避免把HID原值直接当ns解释。没有把该单位差异宣称为病因。
+
+准备明确实验边界的两个临时Carbon标记Ctrl+Shift+9(begin)/Ctrl+Shift+0(heldEnd)，仅注册这两组合，无键盘事件监控；只在raw诊断模式启用，停止/退出即解除。普通诊断实例88090，existing listen=true，两个tap安装，两个标记注册status0，七泡可见。已通知采集：一格后静止5秒打结束标记，再静止10秒；期间只读标记触发并由CUA采集一张Char截图，不进行滚轮数据分析、不输入/移动，等待用户完成回复再分析。当前边界`/tmp/char-wheel-marked.capture-start.json`。
