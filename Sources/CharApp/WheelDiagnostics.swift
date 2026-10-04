@@ -1,5 +1,6 @@
 import AppKit
 import QuartzCore
+import IOKit.hid
 
 /// [DEBUG-char-wheel-deep] Temporary, opt-in boundary trace; contains geometry only.
 @MainActor final class WheelDiagnostics {
@@ -11,6 +12,7 @@ import QuartzCore
     private weak var rawSurface: CompanionSurface?
     private var rawTaps: [(CFMachPort, CFRunLoopSource)] = []
     private var markers: WheelCaptureMarkers?
+    private var deviceObserver: IOHIDManager?
     // [DEBUG-char-wheel-deep] Passive input boundaries; never consume or repost events.
     func monitor(_ surface: CompanionSurface) {
         stopMonitoring()
@@ -19,6 +21,7 @@ import QuartzCore
         write(["kind": "rawAccess", "now": ProcessInfo.processInfo.systemUptime, "allowed": rawAllowed])
         if ProcessInfo.processInfo.environment["CHAR_RAW_WHEEL_DIAGNOSTICS"] == "1", rawAllowed {
             rawSurface = surface
+            startDeviceObserver()
             installRawTap(location: .cghidEventTap, placement: .headInsertEventTap, callback: { _, type, event, context in
                 if type == .scrollWheel, let context {
                     MainActor.assumeIsolated { Unmanaged<WheelDiagnostics>.fromOpaque(context).takeUnretainedValue().rawInput(event, kind: "rawHID") }
@@ -60,6 +63,34 @@ import QuartzCore
         }
         rawTaps.removeAll(); rawSurface = nil
         markers?.stop(); markers = nil
+        if let deviceObserver {
+            IOHIDManagerUnscheduleFromRunLoop(deviceObserver, CFRunLoopGetMain(), CFRunLoopMode.commonModes.rawValue)
+            IOHIDManagerClose(deviceObserver, IOOptionBits(kIOHIDOptionsTypeNone))
+        }
+        deviceObserver = nil
+    }
+    private func startDeviceObserver() {
+        let manager = IOHIDManagerCreate(kCFAllocatorDefault, IOOptionBits(kIOHIDOptionsTypeNone))
+        IOHIDManagerSetDeviceMatching(manager, [kIOHIDDeviceUsagePageKey: kHIDPage_GenericDesktop,
+                                               kIOHIDDeviceUsageKey: kHIDUsage_GD_Mouse] as CFDictionary)
+        IOHIDManagerSetInputValueMatching(manager, [kIOHIDElementUsagePageKey: kHIDPage_GenericDesktop,
+                                                   kIOHIDElementUsageKey: kHIDUsage_GD_Wheel] as CFDictionary)
+        IOHIDManagerRegisterInputValueCallback(manager, { context, _, _, value in
+            guard let context else { return }
+            MainActor.assumeIsolated {
+                Unmanaged<WheelDiagnostics>.fromOpaque(context).takeUnretainedValue().deviceWheel(value)
+            }
+        }, Unmanaged.passUnretained(self).toOpaque())
+        IOHIDManagerScheduleWithRunLoop(manager, CFRunLoopGetMain(), CFRunLoopMode.commonModes.rawValue)
+        let status = IOHIDManagerOpen(manager, IOOptionBits(kIOHIDOptionsTypeNone))
+        deviceObserver = manager
+        write(["kind": "deviceObserver", "status": status,
+               "matchedDevices": IOHIDManagerCopyDevices(manager).map(CFSetGetCount) ?? 0])
+    }
+    private func deviceWheel(_ value: IOHIDValue) {
+        guard let window = rawSurface?.window, window.frame.contains(NSEvent.mouseLocation) else { return }
+        write(["kind": "deviceWheel", "now": ProcessInfo.processInfo.systemUptime,
+               "nativeTimestamp": String(IOHIDValueGetTimeStamp(value)), "value": IOHIDValueGetIntegerValue(value)])
     }
     private func installRawTap(location: CGEventTapLocation, placement: CGEventTapPlacement, callback: CGEventTapCallBack) {
         guard let tap = CGEvent.tapCreate(tap: location, place: placement, options: .listenOnly,
@@ -71,7 +102,9 @@ import QuartzCore
     private func rawInput(_ event: CGEvent, kind: String) {
         guard let surface = rawSurface, let window = surface.window, let screenTop = NSScreen.screens.first?.frame.maxY else { return }
         let point = NSPoint(x: event.location.x, y: screenTop-event.location.y)
-        guard window.frame.contains(point) else { return }
+        // A wheel packet can carry a stale event location. Keep it when the live
+        // pointer is over Char, and preserve the packet's position for comparison.
+        guard window.frame.contains(point) || window.frame.contains(NSEvent.mouseLocation) else { return }
         write(["kind": kind, "now": ProcessInfo.processInfo.systemUptime,
                "nativeTimestamp": String(event.timestamp),
                "screenPoint": [point.x,point.y],

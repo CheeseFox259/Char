@@ -92,3 +92,7 @@ Apple区分AppKit管理的backing layer与自主管理的hosting layer；后者�
 系统流采集用户补充：鼠标不必移出气泡，只要轻动就会切换。该段实际记录4个HID→session→App→surface输入链（并非约定单格），链内派发很快，不能将每条对应到单格/后续试探。HID层native timestamp与session层单位不同；此机mach timebase为125/3，现改只存nativeTimestamp整数与同一systemUptime callback时钟，避免把HID原值直接当ns解释。没有把该单位差异宣称为病因。
 
 准备明确实验边界的两个临时Carbon标记Ctrl+Shift+9(begin)/Ctrl+Shift+0(heldEnd)，仅注册这两组合，无键盘事件监控；只在raw诊断模式启用，停止/退出即解除。普通诊断实例88090，existing listen=true，两个tap安装，两个标记注册status0，七泡可见。已通知采集：一格后静止5秒打结束标记，再静止10秒；期间只读标记触发并由CUA采集一张Char截图，不进行滚轮数据分析、不输入/移动，等待用户完成回复再分析。当前边界`/tmp/char-wheel-marked.capture-start.json`。
+
+标记采集完成，用户确认静止不切换、轻动补滚。begin662336.130376→heldEnd662348.480403，12.350秒内CG HID/session、App/surface/accepted全为0；结束后约15.093秒才出现唯一完整滚轮链，静止CUA截图保持offset0。可重复红灯命令：`python3 scripts/analyze-marked-wheel.py /tmp/char-wheel-marked-capture.log`，输出FIRST_DETENT_MISSING、exit1。脚本只证明标记区间输入，没有把客户端图层clear当作产品pass。设备报告层此前未启用，输出null，不能误报设备没有报告。
+
+用户提供连接方式USB接收器，型号未提供。准备更早的IOHIDManager非独占观察：只匹配鼠标、只接收GenericDesktop Wheel值，现有listen权限允许才启用；没有设备写入/抢占，无键盘报告。CG探针改同时检查实时鼠标位置，避免轮包携带旧坐标时漏记。release构建/打包通过，普通面板诊断96816启动status0、matchedDevices3，raw taps2、marker注册0，七泡CUA可见。新标记采集边界`/tmp/char-wheel-device.capture-start.json`，仅等结束标记采集静止截图，等完成回复再分析。
