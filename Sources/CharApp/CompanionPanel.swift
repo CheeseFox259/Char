@@ -10,7 +10,10 @@ import CharCore
         isOpaque = false; backgroundColor = .clear; hasShadow = false
         level = .floating; hidesOnDeactivate = false; isMovableByWindowBackground = false
         collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary]
-        if #available(macOS 14, *) { collectionBehavior.insert(.canJoinAllApplications) }
+        if #available(macOS 14, *) {
+            collectionBehavior.remove(.fullScreenAuxiliary)
+            collectionBehavior.insert(.canJoinAllApplications)
+        }
         contentView = surface
     }
     override var canBecomeKey: Bool { false }
@@ -57,7 +60,7 @@ import CharCore
     }
     required init?(coder: NSCoder) { nil }
     func refresh() {
-        placement = runtime.petPlacement
+        if movement == nil { placement = runtime.petPlacement }
         layoutVisibleBubbles()
         pet.setAccessibilityLabel(runtime.snapshot.hold == nil ? "Char 桌宠，当前不可回城" : "回城，返回最初来源，Control+B\(runtime.snapshot.hold?.anchor.accuracy == .application ? "，应用级降级" : "")")
         for button in buttons {
@@ -108,7 +111,8 @@ import CharCore
     }
     @objc private func nextBubbles() -> Bool { offset += 1; layoutVisibleBubbles(); return true }
     @objc private func previousBubbles() -> Bool { offset -= 1; layoutVisibleBubbles(); return true }
-    func returnFeedback() { feedbackAt = ProcessInfo.processInfo.systemUptime; ensureClock() }
+    func returnFeedback() { pet.feedbackClip = "return"; feedbackAt = ProcessInfo.processInfo.systemUptime; ensureClock() }
+    func pressFeedback() { pet.feedbackClip = "press"; feedbackAt = ProcessInfo.processInfo.systemUptime; ensureClock() }
     func transition(to frame: NSRect, placement: PetPlacement, animated: Bool) {
         guard animated else {
             movement = nil; self.placement = placement; window?.alphaValue = 1
@@ -132,17 +136,17 @@ import CharCore
         pet.elapsed = reduce ? 0 : now - epoch
         pet.clip = "idle"
         pet.clipElapsed = pet.elapsed
-        pet.feedbackElapsed = feedbackAt.map { now - $0 }
+        pet.feedbackElapsed = feedbackAt.map { reduce ? 0 : now - $0 }
         if let feedbackAt, now - feedbackAt > 0.65 { self.feedbackAt = nil; pet.feedbackElapsed = nil }
         if var motion = movement {
             let duration = motion.reduced ? 0.16 : 0.5
             let t = min((now - motion.started) / duration, 1)
             pet.clip = t < 0.35 ? (placement == .desktop ? "depart" : "edgeHide") : (motion.placement == .desktop ? "arrive" : "edgePeek")
-            pet.clipElapsed = now - motion.started
+            pet.clipElapsed = reduce ? 0 : max(0, now - motion.started - (t < 0.35 ? 0 : duration * 0.35))
             if t < 0.35 {
                 let phase = t / 0.35
                 window?.alphaValue = motion.initialAlpha * (1 - phase * phase)
-                pet.motionScale = motion.reduced ? 1 : motion.initialScale * (1 - 0.8 * phase * phase)
+                pet.motionScale = motion.reduced || placement != .desktop ? 1 : motion.initialScale * (1 - 0.8 * phase * phase)
                 pet.edgeRetraction = motion.reduced || placement == .desktop ? 0 : phase * 38
             } else {
                 if !motion.arrived {
@@ -151,7 +155,7 @@ import CharCore
                 }
                 let phase = (t - 0.35) / 0.65
                 window?.alphaValue = motion.reduced ? phase : min(1, phase * 3)
-                pet.motionScale = motion.reduced ? 1 : CGFloat(0.2 + 0.8 * CompanionGeometry.arrivalProgress(phase))
+                pet.motionScale = motion.reduced || placement != .desktop ? 1 : CGFloat(0.2 + 0.8 * CompanionGeometry.arrivalProgress(phase))
                 pet.edgeRetraction = motion.reduced || placement == .desktop ? 0 : CGFloat(38 * (1 - CompanionGeometry.arrivalProgress(phase)))
             }
             movement = t == 1 ? nil : motion
@@ -163,12 +167,21 @@ import CharCore
             window.ignoresMouseEvents = hitTest(local) == nil
         }
         pet.needsDisplay = true
+        for button in buttons where !button.isHidden {
+            button.elapsed = reduce ? 0 : now - epoch
+            button.needsDisplay = true
+        }
+        if !overflow.isHidden { needsDisplay = true }
         // Keep the single lightweight clock for pointer passthrough; Reduce Motion freezes drawing.
     }
     override func draw(_ dirtyRect: NSRect) {
         guard !overflow.isHidden else { return }
-        NSColor.systemBlue.withAlphaComponent(0.22).setFill()
-        NSBezierPath(ovalIn: overflow.frame).fill()
+        let rect = overflow.frame.insetBy(dx: 1, dy: 1)
+        let tint = NSColor.systemBlue
+        NSGradient(starting: tint.withAlphaComponent(0.35), ending: tint.withAlphaComponent(0.88))?.draw(in: NSBezierPath(ovalIn: rect), angle: -70)
+        NSColor.white.withAlphaComponent(0.78).setFill()
+        NSBezierPath(ovalIn: NSRect(x: rect.minX + rect.width * 0.17, y: rect.minY + rect.height * 0.69,
+                                  width: rect.width * 0.27, height: rect.height * 0.12)).fill()
         NSColor.white.withAlphaComponent(0.75).setStroke()
         NSBezierPath(ovalIn: overflow.frame.insetBy(dx: 1, dy: 1)).stroke()
         let count = max(0, runtime.snapshot.bubbles.count - 5)
@@ -187,6 +200,7 @@ import CharCore
     var miniature = false
     var elapsed: TimeInterval = 0
     var feedbackElapsed: TimeInterval?
+    var feedbackClip = "return"
     var motionScale: CGFloat = 1
     var edgeRetraction: CGFloat = 0
     var placement: PetPlacement = .desktop
@@ -220,7 +234,12 @@ import CharCore
     }
     required init?(coder: NSCoder) { nil }
     @objc private func performClickAction() {
-        switch kind { case .pet: runtime.petClicked(); case let .bubble(end): runtime.visit(end) }
+        switch kind {
+        case .pet:
+            if runtime.snapshot.hold == nil { (superview as? CompanionSurface)?.pressFeedback() }
+            runtime.petClicked()
+        case let .bubble(end): runtime.visit(end)
+        }
     }
     override func mouseDown(with event: NSEvent) {
         if case .pet = kind {
@@ -276,7 +295,10 @@ import CharCore
         let feedback = reduce ? 0 : feedbackElapsed.map { exp(-8 * $0) * sin(22 * $0) } ?? 0
         NSGraphicsContext.saveGraphicsState()
         let transform = NSAffineTransform()
-        transform.translateX(by: 38, yBy: 38)
+        let custom = runtime.customPetImage(clip: feedbackElapsed == nil ? clip : feedbackClip, elapsed: feedbackElapsed ?? clipElapsed)
+        // The manifest anchor lands at the stable pet center and is the deformation pivot.
+        let anchor = NSPoint(x: bounds.midX, y: bounds.midY)
+        transform.translateX(by: anchor.x, yBy: anchor.y)
         switch placement {
         case .left: transform.translateX(by: -edgeRetraction, yBy: 0)
         case .right: transform.translateX(by: edgeRetraction, yBy: 0)
@@ -284,13 +306,16 @@ import CharCore
         case .bottom: transform.translateX(by: 0, yBy: -edgeRetraction)
         case .desktop: break
         }
-        transform.rotate(byDegrees: CGFloat(reduce ? 0 : sin(elapsed * 0.8) * 2 + feedback * 7))
-        transform.scaleX(by: motionScale * CGFloat(1 + pulse * 0.018 + idleBounce * 0.07 + feedback * 0.1),
-                         yBy: motionScale * CGFloat(1 - pulse * 0.025 - idleBounce * 0.07 - feedback * 0.1))
-        transform.translateX(by: -38, yBy: -38 + CGFloat(pulse * 1.8 + idleBounce * 6))
+        transform.rotate(byDegrees: CGFloat(reduce ? 0 : sin(elapsed * 0.8) * 3.5 + idleBounce * 8 + feedback * 7))
+        transform.scaleX(by: motionScale * CGFloat(1 + pulse * 0.018 + idleBounce * 0.28 + feedback * 0.1),
+                         yBy: motionScale * CGFloat(1 - pulse * 0.025 - idleBounce * 0.28 - feedback * 0.1))
+        transform.translateX(by: -anchor.x, yBy: -anchor.y + CGFloat(pulse * 1.8 + idleBounce * 12))
         transform.concat()
-        if let image = runtime.customPetImage(clip: feedbackElapsed == nil ? clip : "return", elapsed: feedbackElapsed ?? clipElapsed) {
-            image.draw(in: bounds)
+        if let image = custom {
+            let size = runtime.customPetSize
+            image.draw(in: NSRect(x: anchor.x - runtime.customPetAnchor.x * size.width,
+                                  y: anchor.y - runtime.customPetAnchor.y * size.height,
+                                  width: size.width, height: size.height))
         } else {
             let ink = NSColor(calibratedRed: 0.08, green: 0.09, blue: 0.16, alpha: 1)
             let cream = NSColor(calibratedRed: 1, green: 0.97, blue: 0.87, alpha: 1)
@@ -326,7 +351,17 @@ import CharCore
     }
     private func drawBubble(_ end: WorkEnd) {
         guard let bubble = runtime.snapshot.bubbles.first(where: { $0.workEnd == end }) else { return }
-        let rect = bounds.insetBy(dx: 1, dy: 1)
+        NSGraphicsContext.saveGraphicsState()
+        defer { NSGraphicsContext.restoreGraphicsState() }
+        let phase = elapsed + Double(WorkEnd.allCases.firstIndex(of: end) ?? 0) * 0.7
+        let wobble = NSWorkspace.shared.accessibilityDisplayShouldReduceMotion ? 0 : sin(phase * 1.2) * sin(phase * 0.37)
+        let pose = NSAffineTransform()
+        pose.translateX(by: bounds.midX, yBy: bounds.midY)
+        pose.rotate(byDegrees: CGFloat(wobble * 2.5))
+        pose.scaleX(by: CGFloat(1 + wobble * 0.035), yBy: CGFloat(1 - wobble * 0.035))
+        pose.translateX(by: -bounds.midX, yBy: -bounds.midY)
+        pose.concat()
+        let rect = bounds.insetBy(dx: 2, dy: 2)
         let hue = CGFloat(WorkEnd.allCases.firstIndex(of: end) ?? 0) / CGFloat(WorkEnd.allCases.count)
         let tint = NSColor(calibratedHue: hue, saturation: 0.55, brightness: 0.9, alpha: 1)
         let path = NSBezierPath(ovalIn: rect)
