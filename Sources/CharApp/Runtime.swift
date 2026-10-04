@@ -434,7 +434,7 @@ actor ObservationWorker {
         petPlacement = placement
         companionPreferences.placement = placement
         if let screen = panel.screen ?? NSScreen.main {
-            position(on: screen, center: petCenter(), placement: placement, animated: true)
+            position(on: screen, center: petCenter(), placement: placement, animated: true, remember: true)
         }
         saveCompanionPreferences()
     }
@@ -452,15 +452,14 @@ actor ObservationWorker {
         let placement: PetPlacement = nearest.1 < 64 ? nearest.0 : .desktop
         petPlacement = placement
         companionPreferences.placement = placement
-        companionPreferences.remember(center: center, in: screen.visibleFrame)
-        position(on: screen, center: center, placement: placement, animated: true)
+        position(on: screen, center: center, placement: placement, animated: true, remember: true)
         saveCompanionPreferences()
     }
     private func saveCompanionPreferences() {
         do { try JSONEncoder().encode(companionPreferences).write(to: companionPreferencesURL, options: .atomic) }
         catch { setupMessage = "无法保存桌宠位置：\(error.localizedDescription)" }
     }
-    private func position(on screen: NSScreen, center: NSPoint, placement: PetPlacement, animated: Bool) {
+    private func position(on screen: NSScreen, center: NSPoint, placement: PetPlacement, animated: Bool, remember: Bool = false) {
         currentDisplay = displayKey(screen)
         let area = screen.visibleFrame
         let size = CompanionGeometry.canvasSize
@@ -475,6 +474,7 @@ actor ObservationWorker {
         case .top: point.y = area.maxY - 8; point.x = min(max(point.x, area.minX+170), area.maxX-170)
         case .bottom: point.y = area.minY + 8; point.x = min(max(point.x, area.minX+170), area.maxX-170)
         }
+        if remember { companionPreferences.remember(center: point, in: area) }
         let frame = NSRect(x: point.x-pet.midX, y: point.y-pet.midY, width: size.width, height: size.height)
 
         panel.transition(to: frame, placement: placement, animated: animated)
@@ -533,14 +533,24 @@ actor ObservationWorker {
             setPlacement(placement)
             try? await Task.sleep(nanoseconds: 550_000_000)
             guard panel.alphaValue == 1, panel.surface.pet.motionScale == 1 else { fail("placement transition completion") }
+            if let screen = panel.screen {
+                let remembered = companionPreferences.center(in: screen.visibleFrame)
+                guard hypot(petCenter().x - remembered.x, petCenter().y - remembered.y) < 0.5 else { fail("placement normalization after clamp") }
+                let global = companionPreferences
+                setPetSize(88)
+                guard hypot(petCenter().x - remembered.x, petCenter().y - remembered.y) < 0.5,
+                      companionPreferences.normalizedX == global.normalizedX,
+                      companionPreferences.normalizedY == global.normalizedY else { fail("size changed shared placement") }
+                setPetSize(48)
+            }
         }
         setPlacement(.desktop)
         try? await Task.sleep(nanoseconds: 300_000_000)
         NSWorkspace.shared.notificationCenter.post(name: NSWorkspace.activeSpaceDidChangeNotification, object: NSWorkspace.shared)
         try? await Task.sleep(nanoseconds: 70_000_000)
-        guard panel.surface.pet.spaceTuck > 0 else { fail("Space notification feedback") }
+        guard panel.surface.isSpaceFeedbackActive, panel.alphaValue > 0, panel.alphaValue <= 1 else { fail("Space notification arrival feedback") }
         try? await Task.sleep(nanoseconds: 500_000_000)
-        guard panel.surface.pet.spaceTuck == 0, panel.alphaValue == 1 else { fail("Space feedback completion") }
+        guard !panel.surface.isSpaceFeedbackActive, panel.surface.pet.spaceTuck == 0, panel.alphaValue == 1 else { fail("Space feedback completion") }
         if let sample = Bundle.main.resourceURL?.appendingPathComponent("Skins/example.charpet"), let skinStore {
             do {
                 let skin = try skinStore.importPackage(at: sample)

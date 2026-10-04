@@ -40,6 +40,10 @@ struct CompanionGeometryChecks {
         try checkEqual(wheel.step(delta: -35, precise: true, momentum: false, count: 7, now: 0.20), 0)
         try checkEqual(wheel.step(delta: -1, precise: true, momentum: false, count: 7, now: 0.21), -1)
         try checkEqual(wheel.step(delta: 6, precise: true, momentum: false, count: 7, now: 0.5), 1)
+        var mouseWheel = CompanionScrollPolicy()
+        try checkEqual(mouseWheel.step(delta: 1, precise: false, momentum: false, count: 7, now: 0), 1)
+        try checkEqual(mouseWheel.step(delta: 1, precise: false, momentum: false, count: 7, now: 0.05), 0)
+        try checkEqual(mouseWheel.step(delta: 1, precise: false, momentum: false, count: 7, now: 0.20), 1)
         try checkEqual(CompanionPlayback(departure: nil, arrival: nil).duration, 0.24)
         for reason in [StopReason.question, .approval, .unclassified] { try checkEqual(AttentionPresentationGroup.forReason(reason), .interaction) }
         for reason in [StopReason.failure, .rateLimit, .contextExhausted] { try checkEqual(AttentionPresentationGroup.forReason(reason), .issue) }

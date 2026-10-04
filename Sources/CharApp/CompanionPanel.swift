@@ -45,7 +45,7 @@ import CharCore
         super.init(contentRect: NSRect(origin: .zero, size: CompanionGeometry.canvasSize),
                    styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
         isOpaque = false; backgroundColor = .clear; hasShadow = false
-        level = .floating; hidesOnDeactivate = false; isMovableByWindowBackground = false
+        level = .statusBar; hidesOnDeactivate = false; isMovableByWindowBackground = false
         collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary]
         if #available(macOS 14, *) {
             collectionBehavior.remove(.fullScreenAuxiliary)
@@ -69,8 +69,11 @@ import CharCore
     private var scrollPolicy = CompanionScrollPolicy()
     private var spaceAt: TimeInterval?
     private var pendingSpaceFeedback = false
+    private var preparedSpaceArrival = false
+    private var occlusionObserver: NSObjectProtocol?
     private var lastPointer: NSPoint?
     var canCycle: Bool { runtime.snapshot.bubbles.count > 6 }
+    var isSpaceFeedbackActive: Bool { spaceAt != nil || pendingSpaceFeedback }
     private var overflowArtwork: NSImage?
     private var overflowCount = -1
     private var lastReduced: Bool?
@@ -122,7 +125,40 @@ import CharCore
         pet.reducedMotion = reducedMotion
         refresh()
     }
-    deinit { if let displayOptionsObserver { workspaceNotifications.removeObserver(displayOptionsObserver) } }
+    deinit {
+        if let displayOptionsObserver { workspaceNotifications.removeObserver(displayOptionsObserver) }
+        if let occlusionObserver { NotificationCenter.default.removeObserver(occlusionObserver) }
+    }
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        if let occlusionObserver { NotificationCenter.default.removeObserver(occlusionObserver) }
+        guard let window else { return }
+        occlusionObserver = NotificationCenter.default.addObserver(forName: NSWindow.didChangeOcclusionStateNotification,
+                                                                   object: window, queue: .main) { [weak self] _ in
+            MainActor.assumeIsolated { self?.occlusionChanged() }
+        }
+    }
+    private func occlusionChanged() {
+        guard let window, movement == nil, spaceAt == nil, !pendingSpaceFeedback else { return }
+        if window.occlusionState.contains(.visible) {
+            if preparedSpaceArrival { beginSpaceArrival() }
+        } else if !preparedSpaceArrival, window.alphaValue == 1 {
+            // Prepare content before its next visible draw; never zero window alpha,
+            // which can itself prevent an occlusion-visible transition.
+            preparedSpaceArrival = true
+            pet.spaceTuck = reducedMotion ? 0 : 1
+            if placement != .desktop { pet.edgeRetraction = reducedMotion ? 0 : min(24, pet.frame.width * 0.5) }
+            pet.needsDisplay = true
+        }
+    }
+    private func beginSpaceArrival() {
+        preparedSpaceArrival = false
+        spaceAt = ProcessInfo.processInfo.systemUptime
+        pet.spaceTuck = reducedMotion ? 0 : 1
+        window?.alphaValue = reducedMotion ? 0.75 : 0.45
+        pet.needsDisplay = true
+        ensureClock()
+    }
     required init?(coder: NSCoder) { nil }
     func refresh() {
         if movement == nil { placement = runtime.petPlacement }
@@ -184,13 +220,22 @@ import CharCore
         let step = scrollPolicy.step(delta: Double(event.scrollingDeltaY + event.scrollingDeltaX),
                                      precise: event.hasPreciseScrollingDeltas, momentum: event.momentumPhase != [],
                                      count: runtime.snapshot.bubbles.count, now: ProcessInfo.processInfo.systemUptime)
-        if step != 0 { offset += step; layoutVisibleBubbles() }
+        if step != 0 {
+            CATransaction.begin(); CATransaction.setDisableActions(true)
+            offset += step; layoutVisibleBubbles()
+            // AppKit may track a mouse-wheel gesture before the next default-mode
+            // draw. Present this accepted step now instead of waiting for exit.
+            displayIfNeeded()
+            for button in buttons where !button.isHidden { button.displayIfNeeded() }
+            overflow.displayIfNeeded()
+            CATransaction.commit(); CATransaction.flush()
+        }
     }
     @objc fileprivate func nextBubbles() -> Bool { guard canCycle else { return false }; offset += 1; layoutVisibleBubbles(); return true }
     @objc fileprivate func previousBubbles() -> Bool { guard canCycle else { return false }; offset -= 1; layoutVisibleBubbles(); return true }
     func spaceFeedback() {
         if movement != nil { pendingSpaceFeedback = true }
-        else { spaceAt = ProcessInfo.processInfo.systemUptime }
+        else { beginSpaceArrival() }
         ensureClock()
     }
     func returnFeedback() { pet.feedbackClip = "return"; feedbackAt = ProcessInfo.processInfo.systemUptime; ensureClock() }
@@ -213,7 +258,7 @@ import CharCore
         clock = Timer.scheduledTimer(withTimeInterval: 1 / 60, repeats: true) { [weak self] _ in
             MainActor.assumeIsolated { self?.animate() }
         }
-        if let clock { RunLoop.main.add(clock, forMode: .common) }
+        if let clock { RunLoop.main.add(clock, forMode: .common); RunLoop.main.add(clock, forMode: .eventTracking) }
     }
     private func animate() {
         let now = ProcessInfo.processInfo.systemUptime
@@ -253,7 +298,7 @@ import CharCore
         }
         if movement == nil, pendingSpaceFeedback {
             pendingSpaceFeedback = false
-            spaceAt = now
+            beginSpaceArrival()
         }
         if let start = spaceAt, movement == nil {
             let t = now - start
@@ -263,12 +308,12 @@ import CharCore
             } else {
                 if reduce {
                     pet.spaceTuck = 0
-                    window?.alphaValue = 1 - CGFloat(sin(.pi * t / duration)) * 0.25
+                    window?.alphaValue = 0.75 + CGFloat(t / duration) * 0.25
                 } else {
-                    // Visible withdrawal then a spring return; native Space navigation stays immediate.
-                    let tuck = t < 0.12 ? sin(.pi / 2 * t / 0.12) : 1 - CompanionGeometry.arrivalProgress((t - 0.12) / 0.28)
+                    // Arrival-only feedback avoids a full-size appearance followed by withdrawal.
+                    let tuck = 1 - CompanionGeometry.arrivalProgress(t / duration)
                     pet.spaceTuck = CGFloat(max(-0.12, tuck))
-                    window?.alphaValue = min(1, 1 - max(0, pet.spaceTuck) * 0.55)
+                    window?.alphaValue = min(1, 0.45 + CGFloat(t / duration) * 1.65)
                     if placement != .desktop { pet.edgeRetraction = pet.spaceTuck * min(24, pet.frame.width * 0.5) }
                 }
             }
