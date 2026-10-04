@@ -48,6 +48,8 @@ import CharCore
         addSubview(pet)
         addSubview(overflow)
         for button in buttons { addSubview(button) }
+        setAccessibilityRole(.group)
+        setAccessibilityLabel("Agent orbit, scroll or use next and previous actions to cycle bubbles")
         setAccessibilityCustomActions([
             NSAccessibilityCustomAction(name: "Next Agent bubbles", target: self, selector: #selector(nextBubbles)),
             NSAccessibilityCustomAction(name: "Previous Agent bubbles", target: self, selector: #selector(previousBubbles))])
@@ -269,6 +271,8 @@ import CharCore
     private func drawPet() {
         let reduce = NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
         let pulse = reduce ? 0 : sin(elapsed * 1.7)
+        let idlePhase = elapsed.truncatingRemainder(dividingBy: 7)
+        let idleBounce = reduce || idlePhase > 1.2 ? 0 : sin(.pi * idlePhase / 1.2) * exp(-2 * idlePhase) * sin(12 * idlePhase)
         let feedback = reduce ? 0 : feedbackElapsed.map { exp(-8 * $0) * sin(22 * $0) } ?? 0
         NSGraphicsContext.saveGraphicsState()
         let transform = NSAffineTransform()
@@ -281,9 +285,9 @@ import CharCore
         case .desktop: break
         }
         transform.rotate(byDegrees: CGFloat(reduce ? 0 : sin(elapsed * 0.8) * 2 + feedback * 7))
-        transform.scaleX(by: motionScale * CGFloat(1 + pulse * 0.018 + feedback * 0.1),
-                         yBy: motionScale * CGFloat(1 - pulse * 0.025 - feedback * 0.1))
-        transform.translateX(by: -38, yBy: -38 + CGFloat(pulse * 1.8))
+        transform.scaleX(by: motionScale * CGFloat(1 + pulse * 0.018 + idleBounce * 0.07 + feedback * 0.1),
+                         yBy: motionScale * CGFloat(1 - pulse * 0.025 - idleBounce * 0.07 - feedback * 0.1))
+        transform.translateX(by: -38, yBy: -38 + CGFloat(pulse * 1.8 + idleBounce * 6))
         transform.concat()
         if let image = runtime.customPetImage(clip: feedbackElapsed == nil ? clip : "return", elapsed: feedbackElapsed ?? clipElapsed) {
             image.draw(in: bounds)
