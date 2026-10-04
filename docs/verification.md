@@ -1,4 +1,4 @@
-本轮使用反馈修正见 [紧凑视觉与交互验收](companion-polish-verification-2026-10-04.md)，实测开销和优化方案见 [桌宠性能分析](companion-performance-2026-10-04.md)。此前报告保留历史事实，最新尺寸、状态和 Space 局部反馈以本轮为准。
+最新一轮见 [可调轨道与统一集成验收](orbit-verification-2026-10-04.md)，实测开销和优化方案见 [桌宠性能分析](companion-performance-2026-10-04.md)。此前报告保留历史事实；新的自由起点规则、动态容量以最新报告为准。
 
 # Product verification
 
