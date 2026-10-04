@@ -187,7 +187,7 @@ public final class AttentionRouter {
     }
 
     /// `sourceAnchor` is captured before activation; only a successful app switch starts Hold.
-    /// Application anchors are issued only by an enabled source adapter after PID capture.
+    /// Application anchors bind the captured foreground app to its still-live PID.
     public func completeVisit(key: SessionKey, outcome: NavigationOutcome, sourceAnchor: ReturnAnchor?, at date: Date) {
         advance(to: date)
         guard items[key] != nil else { return }
