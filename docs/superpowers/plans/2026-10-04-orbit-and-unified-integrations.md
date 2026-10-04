@@ -47,7 +47,7 @@
 - [ ] Measure the current seven-bubble idle app with `python3 scripts/profile-char.py PID --seconds 20 --sample /tmp/char-orbit-before.sample.txt`; repeat on the integrated candidate in the same scenario. Record source revisions and setting/hover state.
 - [x] Replace unnecessary broad Kimi file attributes with stat metadata while preserving inode replacement/truncation/partial-line semantics. Reduce repeated directory discovery only if measured evidence supports it and new session discovery remains bounded and tested.
 - [x] Remove Runtime.swift fresh-panel probe callers and fixture probe checks, leaving current default Space feedback.
-- [ ] Run `swift run char-observation-checks`, then integrated `bash scripts/check.sh`, build, and fixture smoke. Root coordinates all GUI launches.
+- [x] Run `swift run char-observation-checks`, then integrated `bash scripts/check.sh`, build, and fixture smoke. Root coordinates all GUI launches.
 
 ## Task 4: Integration and delivery evidence
 
@@ -68,4 +68,6 @@
 
 ## Execution evidence
 
-Implemented and integrated through `4b4d7e0`. Required checks passed on `098767f`; bounded review fixes compile and source re-review passed. Directory discovery uses synchronous directory revision invalidation rather than an event stream: new entries remain next-poll observable; root symlink regression was found and fixed. First smoke passed on the initial integrated candidate; final overlay/cancellation smoke was run while locked and failed its Space visibility assertion, so remains pending manual unlock. Current CPU measurements and physical mouse acceptance remain unchecked. See `docs/orbit-verification-2026-10-04.md`.
+Implemented and reviewed through `4b4d7e0`; `3c7e62d` fixes a smoke fixture precondition only. Required checks passed on `098767f`; bounded review fixes compile and source re-review passed. Directory revision invalidation preserves next-poll discovery; the root symlink regression was found and fixed. Final release build, unlocked package smoke, and strict signature validation passed on `3c7e62d`.
+
+The normal-mode unlocked 20-second sample on 2026-10-05 measured 5.75% of one core, RSS about 58.3 MiB, compared with the prior same-config 18.84% sequential sample. Cross-day data changes and combined implementation changes prevent per-component attribution. The seven-bubble candidate sample ended with the Mac locked and is excluded from unlocked comparisons. The prepared seven-observation isolated normal instance uses real platform navigation; settings/folding UI, physical mouse, and Agent-origin return remain pending manual unlock. The draft PR retains these gates. See `docs/orbit-verification-2026-10-04.md` and `docs/companion-performance-2026-10-04.md`.
