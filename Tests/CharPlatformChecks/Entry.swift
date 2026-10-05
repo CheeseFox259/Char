@@ -56,7 +56,8 @@ import ServiceManagement
 @MainActor final class MockLogin: LoginService {
     var state: LoginItemState = .disabled
     var changes = 0
-    func register() throws { changes += 1; state = .requiresApproval }
+    var failure: LoginItemError?
+    func register() throws { if let failure { throw failure }; changes += 1; state = .requiresApproval }
     func unregister() throws { changes += 1; state = .disabled }
 }
 
@@ -165,6 +166,24 @@ import ServiceManagement
         assert(try! controller.setEnabled(true) == .requiresApproval)
         assert(login.changes == 1)
         assert(try! controller.setEnabled(false) == .disabled)
+        login.state = .unavailable(.notPackaged)
+        do { _ = try controller.setEnabled(true); assertionFailure("unavailable login registered") }
+        catch let failure as LoginItemError {
+            assert(failure == .unavailable(.notPackaged))
+            assert(failure.message(language: .chinese) == "登录时启动需要打包的 Char.app。")
+            assert(failure.message(language: .english) == "Launch-at-login requires the packaged Char.app.")
+        } catch { assertionFailure("login failure lost its typed reason") }
+        let diagnostic = "OS diagnostic 42"
+        let failure = LoginItemError.failed(diagnostic)
+        assert(failure.message(language: .chinese) == "无法更新登录时启动：" + diagnostic)
+        assert(failure.message(language: .english) == "Could not update launch-at-login: " + diagnostic)
+        login.state = .disabled
+        login.failure = .notPackaged
+        do { _ = try controller.setEnabled(true); assertionFailure("login failure ignored") }
+        catch let failure as LoginItemError { assert(failure == .notPackaged, "typed service error must not be wrapped in an English string") }
+        catch { assertionFailure("unexpected login error") }
+        login.failure = nil
+        assert(try! controller.setEnabled(true) == .requiresApproval, "successful retry remains available")
         try! await pluginPlatformChecks()
         try! petSkinChecks()
         try! homeShortcutChecks()

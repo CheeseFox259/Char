@@ -64,8 +64,13 @@ struct SettingsView: View {
                     Label(l("目标不可用", "Target unavailable"), systemImage: NavigationPresentation.unavailableSymbol)
                 }.font(.caption)
             }
-            if !runtime.setupMessage.isEmpty {
-                Section(l("错误", "Error")) { Text(runtime.setupMessage).foregroundStyle(.red).textSelection(.enabled) }
+            if !runtime.setupMessage.isEmpty || runtime.loginFailure != nil {
+                Section(l("错误", "Error")) {
+                    if let failure = runtime.loginFailure {
+                        Text(failure.message(language: runtime.settings.language)).foregroundStyle(.red).textSelection(.enabled)
+                    }
+                    if !runtime.setupMessage.isEmpty { Text(runtime.setupMessage).foregroundStyle(.red).textSelection(.enabled) }
+                }
             }
         }
         .formStyle(.grouped).padding(8).frame(minWidth: 500, minHeight: 590)

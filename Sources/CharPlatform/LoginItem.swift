@@ -1,4 +1,5 @@
 import Foundation
+import CharCore
 import ServiceManagement
 import CoreServices
 
@@ -6,17 +7,31 @@ public enum LoginItemState: Equatable, Sendable {
     case enabled
     case disabled
     case requiresApproval
-    case unavailable(String)
+    case unavailable(LoginItemUnavailability)
 }
 
-public enum LoginItemError: LocalizedError {
+public enum LoginItemUnavailability: Equatable, Sendable {
+    case notPackaged, unknownStatus
+    public func message(language: AppLanguage) -> String {
+        switch self {
+        case .notPackaged: return language == .chinese ? "登录时启动需要打包的 Char.app。" : "Launch-at-login requires the packaged Char.app."
+        case .unknownStatus: return language == .chinese ? "ServiceManagement 状态未知。" : "Unknown ServiceManagement status."
+        }
+    }
+}
+
+public enum LoginItemError: LocalizedError, Equatable {
     case notPackaged
     case failed(String)
+    case unavailable(LoginItemUnavailability)
 
-    public var errorDescription: String? {
+    public var errorDescription: String? { message(language: .systemDefault) }
+    public func message(language: AppLanguage) -> String {
         switch self {
-        case .notPackaged: return "Launch-at-login can be changed only from the packaged Char.app."
-        case let .failed(message): return "Could not update launch-at-login: \(message)"
+        case .notPackaged: return LoginItemUnavailability.notPackaged.message(language: language)
+        case let .unavailable(reason): return reason.message(language: language)
+        case let .failed(diagnostic):
+            return (language == .chinese ? "无法更新登录时启动：" : "Could not update launch-at-login: ") + diagnostic
         }
     }
 }
@@ -40,9 +55,11 @@ public enum LoginItemError: LocalizedError {
         if enabled && status == .enabled { return status }
         if enabled && status == .requiresApproval { return status }
         if !enabled && status == .disabled { return status }
-        if case let .unavailable(message) = status { throw LoginItemError.failed(message) }
+        if case let .unavailable(reason) = status { throw LoginItemError.unavailable(reason) }
         do {
             if enabled { try service.register() } else { try service.unregister() }
+        } catch let error as LoginItemError {
+            throw error
         } catch {
             throw LoginItemError.failed(error.localizedDescription)
         }
@@ -55,7 +72,7 @@ public enum LoginItemError: LocalizedError {
 
     public var state: LoginItemState {
         guard Bundle.main.bundleURL.pathExtension == "app" else {
-            return .unavailable("Launch-at-login requires the packaged Char.app.")
+            return .unavailable(.notPackaged)
         }
         return Self.state(for: SMAppService.mainApp.status)
     }
@@ -66,7 +83,7 @@ public enum LoginItemError: LocalizedError {
         case .notRegistered: return .disabled
         case .requiresApproval: return .requiresApproval
         case .notFound: return .disabled
-        @unknown default: return .unavailable("Unknown ServiceManagement status.")
+        @unknown default: return .unavailable(.unknownStatus)
         }
     }
 

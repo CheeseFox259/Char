@@ -77,6 +77,7 @@ actor ObservationWorker {
     @Published var snapshot: AttentionSnapshot
     @Published var setupMessage = ""
     @Published var loginStatus = ""
+    @Published var loginFailure: LoginItemError?
     @Published var accessibilityStatus = ""
     @Published var automationStatus = ""
     @Published var busy = false
@@ -275,8 +276,11 @@ actor ObservationWorker {
         do {
             _ = try login?.setEnabled(enabled)
             settings.launchAtLogin = enabled
+            loginFailure = nil
             saveSettings()
-        } catch { setupMessage = error.localizedDescription }
+        } catch {
+            loginFailure = (error as? LoginItemError) ?? .failed(error.localizedDescription)
+        }
         refreshStatus()
     }
     func requestAccessibility() {
@@ -314,7 +318,7 @@ actor ObservationWorker {
         case .enabled: loginStatus = localized("已启用", "Enabled")
         case .disabled: loginStatus = localized("已停用", "Disabled")
         case .requiresApproval: loginStatus = localized("需在登录项中批准", "Approval needed in Login Items")
-        case let .unavailable(message): loginStatus = message
+        case let .unavailable(reason): loginStatus = reason.message(language: settings.language)
         case nil: loginStatus = localized("不可用", "Unavailable")
         }
         accessibilityStatus = AXIsProcessTrusted() ? localized("已授权", "Authorized") : localized("未授权（可选）", "Not authorized (optional)")
