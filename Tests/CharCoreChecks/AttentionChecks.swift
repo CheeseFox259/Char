@@ -144,18 +144,43 @@ struct AttentionChecks {
         try checkEqual(r.drainEffects(), [.playSound])
     }
 
-    func testFallbackKeepsUnviewedAndFirstAnchor() throws {
+    func testSuccessfulVisitsDismissOnlyClickedItemAndKeepFirstAnchor() throws {
         let r = router()
         waiting(r)
         r.completeVisit(key: key("a"), outcome: .fallback, sourceAnchor: anchor(), at: time(10))
-        try checkEqual(r.nextVisit(for: .claudeCode)?.navigationOutcome, .fallback)
+        try check(r.nextVisit(for: .claudeCode) == nil)
+        try checkEqual(r.snapshot.navigationFeedback, .fallback)
         try checkEqual(r.snapshot.hold?.anchor.id, "tab-a")
         r.completeVisit(key: key("b", .codexDesktop), outcome: .fallback, sourceAnchor: anchor("tab-b"), at: time(11))
         try checkEqual(r.snapshot.hold?.anchor.id, "tab-a")
-        try checkEqual(r.snapshot.bubbles.reduce(0) { $0 + $1.count }, 2)
+        try checkEqual(r.snapshot.bubbles.reduce(0) { $0 + $1.count }, 0)
         r.completeReturn(outcome: .exact)
         try check(r.snapshot.hold == nil)
         try checkEqual(r.snapshot.navigationFeedback, .exact)
+    }
+
+
+    func testFallbackDismissalPreservesOtherItemsAndRunningBubble() throws {
+        let r = router(filter: 0)
+        r.ingest([event("a", 0, .stopped(.question)), event("b", 0, .stopped(.approval)),
+                  event("running", 0, .running)])
+        r.advance(to: time(1))
+        let clicked = r.nextVisit(for: .claudeCode)!.key
+        r.completeVisit(key: clicked, outcome: .fallback, sourceAnchor: anchor(), at: time(1))
+        try checkEqual(r.snapshot.bubbles.first?.count, 1)
+        try check(r.nextVisit(for: .claudeCode)?.key != clicked)
+        try checkEqual(r.snapshot.navigationFeedback, .fallback)
+        try checkEqual(r.snapshot.bubbles.first?.runningCount, 1)
+        r.completeVisit(key: r.nextVisit(for: .claudeCode)!.key, outcome: .exact, sourceAnchor: anchor("other"), at: time(2))
+        try checkEqual(r.snapshot.bubbles.first?.count, 0)
+        try checkEqual(r.snapshot.bubbles.first?.runningCount, 1)
+        try check(r.nextVisit(for: .claudeCode) == nil)
+        try checkEqual(r.snapshot.hold?.anchor.id, "tab-a")
+        r.advance(to: time(30))
+        try check(r.snapshot.bubbles.first?.count == 0, "dismissed stops must not reappear on next poll")
+        r.ingest([event("a", 31, .running), event("a", 32, .stopped(.question))])
+        r.advance(to: time(33))
+        try check(r.snapshot.bubbles.first?.count == 1, "a fresh stop must still notify")
     }
 
     func testAgentOriginFirstAnchorAndReturn() throws {
@@ -166,12 +191,12 @@ struct AttentionChecks {
         r.completeVisit(key: key("b", .codexDesktop), outcome: .fallback,
             sourceAnchor: anchor("codex-origin", accuracy: .application, bundle: "com.openai.codex"), at: time(11))
         try checkEqual(r.snapshot.hold?.anchor, origin)
-        try checkEqual(r.snapshot.bubbles.reduce(0) { $0 + $1.count }, 2)
+        try checkEqual(r.snapshot.bubbles.reduce(0) { $0 + $1.count }, 0)
         r.remove(workEnd: .pi)
         try checkEqual(r.snapshot.hold?.anchor, origin)
         r.updateFocus(FocusContext(isAgent: true, sourceAnchorID: origin.id), at: time(12))
         try check(r.snapshot.hold == nil, "manual return to an Agent origin must end Hold")
-        try checkEqual(r.snapshot.bubbles.reduce(0) { $0 + $1.count }, 2)
+        try checkEqual(r.snapshot.bubbles.reduce(0) { $0 + $1.count }, 0)
     }
 
     func testExactVisitAndUnavailableVisit() throws {
@@ -193,7 +218,8 @@ struct AttentionChecks {
             waiting(r)
             r.completeVisit(key: key("a"), outcome: .fallback, sourceAnchor: source, at: time(10))
             try check(r.snapshot.hold == nil)
-            try check(r.nextVisit(for: .claudeCode) != nil)
+            try check(r.nextVisit(for: .claudeCode) == nil)
+            try checkEqual(r.snapshot.navigationFeedback, .fallback)
         }
     }
 
@@ -226,12 +252,16 @@ struct AttentionChecks {
         try check(r.snapshot.hold != nil)
         r.updateFocus(FocusContext(sourceAnchorID: "tab-a"), at: time(12))
         try check(r.snapshot.hold == nil)
-        r.completeVisit(key: key("a"), outcome: .fallback, sourceAnchor: anchor(), at: time(13))
+        r.ingest([event("a", 12, .running), event("a", 12.1, .stopped(.question))])
+        r.advance(to: time(23))
+        r.completeVisit(key: key("a"), outcome: .fallback, sourceAnchor: anchor(), at: time(23))
         r.invalidateAnchor(id: "other-tab")
         try check(r.snapshot.hold != nil)
         r.invalidateAnchor(id: "tab-a")
         try check(r.snapshot.hold == nil)
-        r.completeVisit(key: key("a"), outcome: .fallback, sourceAnchor: anchor(), at: time(14))
+        r.ingest([event("a", 24, .running), event("a", 24.1, .stopped(.question))])
+        r.advance(to: time(35))
+        r.completeVisit(key: key("a"), outcome: .fallback, sourceAnchor: anchor(), at: time(35))
         r.endHold()
         try check(r.snapshot.hold == nil)
         try check(router().snapshot.hold == nil)
@@ -246,7 +276,7 @@ struct AttentionChecks {
         r.completeReturn(outcome: .fallback)
         try check(r.snapshot.hold == nil)
         try checkEqual(r.snapshot.navigationFeedback, .fallback)
-        r.completeVisit(key: key("a"), outcome: .fallback, sourceAnchor: source, at: time(11))
+        r.completeVisit(key: key("b", .codexDesktop), outcome: .fallback, sourceAnchor: source, at: time(11))
         r.updateFocus(FocusContext(sourceAnchorID: "wechat-instance"), at: time(12))
         try check(r.snapshot.hold == nil)
     }

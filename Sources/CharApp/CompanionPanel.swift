@@ -141,6 +141,7 @@ import CharCore
     }
     func dispose() {
         clock?.invalidate(); clock = nil
+        burstLayers.forEach { $0.removeFromSuperlayer() }; burstLayers.removeAll()
         if let displayOptionsObserver { workspaceNotifications.removeObserver(displayOptionsObserver) }
         displayOptionsObserver = nil
         if let occlusionObserver { NotificationCenter.default.removeObserver(occlusionObserver) }
@@ -305,6 +306,22 @@ import CharCore
     }
     @objc fileprivate func nextBubbles() -> Bool { cycleBubbles(by: 1) }
     @objc fileprivate func previousBubbles() -> Bool { cycleBubbles(by: -1) }
+    private var burstLayers: [CALayer] = []
+    var activeBurstFragmentCount: Int { burstLayers.reduce(0) { $0 + ($1.sublayers?.count ?? 0) } }
+    func dismissFeedback(for workEnd: WorkEnd) {
+        guard let button = buttons.first(where: { $0.renderedWorkEnd == workEnd }),
+              !button.isHidden, let host = sceneLayer,
+              let burst = button.dismissalFragments(reducedMotion: reducedMotion) else { return }
+        // At most two overlapping bursts; neither rendering nor cleanup uses a timer.
+        if burstLayers.count == 2 { burstLayers.removeFirst().removeFromSuperlayer() }
+        burstLayers.append(burst)
+        host.addSublayer(burst)
+        DispatchQueue.main.asyncAfter(deadline: .now() + (reducedMotion ? 0.16 : 0.42)) { [weak self, weak burst] in
+            guard let burst else { return }
+            burst.removeFromSuperlayer()
+            self?.burstLayers.removeAll { $0 === burst }
+        }
+    }
     func spaceFeedback() {
         // A Space notification is delivered after the system transition. Never
         // replay departure/arrival on a scene that is already fully visible.
@@ -529,6 +546,58 @@ import CharCore
         }
         let bubble = next.bubble
         setAccessibilityLabel("\(end.title): \(bubble?.count ?? 0) unviewed, \(bubble?.runningCount ?? 0) running\(bubble?.head.map { ", \($0.reason.title)\($0.isPast ? ", past" : "")\($0.navigationOutcome == .fallback ? ", application fallback" : "")" } ?? "")")
+    }
+    /// Reuse the owned image and presentation geometry, including an interrupted
+    /// orbit and hover deformation. Texture coordinates avoid rendering new images.
+    func dismissalFragments(reducedMotion: Bool) -> CALayer? {
+        guard let image = renderedImage else { return nil }
+        let presented = graphicLayer.presentation() ?? graphicLayer
+        let texture = textureLayer.presentation() ?? textureLayer
+        let burst = CALayer()
+        burst.bounds = presented.bounds; burst.position = presented.position
+        burst.anchorPoint = presented.anchorPoint; burst.transform = presented.transform
+        burst.opacity = presented.opacity
+        let divisions = reducedMotion ? 1 : 3
+        for row in 0..<divisions {
+            for column in 0..<divisions {
+                let width = texture.bounds.width / CGFloat(divisions)
+                let height = texture.bounds.height / CGFloat(divisions)
+                let rect = CGRect(x: texture.bounds.minX + CGFloat(column) * width,
+                                  y: texture.bounds.minY + CGFloat(row) * height, width: width, height: height)
+                let center = texture.convert(CGPoint(x: rect.midX, y: rect.midY), to: presented)
+                let left = texture.convert(CGPoint(x: rect.minX, y: rect.midY), to: presented)
+                let top = texture.convert(CGPoint(x: rect.midX, y: rect.maxY), to: presented)
+                let fragment = CALayer()
+                fragment.bounds = CGRect(x: 0, y: 0, width: hypot(center.x-left.x, center.y-left.y)*2,
+                                         height: hypot(top.x-center.x, top.y-center.y)*2)
+                fragment.position = center; fragment.contents = image
+                fragment.contentsRect = CGRect(x: CGFloat(column)/CGFloat(divisions), y: CGFloat(row)/CGFloat(divisions),
+                                               width: 1/CGFloat(divisions), height: 1/CGFloat(divisions))
+                fragment.contentsScale = texture.contentsScale
+                fragment.opacity = 0
+                burst.addSublayer(fragment)
+                let fade = CAKeyframeAnimation(keyPath: "opacity")
+                fade.values = [1, 0.9, 0]; fade.keyTimes = [0, 0.28, 1]
+                var animations: [CAAnimation] = [fade]
+                if !reducedMotion {
+                    let x = CGFloat(column - 1), y = CGFloat(row - 1)
+                    let travel = CABasicAnimation(keyPath: "position")
+                    travel.fromValue = NSValue(point: center)
+                    travel.toValue = NSValue(point: CGPoint(x: center.x + x*17, y: center.y + y*17 - 8))
+                    travel.timingFunction = CAMediaTimingFunction(controlPoints: 0.16, 1, 0.3, 1)
+                    let rotation = CABasicAnimation(keyPath: "transform.rotation.z")
+                    rotation.fromValue = 0; rotation.toValue = Double(column-row)*0.38
+                    let scale = CABasicAnimation(keyPath: "transform.scale")
+                    scale.fromValue = 1; scale.toValue = 0.38
+                    animations += [travel, rotation, scale]
+                }
+                let group = CAAnimationGroup(); group.animations = animations
+                group.duration = reducedMotion ? 0.14 : 0.4
+                group.timingFunction = CAMediaTimingFunction(name: .easeOut)
+                fragment.add(group, forKey: "dismissal")
+            }
+        }
+        return burst
     }
     var reducedMotion = NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
     private static let defaultBody = BubbleDrawing.raster(size: NSSize(width: 76, height: 76)) {
@@ -914,11 +983,11 @@ import CharCore
                     : NSWorkspace.shared.urlForApplication(withBundleIdentifier: anchor.bundleIdentifier).map { NSWorkspace.shared.icon(forFile: $0.path) }
             }
             sourceIcon?.draw(in: NSRect(x: 54, y: 11, width: 17, height: 17))
-            if anchor.accuracy == .application { symbol("arrow.triangle.turn.up.right.diamond.fill", in: NSRect(x: 5, y: 8, width: 16, height: 16), color: .systemOrange) }
+            if anchor.accuracy == .application { symbol("macwindow", in: NSRect(x: 5, y: 8, width: 16, height: 16), color: .systemOrange) }
             NSGraphicsContext.restoreGraphicsState()
         }
         if runtime.snapshot.navigationFeedback == .fallback {
-            symbol("arrow.triangle.turn.up.right.diamond.fill", in: NSRect(x: 55, y: 53, width: 18, height: 18), color: .systemOrange)
+            symbol("macwindow", in: NSRect(x: 55, y: 53, width: 18, height: 18), color: .systemOrange)
         } else if runtime.snapshot.navigationFeedback == .unavailable {
             symbol("exclamationmark.circle.fill", in: NSRect(x: 55, y: 53, width: 18, height: 18), color: .systemRed)
         }

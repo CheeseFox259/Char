@@ -1,4 +1,5 @@
 import AppKit
+import QuartzCore
 import ApplicationServices
 import UniformTypeIdentifiers
 import SwiftUI
@@ -213,6 +214,7 @@ actor ObservationWorker {
             let outcome: NavigationOutcome
             if let platform { outcome = await platform.activate(workEnd: workEnd, target: item.target) }
             else { outcome = .fallback }
+            if outcome != .unavailable { panel.surface.dismissFeedback(for: workEnd) }
             router.completeVisit(key: item.key, outcome: outcome, sourceAnchor: source, at: Date())
             if let source, router.snapshot.hold?.anchor.id != source.id { platform?.release(source) }
             busy = false
@@ -558,28 +560,39 @@ actor ObservationWorker {
         try? await Task.sleep(nanoseconds: 240_000_000)
         guard abs(bubble.presentationFrame.width - bubble.frame.width) < 0.5,
               abs(bubble.presentationFrame.midX - bubble.frame.midX) < 0.5 else { fail("orbit artwork failed to arrive") }
+        guard let reducedBurst = bubble.dismissalFragments(reducedMotion: true),
+              reducedBurst.sublayers?.count == 1,
+              let reducedAnimation = reducedBurst.sublayers?.first?.animation(forKey: "dismissal") as? CAAnimationGroup,
+              reducedAnimation.animations?.count == 1,
+              reducedAnimation.animations?.first is CAKeyframeAnimation else { fail("Reduce Motion dismissal must be fade-only") }
         bubble.beginBubblePress()
         guard !bubble.finishBubblePress(atSurfacePoint: NSPoint(x: -100, y: -100)),
               snapshot.hold == nil, router.nextVisit(for: end)?.navigationOutcome == nil else { fail("outside bubble release navigated or created Hold") }
+        let clickedKey = router.nextVisit(for: end)?.key
         bubble.beginBubblePress()
         guard bubble.finishBubblePress(atSurfacePoint: NSPoint(x: bubble.presentationFrame.midX, y: bubble.presentationFrame.midY)) else { fail("inside presented bubble release cancelled") }
         try? await Task.sleep(nanoseconds: 100_000_000)
-        guard router.nextVisit(for: end)?.navigationOutcome == .fallback else { fail("owned artwork clicked incorrect work end") }
+        guard router.nextVisit(for: end)?.key != clickedKey, snapshot.navigationFeedback == .fallback,
+              snapshot.bubbles.first(where: { $0.workEnd == end })?.count == 1,
+              panel.surface.activeBurstFragmentCount > 0 else { fail("successful click dismissal / burst / remaining item") }
         _ = panel.surface.cycleBubbles(by: -1)
         setBubbleDistance(72)
         guard !panel.surface.canCycle, !panel.surface.cycleBubbles(by: 1),
               let savedOrbit = try? JSONDecoder().decode(CompanionPreferences.self, from: Data(contentsOf: companionPreferencesURL)),
               savedOrbit.bubbleDistance == 72 else { fail("distance capacity/persistence or unfolded scroll gate") }
         setBubbleDistance(20)
+        let claudeCount = snapshot.bubbles.first(where: { $0.workEnd == .claudeCode })?.count ?? 0
         visit(.claudeCode)
         try? await Task.sleep(nanoseconds: 100_000_000)
         guard snapshot.hold?.anchor.accuracy == .application,
-              router.nextVisit(for: .claudeCode)?.navigationOutcome == .fallback else { fail("fallback visit / degraded Hold") }
+              snapshot.bubbles.first(where: { $0.workEnd == .claudeCode })?.count ?? 0 == claudeCount - 1,
+              snapshot.navigationFeedback == .fallback else { fail("fallback dismissal / degraded Hold") }
         visit(.codexDesktop)
         try? await Task.sleep(nanoseconds: 100_000_000)
         guard snapshot.hold?.anchor.id == "fixture-wechat" else { fail("original anchor") }
-        ignore(.claudeCode)
-        guard snapshot.bubbles.first(where: { $0.workEnd == .claudeCode })?.count == 1 else { fail("head-only ignore") }
+        let beforeIgnore = snapshot.bubbles.first(where: { $0.workEnd == .pi })?.count ?? 0
+        ignore(.pi)
+        guard snapshot.bubbles.first(where: { $0.workEnd == .pi })?.count ?? 0 == beforeIgnore - 1 else { fail("head-only ignore") }
         let soundBeforeReturn = demoSoundCount
         guard homeShortcut.status == .registered else { fail("Hold shortcut registration") }
         fixtureHotKey?.fire()
@@ -589,6 +602,8 @@ actor ObservationWorker {
         petClicked() // The actual Hold is already gone; controls remain available during the graphic fade.
         try? await Task.sleep(nanoseconds: 150_000_000)
         guard sourceBadgeAnchor == nil, demoSoundCount == soundBeforeReturn else { fail("quiet fade completion") }
+        try? await Task.sleep(nanoseconds: 450_000_000)
+        guard panel.surface.activeBurstFragmentCount == 0 else { fail("burst layers did not clean up") }
         guard panel.surface.buttons.filter({ !$0.isHidden && !$0.miniature }).allSatisfy({ $0.frame.width >= 44 && $0.frame.height >= 44 && panel.surface.bounds.contains($0.frame) }) else { fail("visible hit target size") }
         let piID = pluginEntries.first { $0.plugin.workEnd == .pi }!.id
         setPlugin(piID, enabled: false)

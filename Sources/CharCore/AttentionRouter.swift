@@ -197,12 +197,10 @@ public final class AttentionRouter {
            anchor.accuracy == .exact || anchor.accuracy == .application {
             hold = HoldSnapshot(anchor: anchor, elapsedGraceSeconds: 0)
         }
-        if outcome == .exact {
-            if var session = sessions[key] { session.acknowledged = true; sessions[key] = session }
-            removeItem(key)
-        } else {
-            items[key]?.navigationOutcome = .fallback
-        }
+        // The click acknowledges this attention record even when only the owning
+        // application can be activated. Precision remains in navigationFeedback.
+        if var session = sessions[key] { session.acknowledged = true; sessions[key] = session }
+        removeItem(key)
         // The completed visit proves arrival at the owning Agent application, not an exact session.
         focus = FocusContext(exactSession: outcome == .exact ? key : nil, isAgent: true)
     }
