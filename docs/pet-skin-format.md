@@ -9,6 +9,7 @@ A `.charpet` is a local directory containing `manifest.json` and PNG frames. Cha
   "schemaVersion": 1,
   "id": "studio.my-pet",
   "name": "My pet",
+  "appIcon": "icon.png",
   "canvasSize": { "width": 128, "height": 128 },
   "anchor": { "x": 0.5, "y": 0.5 },
   "clips": {
@@ -30,6 +31,7 @@ The example is a schema illustration; ship actual frames for every path. Use [th
 | schemaVersion | Exactly `1`; unsupported versions are rejected. |
 | id | 2–64 ASCII characters: lowercase letter first, then lowercase letters, digits, `.` or `-`; no `..`. IDs must be unique, including `char.default`. |
 | name | Nonempty after trimming whitespace, maximum 80 characters. |
+| appIcon | Optional safe relative PNG path; square 128, 256, 512 or 1024 pixels, single-image 8-bit RGBA. Prefer 1024. It has its own size, independent of frame canvas. Older v1 packages omit it and derive a right-edge icon from the final edgePeek frame. |
 | canvasSize | Integer width and height, each 32–512 pixels; every frame has this size. |
 | anchor | Finite normalized x/y in `[0,1]`, measured from the top left. Renderer places this point at the pet's saved center. |
 | clips | Exactly the seven named clips above; each has 2–120 ordered frame references and finite fps from 1–60. Maximum 480 references across all clips. |
@@ -38,8 +40,8 @@ The example is a schema illustration; ship actual frames for every path. Use [th
 ## Frame and package limits
 
 - Each frame is a single-image, **8-bit RGBA PNG** (PNG color type 6). Indexed, RGB-only, grayscale, 16-bit and animated PNGs are rejected. Export in sRGB; pixels outside the character should have alpha zero.
-- Maximum 4 MiB per PNG, 64 KiB manifest, 32 MiB entire package, 600 directory entries and **16,777,216 pixels across unique frames**. Dimensions are checked before bitmap decoding.
-- All package files must be `manifest.json` or referenced PNG assets; no unused images, links, sockets or executables. Symlinks are rejected anywhere, including the package directory. All required files must be present and decodable.
+- Maximum 4 MiB per PNG, 64 KiB manifest, 32 MiB entire package, 600 directory entries and **16,777,216 pixels across unique frames and the authored icon**. Dimensions are checked before bitmap decoding.
+- All package files must be `manifest.json` or PNG assets referenced by clips or appIcon; no unused images, links, sockets or executables. Symlinks are rejected anywhere, including the package directory. All required files must be present and decodable.
 - An invalid import, duplicate ID or copied package that changes during import leaves installed skins and selection intact. Import is published by a same-directory rename; selection JSON uses atomic replacement.
 
 ## Animation authoring
@@ -58,3 +60,9 @@ Char validates file structure and pixels. It cannot mechanically judge whether b
 
 
 Developer walkthrough: [appearance-development.md](appearance-development.md). Complete copyable prompt: [development-prompts.md](development-prompts.md). Validate a real package with: swift run char-package-check skin /absolute/path/your.charpet.
+
+## Software icons
+
+Selecting, importing or restoring an appearance updates the running application icon, menu-bar icon and Settings preview immediately; restart restores the selected artwork. Deleting the selected appearance restores the default. Icons are static cached artwork, not an extra animation loop. An authored appIcon is used as-is; automatic legacy fallback rotates the final edgePeek frame from the bottom authoring direction to the right edge and composes it in the default icon tile.
+
+The signed installation bundle and project logo use the built-in right-edge peeking icon. Finder/Launchpad continue to use that packaged default; applying a Finder custom icon writes resource-fork/Finder metadata and fails strict code-signature verification, as tested on a disposable app copy. Char therefore uses NSApplication.applicationIconImage for runtime identity without rewriting its installation. See [Apple runtime icon API](https://developer.apple.com/documentation/appkit/nsapplication/applicationiconimage).

@@ -94,9 +94,16 @@ struct AppearanceSettingsView: View {
             Picker(runtime.localized("桌宠形象", "Pet appearance"), selection: Binding(get: { runtime.selectedSkinID }, set: { runtime.selectSkin($0) })) {
                 ForEach(runtime.skins, id: \.id) { skin in Text(skin.name).tag(skin.id) }
             }
-            TimelineView(.animation(minimumInterval: 1 / 12, paused: reduceMotion)) { timeline in
-                SelectedPetPreview(runtime: runtime, elapsed: reduceMotion ? 0 : timeline.date.timeIntervalSince(previewStarted))
-                    .frame(width: 76, height: 76)
+            HStack(spacing: 20) {
+                TimelineView(.animation(minimumInterval: 1 / 12, paused: reduceMotion)) { timeline in
+                    SelectedPetPreview(runtime: runtime, elapsed: reduceMotion ? 0 : timeline.date.timeIntervalSince(previewStarted))
+                        .frame(width: 76, height: 76)
+                }
+                VStack(spacing: 4) {
+                    Image(nsImage: runtime.softwareIcon).resizable().interpolation(.high).frame(width: 64, height: 64)
+                        .accessibilityLabel(runtime.localized("当前软件图标", "Selected application icon"))
+                    Text(runtime.localized("软件图标", "App icon")).font(.caption).foregroundStyle(.secondary)
+                }
             }
             HStack {
                 Button(runtime.localized("导入形象…", "Import appearance…")) { runtime.importSkin() }

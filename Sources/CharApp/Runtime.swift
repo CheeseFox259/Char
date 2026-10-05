@@ -88,6 +88,7 @@ actor ObservationWorker {
     private var polling = false
     private var displayTimer: Timer?
     private var statusBar: StatusBarController?
+    func refreshAppearanceStatusBar() { statusBar?.refresh() }
     private var retainedAnchor: ReturnAnchor?
     private(set) var sourceBadgeAnchor: ReturnAnchor?
     private(set) var sourceBadgeOpacity: CGFloat = 0
@@ -664,9 +665,15 @@ actor ObservationWorker {
         guard !panel.surface.isSpaceFeedbackActive, panel.surface.pet.spaceTuck == 0, panel.surface.visualOpacity == 1, panel.surface.sceneLayer?.opacity == 1, panel.alphaValue == 1 else { fail("Space feedback completion") }
         if let sample = Bundle.main.resourceURL?.appendingPathComponent("Skins/example.charpet"), let skinStore {
             do {
+                let defaultIcon = NSApp.applicationIconImage?.tiffRepresentation
+                let defaultMenuIcon = statusBar?.iconImage?.tiffRepresentation
                 let skin = try skinStore.importPackage(at: sample)
                 selectSkin(skin.id)
                 guard customPetImage(clip: "idle", elapsed: 0) != nil else { fail("imported skin rendering") }
+                guard NSApp.applicationIconImage?.tiffRepresentation == softwareIcon.tiffRepresentation,
+                      NSApp.applicationIconImage?.tiffRepresentation != defaultIcon,
+                      statusBar?.representedSkinID == skin.id,
+                      statusBar?.iconImage?.tiffRepresentation != defaultMenuIcon else { fail("appearance software/menu icon did not follow selection") }
                 let pet = panel.surface.pet
                 pet.clip = "idle"; pet.clipElapsed = 0; pet.feedbackElapsed = nil
                 router.clearNavigationFeedback(); publish()
@@ -698,6 +705,9 @@ actor ObservationWorker {
                 guard pet.artworkPixelData == withoutBadge else { fail("static custom frame retained navigation feedback") }
                 deleteSkin(skin.id)
                 guard selectedSkinID == "char.default" else { fail("skin deletion fallback") }
+                guard NSApp.applicationIconImage?.tiffRepresentation == defaultIcon,
+                      statusBar?.iconImage?.tiffRepresentation == defaultMenuIcon,
+                      statusBar?.representedSkinID == "char.default" else { fail("deleted skin did not restore software/menu icon") }
             } catch { fail("sample skin import: \(error)") }
         } else { fail("bundled sample missing") }
         print("Char fixture smoke passed: \(WorkEnd.allCases.count) work ends, Ctrl+B 回城, past/fallback, first anchor, ignore, return, orbit targets, plugin hot unplug/source removal, five placements and bundled skin; no real integrations")

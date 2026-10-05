@@ -22,6 +22,19 @@ private func skinRequire(_ condition: @autoclosure () -> Bool, _ message: String
     try skinRequire(store.selectedSkin.id == PetSkinStore.defaultID, "first launch default")
     try store.importPackage(at: sample)
     try store.select(id: manifest.id)
+    let authoredIcon = NSImage(contentsOf: sample.appendingPathComponent(manifest.appIcon!))!.tiffRepresentation
+    try skinRequire(store.icon(for: manifest.id)?.tiffRepresentation == authoredIcon, "selected appearance did not load authored icon")
+    try skinRequire(store.icon(for: manifest.id) === store.icon(for: manifest.id), "icon cache regenerated stable artwork")
+    // Old schema-v1 packages remain valid and derive a peeking icon.
+    let legacy = temp.appendingPathComponent("legacy.charpet")
+    try fm.copyItem(at: sample, to: legacy)
+    var legacyJSON = try JSONSerialization.jsonObject(with: Data(contentsOf: legacy.appendingPathComponent("manifest.json"))) as! [String: Any]
+    legacyJSON.removeValue(forKey: "appIcon"); legacyJSON["id"] = "char.legacy-icon-check"
+    try fm.removeItem(at: legacy.appendingPathComponent(manifest.appIcon!))
+    try JSONSerialization.data(withJSONObject: legacyJSON).write(to: legacy.appendingPathComponent("manifest.json"))
+    let legacyStore = try PetSkinStore(directory: temp.appendingPathComponent("legacy-store"))
+    let legacyManifest = try legacyStore.importPackage(at: legacy)
+    try skinRequire(legacyManifest.appIcon == nil && legacyStore.icon(for: legacyManifest.id)?.size == NSSize(width: 1024, height: 1024), "old package lost derived software icon")
     for clip in PetSkinClip.allCases {
         try skinRequire(store.image(for: manifest.id, clip: clip, elapsed: 0) != nil, "first frame did not decode")
         try skinRequire(store.image(for: manifest.id, clip: clip, elapsed: 0.2) != nil, "animated frame did not decode")
@@ -54,6 +67,7 @@ private func skinRequire(_ condition: @autoclosure () -> Bool, _ message: String
                     "slow arrival fixture must distinguish first and final poses")
     let reloaded = try PetSkinStore(directory: temp.appendingPathComponent("store"))
     try skinRequire(reloaded.selectedSkin.id == manifest.id, "selection did not survive restart")
+    try skinRequire(reloaded.icon(for: reloaded.selectedSkin.id)?.tiffRepresentation == authoredIcon, "icon did not follow restored selection")
     do { try store.importPackage(at: sample); throw PetSkinCheckFailure.failed("duplicate accepted") }
     catch PetSkinError.duplicateID {}
     do { try store.delete(id: PetSkinStore.defaultID); throw PetSkinCheckFailure.failed("deleted default") }
@@ -94,6 +108,17 @@ private func skinRequire(_ condition: @autoclosure () -> Bool, _ message: String
     catch is PetSkinCheckFailure { throw PetSkinCheckFailure.failed("accepted linked package") }
     catch {}
     try reject("canvas") { root in try changeManifest(root) { $0["canvasSize"] = ["width":64,"height":64] } }
+    try reject("iconPath") { root in try changeManifest(root) { $0["appIcon"] = "../outside.png" } }
+    try reject("iconMissing") { root in try fm.removeItem(at: root.appendingPathComponent(manifest.appIcon!)) }
+    try reject("iconRGB") { root in
+        let url = root.appendingPathComponent(manifest.appIcon!)
+        var data = try Data(contentsOf: url); data[25] = 2; try data.write(to: url)
+    }
+    try reject("iconDimensions") { root in
+        let bitmap = NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: 64, pixelsHigh: 64,
+            bitsPerSample: 8, samplesPerPixel: 4, hasAlpha: true, isPlanar: false, colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0)!
+        try bitmap.representation(using: .png, properties: [:])!.write(to: root.appendingPathComponent(manifest.appIcon!))
+    }
     try reject("rgb") { root in
         let url = root.appendingPathComponent("frames/idle-000.png")
         var data = try Data(contentsOf: url); data[25] = 2; try data.write(to: url)
@@ -105,5 +130,6 @@ private func skinRequire(_ condition: @autoclosure () -> Bool, _ message: String
     try store.delete(id: manifest.id)
     let afterDelete = try PetSkinStore(directory: temp.appendingPathComponent("store"))
     try skinRequire(afterDelete.selectedSkin.id == PetSkinStore.defaultID && afterDelete.skins.count == 1, "delete did not persist default fallback")
+    try skinRequire(store.icon(for: manifest.id) == nil && afterDelete.icon(for: PetSkinStore.defaultID) == nil, "deleted/default skin retained custom icon")
     print("Pet skins: shipped animation, import/selection/restart/delete and invalid-package checks passed")
 }

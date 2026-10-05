@@ -31,10 +31,12 @@ public struct PetSkinManifest: Codable, Identifiable, Equatable {
     /// Normalized coordinates, measured from the top left of the full canvas.
     public let anchor: PetSkinAnchor
     public let clips: [String: PetSkinAnimation]
+    /// Optional independent square software icon. Old v1 packages derive it from edgePeek.
+    public let appIcon: String?
     public init(schemaVersion: Int = 1, id: String, name: String, canvasSize: PetSkinSize,
-                anchor: PetSkinAnchor, clips: [String: PetSkinAnimation]) {
+                anchor: PetSkinAnchor, clips: [String: PetSkinAnimation], appIcon: String? = nil) {
         self.schemaVersion = schemaVersion; self.id = id; self.name = name
-        self.canvasSize = canvasSize; self.anchor = anchor; self.clips = clips
+        self.canvasSize = canvasSize; self.anchor = anchor; self.clips = clips; self.appIcon = appIcon
     }
 }
 
@@ -130,6 +132,19 @@ public final class PetSkinStore {
         return image
     }
 
+    public func icon(for id: String) -> NSImage? {
+        guard let skin = skins.first(where: { $0.id == id }), let root = packages[id] else { return nil }
+        let key = id + "/@application-icon"
+        if let cached = images[key] { return cached }
+        let icon: NSImage?
+        if let path = skin.appIcon { icon = NSImage(contentsOf: root.appendingPathComponent(path)) }
+        else if let frame = image(for: id, clip: .edgePeek, elapsed: .greatestFiniteMagnitude) {
+            icon = PetIconArtwork.rightEdgeIcon(pet: frame, anchor: NSPoint(x: skin.anchor.x, y: 1 - skin.anchor.y))
+        } else { icon = nil }
+        if let icon { images[key] = icon }
+        return icon
+    }
+
     public static func validatePackage(at root: URL) throws -> PetSkinManifest {
         let fm = FileManager.default
         let keys: Set<URLResourceKey> = [.isSymbolicLinkKey, .isDirectoryKey, .isRegularFileKey, .fileSizeKey]
@@ -171,28 +186,50 @@ public final class PetSkinStore {
             frameCount += animation.frames.count
             guard frameCount <= 480 else { throw PetSkinError.invalid("more than 480 frame references") }
             for frame in animation.frames {
-                let components = frame.split(separator: "/", omittingEmptySubsequences: false)
-                guard !frame.hasPrefix("/"), !frame.contains("\\"), components.allSatisfy({ !$0.isEmpty && $0 != "." && $0 != ".." }),
-                      frame.hasSuffix(".png") else { throw PetSkinError.invalid("unsafe PNG path") }
+                guard safePNGPath(frame) else { throw PetSkinError.invalid("unsafe PNG path") }
                 uniqueFrames.insert(frame)
             }
         }
-        guard uniqueFrames == packagePNGs else { throw PetSkinError.invalid("missing or unreferenced PNG assets") }
-        guard uniqueFrames.count * size.width * size.height <= 16_777_216 else { throw PetSkinError.invalid("more than 16 megapixels across frames") }
+        var referencedPNGs = uniqueFrames
+        var pixels = uniqueFrames.count * size.width * size.height
+        if let path = manifest.appIcon {
+            guard safePNGPath(path) else { throw PetSkinError.invalid("unsafe appIcon path") }
+            let iconSize = try pngSize(at: root.appendingPathComponent(path))
+            guard iconSize.width == iconSize.height, [128, 256, 512, 1024].contains(iconSize.width) else {
+                throw PetSkinError.invalid("appIcon must be square 128, 256, 512 or 1024 pixels")
+            }
+            if !uniqueFrames.contains(path) { pixels += iconSize.width * iconSize.height }
+            referencedPNGs.insert(path)
+        }
+        guard referencedPNGs == packagePNGs else { throw PetSkinError.invalid("missing or unreferenced PNG assets") }
+        guard pixels <= 16_777_216 else { throw PetSkinError.invalid("more than 16 megapixels across images") }
         for frame in uniqueFrames {
-            let url = root.appendingPathComponent(frame)
-            let data = try Data(contentsOf: url)
-            let signature: [UInt8] = [137,80,78,71,13,10,26,10]
-            guard data.count >= 33, data.count <= 4 * 1024 * 1024,
-                  Array(data.prefix(8)) == signature, Array(data[12..<16]) == Array("IHDR".utf8),
-                  data[24] == 8, data[25] == 6,
-                  let source = CGImageSourceCreateWithData(data as CFData, nil), CGImageSourceGetCount(source) == 1,
-                  let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any],
-                  (properties[kCGImagePropertyPixelWidth] as? Int) == size.width,
-                  (properties[kCGImagePropertyPixelHeight] as? Int) == size.height,
-                  let image = CGImageSourceCreateImageAtIndex(source, 0, nil), image.width == size.width,
-                  image.height == size.height else { throw PetSkinError.invalid("frame must be a single 8-bit RGBA PNG matching canvas: \(frame)") }
+            guard try pngSize(at: root.appendingPathComponent(frame)) == size else {
+                throw PetSkinError.invalid("frame must match canvas: \(frame)")
+            }
         }
         return manifest
+    }
+
+    private static func safePNGPath(_ path: String) -> Bool {
+        let components = path.split(separator: "/", omittingEmptySubsequences: false)
+        return !path.hasPrefix("/") && !path.contains("\\") && path.hasSuffix(".png") &&
+            components.allSatisfy { !$0.isEmpty && $0 != "." && $0 != ".." }
+    }
+    private static func pngSize(at url: URL) throws -> PetSkinSize {
+        let data = try Data(contentsOf: url)
+        let signature: [UInt8] = [137, 80, 78, 71, 13, 10, 26, 10]
+        guard data.count >= 33, data.count <= 4 * 1024 * 1024,
+              Array(data.prefix(8)) == signature, Array(data[12..<16]) == Array("IHDR".utf8),
+              data[24] == 8, data[25] == 6,
+              let source = CGImageSourceCreateWithData(data as CFData, nil), CGImageSourceGetCount(source) == 1,
+              let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any],
+              let width = properties[kCGImagePropertyPixelWidth] as? Int,
+              let height = properties[kCGImagePropertyPixelHeight] as? Int,
+              (32...1024).contains(width), (32...1024).contains(height),
+              let image = CGImageSourceCreateImageAtIndex(source, 0, nil), image.width == width, image.height == height else {
+            throw PetSkinError.invalid("asset must be a single 8-bit RGBA PNG, at most 1024 pixels: \(url.lastPathComponent)")
+        }
+        return PetSkinSize(width: width, height: height)
     }
 }

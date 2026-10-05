@@ -7,15 +7,24 @@ import CharCore
     private var previous: AttentionSnapshot?
     private var previousSound: Bool?
     private var previousLanguage: AppLanguage?
+    private var previousSkinID: String?
+    var iconImage: NSImage? { item.button?.image }
+    var representedSkinID: String? { previousSkinID }
     init(runtime: CompanionRuntime) {
         self.runtime = runtime
         super.init()
-        item.button?.image = Self.faceIcon()
         item.button?.setAccessibilityLabel(runtime.localized("Char 状态栏", "Char menu bar"))
         refresh()
     }
     func refresh() {
-        guard previous != runtime.snapshot || previousSound != runtime.settings.soundEnabled || previousLanguage != runtime.settings.language else { return }
+        guard previous != runtime.snapshot || previousSound != runtime.settings.soundEnabled || previousLanguage != runtime.settings.language || previousSkinID != runtime.selectedSkinID else { return }
+        if previousSkinID != runtime.selectedSkinID {
+            let image = runtime.softwareIcon.copy() as! NSImage
+            image.size = NSSize(width: 18, height: 18)
+            image.isTemplate = false
+            item.button?.image = image
+            previousSkinID = runtime.selectedSkinID
+        }
         previous = runtime.snapshot; previousSound = runtime.settings.soundEnabled; previousLanguage = runtime.settings.language
         item.button?.setAccessibilityLabel(runtime.localized("Char 状态栏", "Char menu bar"))
         let menu = NSMenu()
@@ -39,16 +48,4 @@ import CharCore
     @objc private func returnHome() { runtime.returnHome() }
     @objc private func mute() { runtime.toggleMute() }
     @objc private func quit() { NSApp.terminate(nil) }
-    private static func faceIcon() -> NSImage {
-        let image = NSImage(size: NSSize(width: 18, height: 18), flipped: false) { _ in
-            NSColor.black.setStroke()
-            let body = NSBezierPath(roundedRect: NSRect(x: 2, y: 2, width: 14, height: 14), xRadius: 4, yRadius: 4)
-            body.lineWidth = 1.6; body.stroke()
-            NSColor.black.setFill()
-            for x in [6.0, 11.0] { NSBezierPath(roundedRect: NSRect(x: x, y: 7, width: 1.6, height: 4.5), xRadius: 0.8, yRadius: 0.8).fill() }
-            return true
-        }
-        image.isTemplate = true
-        return image
-    }
 }

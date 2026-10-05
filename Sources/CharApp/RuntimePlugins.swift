@@ -3,6 +3,9 @@ import CharCore
 import CharPlatform
 
 extension CompanionRuntime {
+    private static let defaultSoftwareIcon = Bundle.main.resourceURL
+        .flatMap { NSImage(contentsOf: $0.appendingPathComponent("Icons/Char.png")) } ?? PetIconArtwork.rightEdgeIcon()
+    var softwareIcon: NSImage { skinStore?.icon(for: selectedSkinID) ?? Self.defaultSoftwareIcon }
     var enabledWorkEnds: Set<WorkEnd> {
         Set(pluginEntries.filter(\.enabled).compactMap { $0.plugin.workEnd })
     }
@@ -133,6 +136,8 @@ extension CompanionRuntime {
     func refreshSkins() {
         skins = skinStore?.skins ?? []
         selectedSkinID = skinStore?.selectedSkin.id ?? "char.default"
+        NSApp.applicationIconImage = softwareIcon
         panel?.surface.refresh()
+        refreshAppearanceStatusBar()
     }
 }

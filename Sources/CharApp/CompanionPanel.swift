@@ -1,6 +1,7 @@
 import AppKit
 import QuartzCore
 import CharCore
+import CharPlatform
 
 @MainActor private enum BubbleDrawing {
     static func raster(size: NSSize, draw: () -> Void) -> NSImage {
@@ -603,10 +604,7 @@ import CharCore
     }
     var reducedMotion = NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
     private static let defaultBody = BubbleDrawing.raster(size: NSSize(width: 76, height: 76)) {
-        let ink = NSColor(calibratedRed: 0.08, green: 0.09, blue: 0.16, alpha: 1)
-        let cream = NSColor(calibratedRed: 1, green: 0.97, blue: 0.87, alpha: 1)
-        let body = NSBezierPath(roundedRect: NSRect(x: 7, y: 8, width: 62, height: 60), xRadius: 21, yRadius: 21)
-        cream.setFill(); body.fill(); ink.setStroke(); body.lineWidth = 3.5; body.stroke()
+        PetIconArtwork.drawDefaultBody()
     }
     var responding = false
     var gaze = NSPoint.zero

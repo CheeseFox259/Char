@@ -35,3 +35,5 @@
 - 历史：[初版验证](verification.md)、[2026-10-03验收](acceptance-2026-10-03.md)、[2026-10-04验收](acceptance-2026-10-04.md)、[视觉重构](redesign-verification-2026-10-04.md)、[交互修正](companion-polish-verification-2026-10-04.md)。
 
 历史记录中的待测/失败结论只代表当时版本，不覆盖后续明确复验；后续“通过”也只覆盖注明的配置，不能外推其他客户端和连接方式。
+
+- [形象与软件图标验证记录](appearance-icons-verification-2026-10-05.md)。

@@ -1,5 +1,7 @@
 # Char
 
+<p align="center"><img src="Resources/Icons/Char.png" width="160" alt="Char：从桌面右边缘探头的方块桌宠" /></p>
+
 macOS 本机 Agent 注意力桌宠。观察 Claude Code TUI、Codex CLI、Codex Desktop、DeepSeek Harness Desktop、Kimi CLI、Kimi Code App 和 pi 的新状态，为持续停顿显示图形气泡；会话内容不上传，气泡不显示问题或命令原文。
 
 CLI 支持直接在 Warp 或 Warp + tmux 中运行。点击气泡激活对应工作端应用最近位置；成功后清除所点击的提醒并播放破碎动画，应用级跳转仍显示降级标记，失败则保留提醒供重试。精准 Warp pane、Codex 聊天和微信会话能力分别跟踪于 [#10](https://github.com/CheeseFox259/Char/issues/10)、[#11](https://github.com/CheeseFox259/Char/issues/11)、[#12](https://github.com/CheeseFox259/Char/issues/12)。任意前台应用（包括其他 Agent、Warp 与微信，Char 自身除外）都可以成为应用级回城起点。Tabbit 和 VS Code 在可用集成能验证准确来源时保存准确锚点，否则明确降级到同一应用实例；连续访问多个 Agent 保留首次来源。
@@ -40,7 +42,7 @@ Hook 和扩展均需显式安装；构建、检查和演示不会改写用户 ha
 右键桌宠 → Settings 可选择桌面或四个边缘放置，管理统一集成插件、导入和切换形象。拖动靠近边缘会吸附；只有气泡折叠时滚轮才循环。桌宠大小36–88 pt、气泡距离8–72 pt可调，容量自动适配。插件启停和删除立即生效；重新启用只观察新活动。删除配置插件不会修改已经安装在原生 Agent 中的观察 Hook，卸载步骤仍见相应集成 README。
 
 - [配置插件格式](docs/integration-plugin-format.md)：导入 `.charintegration` 目录；可用 `Resources/Integrations/safari.charintegration` 导入 Safari 应用级回城配置示例；所有前台应用本身无需插件也可应用级回城。
-- [自定义形象格式](docs/pet-skin-format.md)：导入 `.charpet` 目录；`Resources/Skins/example.charpet` 是完整的七动画示例。设置中的导入会直接切换到新形象。
+- [自定义形象格式](docs/pet-skin-format.md)：导入 `.charpet` 目录；`Resources/Skins/example.charpet` 是完整的七动画示例。设置中的导入会直接切换到新形象。形象包可包含独立 appIcon，运行中的软件与状态栏图标随之更新；旧包自动生成，Finder 安装包保留默认图标。
 
 Char 保持显示在所有 Space。桌宠跨屏动作和回城反馈采用弹性动画；整屏 Space 切换速度由 macOS 控制，不提供自定义曲线。
 
