@@ -24,7 +24,7 @@
 
 ## 发布
 
-- [macOS v0.1.0 安装、构建与发布证据](macos-release.md)。
+- [macOS v0.1.1 安装、构建与发布证据](macos-release.md)。
 
 ## 性能与验收
 
