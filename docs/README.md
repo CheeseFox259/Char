@@ -25,11 +25,12 @@
 ## 发布
 
 - [macOS 安装、构建与发布](macos-release.md)。
+- [v0.1.2 Release 发布、下载安装与实测](release-verification-0.1.2.md)。
 
 ## 性能与验收
 
 - [设置与前台查询性能优化实测](performance-optimization-2026-10-06.md)：设置 CPU 同场景从 37.79% 降至 2.65%、预览生命周期、轻量身份查询与验证范围。
-- [v0.1.1 Release 当前性能报告](performance-0.1.1-2026-10-06.md)：实际安装包 CPU/RSS、设置静止开销、多屏查询和优化顺序。
+- [v0.1.1 Release 优化前性能报告](performance-0.1.1-2026-10-06.md)：实际安装包 CPU/RSS、设置静止开销、多屏查询和优化顺序。
 - [性能组成、历史实测与下一步优化](companion-performance-2026-10-04.md)：CPU/RSS、场景/版本、采样方法和限制。
 - [轨道/距离/统一集成验收](orbit-verification-2026-10-04.md)：实际设置、缓存与回归、接收器正常包实体通过。
 - [有线滚轮送达诊断](wheel-diagnosis-2026-10-05.md)：受控实验、连接方式更正、探针清理；有线原因未定。
