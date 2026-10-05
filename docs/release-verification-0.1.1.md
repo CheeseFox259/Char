@@ -29,9 +29,17 @@ Tag `v0.1.1` targets `5f789f65e6ca35364e57e395596da1c4708c7a13`. `.github/workfl
 - Installed the downloaded bundle at `/Applications/Char.app`, version `0.1.1`, build `2`. No local build was installed. `codesign --verify --deep --strict /Applications/Char.app` and `diff -qr` against the extracted release bundle pass.
 - Stopped the old process, moved its bundle to `build/installation-backups/2026-10-06/Char-before-release.app.disabled`, and launched `/Applications/Char.app`. Process inspection confirms one normal instance, running from the system Applications directory; the old `~/Applications/Char.app` path is absent.
 
-## Pending runtime checks
+## Installed GUI verification
 
-- Unlocked GUI check of pet visibility, Chinese settings, default appearance and launch-at-login status. Mac was locked at the latest attempted GUI inspection.
+After the user unlocked the Mac, CUA inspected the running `/Applications/Char.app`:
+
+- Desktop companion was visible. Settings opened through its accessibility action and were closed after inspection.
+- Language remained Chinese; placement remained right edge, size 48 pt, bubble distance 18 pt. Built-in integrations stayed enabled.
+- Appearance selection was Char. The software-icon preview showed the default pet peeking from the right edge.
+- Launch-at-login toggle was on and runtime status displayed enabled. No ServiceManagement registration error was shown. This verifies registration, not an actual logout/login.
+- Accessibility displayed not authorized (optional), and Tabbit Automation displayed authorization required for this installed identity. No permission prompts were initiated during this check; accurate Tabbit return requires reauthorization.
+
+All delivery checks are complete.
 
 ## Limits
 
