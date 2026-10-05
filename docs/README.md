@@ -22,6 +22,10 @@
 - [pi](../integrations/pi/README.md)、[Kimi CLI/App](../integrations/kimi/README.md)、[DeepSeek](../integrations/deepseek/README.md)、[已批准安装记录](native-integration-activation.md)。
 - [ADR](adr)：本地处理、单返回锚点、统一集成与自由来源等决定；[产品规格](spec.md)是原始需求，当前批准降级与验收结果见下列记录。
 
+## 发布
+
+- [macOS v0.1.0 安装、构建与发布证据](macos-release.md)。
+
 ## 性能与验收
 
 - [性能组成、历史实测与下一步优化](companion-performance-2026-10-04.md)：CPU/RSS、场景/版本、采样方法和限制。

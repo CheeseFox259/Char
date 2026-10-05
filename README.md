@@ -2,9 +2,13 @@
 
 macOS 本机 Agent 注意力桌宠。观察 Claude Code TUI、Codex CLI、Codex Desktop、DeepSeek Harness Desktop、Kimi CLI、Kimi Code App 和 pi 的新状态，为持续停顿显示图形气泡；会话内容不上传，气泡不显示问题或命令原文。
 
-CLI 支持直接在 Warp 或 Warp + tmux 中运行。首版点击气泡激活对应工作端应用最近位置，显示降级标记并保留未查看提醒。精准 Warp pane、Codex 聊天和微信会话能力分别跟踪于 [#10](https://github.com/CheeseFox259/Char/issues/10)、[#11](https://github.com/CheeseFox259/Char/issues/11)、[#12](https://github.com/CheeseFox259/Char/issues/12)。任意前台应用（包括其他 Agent、Warp 与微信，Char 自身除外）都可以成为应用级回城起点。Tabbit 和 VS Code 在可用集成能验证准确来源时保存准确锚点，否则明确降级到同一应用实例；连续访问多个 Agent 保留首次来源。
+CLI 支持直接在 Warp 或 Warp + tmux 中运行。点击气泡激活对应工作端应用最近位置；成功后清除所点击的提醒并播放破碎动画，应用级跳转仍显示降级标记，失败则保留提醒供重试。精准 Warp pane、Codex 聊天和微信会话能力分别跟踪于 [#10](https://github.com/CheeseFox259/Char/issues/10)、[#11](https://github.com/CheeseFox259/Char/issues/11)、[#12](https://github.com/CheeseFox259/Char/issues/12)。任意前台应用（包括其他 Agent、Warp 与微信，Char 自身除外）都可以成为应用级回城起点。Tabbit 和 VS Code 在可用集成能验证准确来源时保存准确锚点，否则明确降级到同一应用实例；连续访问多个 Agent 保留首次来源。
 
 保存来源后的返回行为称为**回城**：点击桌宠或按 **Ctrl+B**。快捷键仅在 Hold 中注册，无 Hold 时释放。
+
+## 下载与安装
+
+[下载 macOS v0.1.0](https://github.com/CheeseFox259/Char/releases/tag/v0.1.0)：支持 Apple Silicon 和 Intel，要求 macOS 13+。将 Char.app 放到 Applications 后启动；中英设置可随时切换。安装与签名说明见 [发布指南](docs/macos-release.md)。
 
 ## 构建与检查
 
@@ -13,6 +17,8 @@ CLI 支持直接在 Warp 或 Warp + tmux 中运行。首版点击气泡激活对
 ```sh
 scripts/check.sh
 scripts/build-app.sh
+# Universal ZIP、DMG 和 SHA256
+scripts/package-release.sh
 ```
 
 构建生成 `build/Char.app`，使用本机临时签名。将应用放在稳定位置后运行；右键桌宠打开设置。自启动偏好默认开启，实际启用状态取决于 macOS 登录项授权。该构建尚未进行 Developer ID 签名或公证。

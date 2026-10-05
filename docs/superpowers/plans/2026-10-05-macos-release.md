@@ -19,11 +19,11 @@
 
 ## Completion checks
 
-- [ ] Current UI records actual login/AX state; red-capable platform checks catch the bug before fix.
-- [ ] Focus tracking works without AX where window geometry is available; largest-overlap display handles spanning windows. No content/title capture.
-- [ ] Login enable/disable follows real ServiceManagement state and does not reject first registration; app bundle is registered/installed correctly.
-- [ ] Successful left-click visits clear one item and play a burst; failure retains retry; old precision/attention domain docs updated.
-- [ ] 中文/English setting persists/reloads, settings/menu/dialogs/status labels match selection; shared feedback symbols and compact layout verified.
-- [ ] scripts/check.sh, release build, native smoke, targeted interaction/animation checks and signature pass.
-- [ ] Installed app focus/login and visible UI checked; source fixtures not represented as native integration acceptance.
-- [ ] ZIP/DMG extraction/resource/signature/version/hash checks pass; GitHub release assets/tag verified remotely.
+- [x] Current UI records actual login/AX state; red-capable platform checks catch the bug before fix.
+- [x] Focus tracking works without AX where window geometry is available; largest-overlap display handles spanning windows. No content/title capture.
+- [x] Login enable/disable follows real ServiceManagement state and does not reject first registration; app bundle is registered/installed correctly.
+- [x] Successful left-click visits clear one item and play a burst; failure retains retry; old precision/attention domain docs updated.
+- [x] 中文/English setting persists/reloads, settings/menu/dialogs/status labels match selection; shared feedback symbols and compact layout verified.
+- [x] scripts/check.sh, release build, native smoke, targeted interaction/animation checks and signature pass.
+- [x] Installed app focus/login and visible UI checked; source fixtures not represented as native integration acceptance.
+- [x] ZIP/DMG extraction/resource/signature/version/hash checks pass; GitHub release assets/tag verified remotely.
