@@ -120,10 +120,6 @@ import CharCore
         for button in buttons { addSubview(button); button.attachArtwork(to: sceneLayer!) }
         setAccessibilityElement(true)
         setAccessibilityRole(.group)
-        setAccessibilityLabel("Agent orbit, scroll or use next and previous actions to cycle bubbles")
-        setAccessibilityCustomActions([
-            NSAccessibilityCustomAction(name: "Next Agent bubbles", target: self, selector: #selector(nextBubbles)),
-            NSAccessibilityCustomAction(name: "Previous Agent bubbles", target: self, selector: #selector(previousBubbles))])
         displayOptionsObserver = workspaceNotifications.addObserver(forName: NSWorkspace.accessibilityDisplayOptionsDidChangeNotification,
                                                                     object: nil, queue: .main) { [weak self] _ in
             MainActor.assumeIsolated {
@@ -196,7 +192,12 @@ import CharCore
     func refresh() {
         if movement == nil { placement = runtime.petPlacement }
         layoutVisibleBubbles()
-        pet.setAccessibilityLabel(runtime.snapshot.hold == nil ? "Char 桌宠，当前不可回城" : "回城，返回最初来源，Control+B\(runtime.snapshot.hold?.anchor.accuracy == .application ? "，应用级降级" : "")")
+        setAccessibilityLabel(runtime.localized("Agent 气泡，滚动或使用上一组和下一组操作", "Agent orbit, scroll or use next and previous actions to cycle bubbles"))
+        setAccessibilityCustomActions([
+            NSAccessibilityCustomAction(name: runtime.localized("下一组气泡", "Next Agent bubbles"), target: self, selector: #selector(nextBubbles)),
+            NSAccessibilityCustomAction(name: runtime.localized("上一组气泡", "Previous Agent bubbles"), target: self, selector: #selector(previousBubbles))])
+        ([pet] + buttons).forEach { $0.refreshAccessibilityActions() }
+        pet.setAccessibilityLabel(runtime.snapshot.hold == nil ? runtime.localized("Char 桌宠，当前不可回城", "Char companion, no return origin") : runtime.localized("回城，返回最初来源，Control+B", "Return to origin, Control+B") + (runtime.snapshot.hold?.anchor.accuracy == .application ? runtime.localized("，应用级降级", ", application fallback") : ""))
         for button in buttons { button.refreshArtwork() }
         pet.refreshPetArtwork()
         configureIdle()
@@ -545,7 +546,8 @@ import CharCore
             textureLayer.contents = renderedImage
         }
         let bubble = next.bubble
-        setAccessibilityLabel("\(end.title): \(bubble?.count ?? 0) unviewed, \(bubble?.runningCount ?? 0) running\(bubble?.head.map { ", \($0.reason.title)\($0.isPast ? ", past" : "")\($0.navigationOutcome == .fallback ? ", application fallback" : "")" } ?? "")")
+        let detail = bubble?.head.map { ", \(runtime.localizedTitle($0.reason))\($0.isPast ? runtime.localized("，已恢复", ", past") : "")" } ?? ""
+        setAccessibilityLabel("\(end.title): \(bubble?.count ?? 0) \(runtime.localized("待查看", "unviewed")), \(bubble?.runningCount ?? 0) \(runtime.localized("运行中", "running"))\(detail)")
     }
     /// Reuse the owned image and presentation geometry, including an interrupted
     /// orbit and hover deformation. Texture coordinates avoid rendering new images.
@@ -683,10 +685,7 @@ import CharCore
         setAccessibilityRole(.button)
         switch kind {
         case .pet:
-            setAccessibilityCustomActions([
-                NSAccessibilityCustomAction(name: "Open Settings", target: self, selector: #selector(accessibleSettings)),
-                NSAccessibilityCustomAction(name: "Toggle Mute", target: self, selector: #selector(accessibleMute)),
-                NSAccessibilityCustomAction(name: "结束回城", target: self, selector: #selector(accessibleEnd))])
+            break
         case .bubble:
             for rim in [hoverRim, hoverInnerLight, hoverOuterLight] {
                 rim.fillColor = NSColor.clear.cgColor; rim.actions = actions
@@ -701,10 +700,21 @@ import CharCore
             hoverHalo.opacity = 0
             hoverHalo.addSublayer(hoverOuterLight); hoverHalo.addSublayer(hoverInnerLight); hoverHalo.addSublayer(hoverRim)
             hoverPulseLayer.addSublayer(hoverHalo)
-            setAccessibilityCustomActions([NSAccessibilityCustomAction(name: "Ignore first attention item", target: self, selector: #selector(accessibleIgnore))])
+
         }
     }
     required init?(coder: NSCoder) { nil }
+    func refreshAccessibilityActions() {
+        switch kind {
+        case .pet:
+            setAccessibilityCustomActions([
+                NSAccessibilityCustomAction(name: runtime.localized("打开设置", "Open Settings"), target: self, selector: #selector(accessibleSettings)),
+                NSAccessibilityCustomAction(name: runtime.localized("切换静音", "Toggle Mute"), target: self, selector: #selector(accessibleMute)),
+                NSAccessibilityCustomAction(name: runtime.localized("结束回城", "End return"), target: self, selector: #selector(accessibleEnd))])
+        case .bubble:
+            setAccessibilityCustomActions([NSAccessibilityCustomAction(name: runtime.localized("忽略第一项提醒", "Ignore first attention item"), target: self, selector: #selector(accessibleIgnore))])
+        }
+    }
     func performClick(_ sender: Any?) { performClickAction() }
     override func accessibilityPerformPress() -> Bool { guard isEnabled else { return false }; performClickAction(); return true }
     @objc private func performClickAction() {
@@ -752,17 +762,17 @@ import CharCore
     override func rightMouseDown(with event: NSEvent) {
         if case let .bubble(end) = kind { runtime.ignore(end); return }
         let menu = NSMenu()
-        for (title, selector) in [("回城 (Ctrl+B)", #selector(homeAction)), ("Settings…", #selector(settingsAction)),
-                                  (runtime.settings.soundEnabled ? "Mute" : "Unmute", #selector(muteAction)),
-                                  ("结束回城", #selector(endAction)), ("Quit Char", #selector(quitAction))] {
+        for (title, selector) in [(runtime.localized("回城 (Ctrl+B)", "Return (Ctrl+B)"), #selector(homeAction)), (runtime.localized("设置…", "Settings…"), #selector(settingsAction)),
+                                  (runtime.settings.soundEnabled ? runtime.localized("静音", "Mute") : runtime.localized("取消静音", "Unmute"), #selector(muteAction)),
+                                  (runtime.localized("结束回城", "End return"), #selector(endAction)), (runtime.localized("退出 Char", "Quit Char"), #selector(quitAction))] {
             let item = NSMenuItem(title: title, action: selector, keyEquivalent: ""); item.target = self
             if selector == #selector(endAction) || selector == #selector(homeAction) { item.isEnabled = runtime.snapshot.hold != nil }
             menu.addItem(item)
         }
         if let surface = superview as? CompanionSurface {
             menu.addItem(.separator())
-            for (title, selector) in [("下一组气泡", #selector(CompanionSurface.nextBubbles)),
-                                      ("上一组气泡", #selector(CompanionSurface.previousBubbles))] {
+            for (title, selector) in [(runtime.localized("下一组气泡", "Next bubbles"), #selector(CompanionSurface.nextBubbles)),
+                                      (runtime.localized("上一组气泡", "Previous bubbles"), #selector(CompanionSurface.previousBubbles))] {
                 let item = NSMenuItem(title: title, action: selector, keyEquivalent: "")
                 item.target = surface; item.isEnabled = surface.canCycle; menu.addItem(item)
             }
@@ -983,13 +993,15 @@ import CharCore
                     : NSWorkspace.shared.urlForApplication(withBundleIdentifier: anchor.bundleIdentifier).map { NSWorkspace.shared.icon(forFile: $0.path) }
             }
             sourceIcon?.draw(in: NSRect(x: 54, y: 11, width: 17, height: 17))
-            if anchor.accuracy == .application { symbol("macwindow", in: NSRect(x: 5, y: 8, width: 16, height: 16), color: .systemOrange) }
+            if anchor.accuracy == .application { symbol(NavigationPresentation.applicationSymbol, in: NSRect(x: 5, y: 8, width: 16, height: 16), color: .systemOrange) }
             NSGraphicsContext.restoreGraphicsState()
         }
-        if runtime.snapshot.navigationFeedback == .fallback {
-            symbol("macwindow", in: NSRect(x: 55, y: 53, width: 18, height: 18), color: .systemOrange)
+        if runtime.snapshot.navigationFeedback == .exact {
+            symbol(NavigationPresentation.exactSymbol, in: NSRect(x: 55, y: 53, width: 18, height: 18), color: .systemGreen)
+        } else if runtime.snapshot.navigationFeedback == .fallback {
+            symbol(NavigationPresentation.applicationSymbol, in: NSRect(x: 55, y: 53, width: 18, height: 18), color: .systemOrange)
         } else if runtime.snapshot.navigationFeedback == .unavailable {
-            symbol("exclamationmark.circle.fill", in: NSRect(x: 55, y: 53, width: 18, height: 18), color: .systemRed)
+            symbol(NavigationPresentation.unavailableSymbol, in: NSRect(x: 55, y: 53, width: 18, height: 18), color: .systemRed)
         }
         NSGraphicsContext.restoreGraphicsState()
     }
