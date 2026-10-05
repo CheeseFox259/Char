@@ -24,6 +24,8 @@ extension CompanionRuntime {
     private func loadAgentIcon(for end: WorkEnd) -> NSImage? {
         guard let entry = pluginEntries.first(where: { $0.enabled && $0.plugin.workEnd == end }) else { return nil }
         if let url = pluginStore?.iconURL(for: entry.id), let image = NSImage(contentsOf: url) { return image }
+        if end == .pi, let url = Bundle.main.resourceURL?.appendingPathComponent("Icons/pi.png"),
+           let image = NSImage(contentsOf: url) { return image }
         // CLI clients retain their own identity, regardless of which terminal hosts them.
         let bundle: String?
         switch end {
