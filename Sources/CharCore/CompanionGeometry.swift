@@ -59,15 +59,17 @@ public enum CompanionGeometry {
         let center = CGPoint(x: pet.midX, y: pet.midY)
         let order = (0..<count).map { normalizedOffset($0 + offset, count: count) }
         let radius = radius(petSize: petSize, bubbleDistance: bubbleDistance)
-        return (0..<number).map { index in
+        return (0..<number).map { index -> Slot in
             let a = angle(slot: index, number: number, placement: placement, radius: radius)
             let point = CGPoint(x: center.x + cos(a) * radius, y: center.y + sin(a) * radius)
             let frame = CGRect(x: point.x - 22, y: point.y - 22, width: 44, height: 44)
             let overflow = count > capacity && index == number - 1
-            let indices = overflow ? Array(order.dropFirst(number - 1).prefix(3)) : []
-            let mini = indices.indices.map { miniIndex -> CGRect in
-                let a = .pi / 2 + Double(miniIndex) * 2 * .pi / 3
-                return CGRect(x: point.x + cos(a) * 11 - 9, y: point.y + sin(a) * 11 - 9, width: 18, height: 18)
+            let indices: [Int] = overflow ? Array(order.dropFirst(number - 1).prefix(3)) : []
+            let mini: [CGRect] = indices.indices.map { miniIndex -> CGRect in
+                let miniAngle: Double = Double.pi / 2 + Double(miniIndex) * 2 * Double.pi / 3
+                let miniX: CGFloat = point.x + CGFloat(cos(miniAngle) * 11) - 9
+                let miniY: CGFloat = point.y + CGFloat(sin(miniAngle) * 11) - 9
+                return CGRect(x: miniX, y: miniY, width: 18, height: 18)
             }
             return Slot(frame: frame, primaryIndex: overflow ? nil : order[index], overflowIndices: indices, miniFrames: mini)
         }
