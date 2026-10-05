@@ -14,7 +14,8 @@ args = parser.parse_args()
 
 def snapshot():
     fields = subprocess.check_output(['ps', '-p', str(args.pid), '-o', 'time=,rss=,command='], text=True).strip().split(maxsplit=2)
-    if len(fields) != 3 or '/Char.app/Contents/MacOS/Char' not in fields[2]:
+    # Isolated performance bundles use a distinct app name and bundle identifier.
+    if len(fields) != 3 or '.app/Contents/MacOS/Char' not in fields[2]:
         raise SystemExit('Choose the running Char app PID.')
     parts = [float(value) for value in fields[0].split(':')]
     cpu = sum(value * (60 ** index) for index, value in enumerate(reversed(parts)))

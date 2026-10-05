@@ -50,23 +50,76 @@ struct PluginSettingsView: View {
 }
 private struct SelectedPetPreview: NSViewRepresentable {
     let runtime: CompanionRuntime
-    let elapsed: TimeInterval
-    func makeNSView(context: Context) -> GraphicButton {
-        let view = GraphicButton(kind: .pet, runtime: runtime)
-        view.isEnabled = false
-        view.setAccessibilityRole(.image)
-        view.setAccessibilityLabel(runtime.localized("当前桌宠形象预览", "Selected pet preview"))
-        return view
+    let reduceMotion: Bool
+    func makeNSView(context: Context) -> PetPreviewView {
+        PetPreviewView(runtime: runtime)
     }
-    func updateNSView(_ view: GraphicButton, context: Context) {
-        view.setAccessibilityLabel(runtime.localized("当前桌宠形象预览", "Selected pet preview"))
-        view.elapsed = elapsed; view.clipElapsed = elapsed; view.needsDisplay = true
+    func updateNSView(_ view: PetPreviewView, context: Context) {
+        view.configure(reduceMotion: reduceMotion)
+    }
+    static func dismantleNSView(_ view: PetPreviewView, coordinator: ()) {
+        view.stopAnimation()
+    }
+}
+
+/// Keep the preview clock in AppKit: a frame must not invalidate the SwiftUI Form.
+@MainActor final class PetPreviewView: NSView {
+    private let pet: GraphicButton
+    private let started = ProcessInfo.processInfo.systemUptime
+    private var timer: Timer?
+    private var reduceMotion = false
+    var isAnimating: Bool { timer != nil }
+    var animationElapsed: TimeInterval { pet.elapsed }
+    var artworkPixelData: Data? { pet.artworkPixelData }
+
+    init(runtime: CompanionRuntime) {
+        pet = GraphicButton(kind: .pet, runtime: runtime)
+        super.init(frame: .zero)
+        pet.isEnabled = false
+        pet.setAccessibilityRole(.image)
+        addSubview(pet)
+    }
+    required init?(coder: NSCoder) { nil }
+    override func layout() {
+        super.layout()
+        pet.frame = bounds
+    }
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        updateAnimation()
+    }
+    func configure(reduceMotion: Bool) {
+        self.reduceMotion = reduceMotion
+        pet.reducedMotion = reduceMotion
+        pet.setAccessibilityLabel(pet.runtime.localized("当前桌宠形象预览", "Selected pet preview"))
+        renderFrame()
+        updateAnimation()
+    }
+    func stopAnimation() {
+        timer?.invalidate(); timer = nil
+    }
+    private func updateAnimation() {
+        guard window != nil, !reduceMotion else { stopAnimation(); return }
+        guard timer == nil else { return }
+        let clock = Timer(timeInterval: 1 / 12, repeats: true) { [weak self] _ in
+            MainActor.assumeIsolated {
+                guard let self, self.window?.occlusionState.contains(.visible) == true,
+                      !self.isHiddenOrHasHiddenAncestor, !self.visibleRect.isEmpty else { return }
+                self.renderFrame()
+            }
+        }
+        timer = clock
+        RunLoop.main.add(clock, forMode: .common)
+    }
+    private func renderFrame() {
+        let elapsed = reduceMotion ? 0 : ProcessInfo.processInfo.systemUptime - started
+        pet.elapsed = elapsed; pet.clipElapsed = elapsed
+        pet.refreshPetArtwork()
     }
 }
 struct AppearanceSettingsView: View {
     @ObservedObject var runtime: CompanionRuntime
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @State private var previewStarted = Date()
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             Picker(runtime.localized("放置方式", "Placement"), selection: Binding(get: { runtime.petPlacement }, set: { runtime.setPlacement($0) })) {
@@ -95,10 +148,8 @@ struct AppearanceSettingsView: View {
                 ForEach(runtime.skins, id: \.id) { skin in Text(skin.name).tag(skin.id) }
             }
             HStack(spacing: 20) {
-                TimelineView(.animation(minimumInterval: 1 / 12, paused: reduceMotion)) { timeline in
-                    SelectedPetPreview(runtime: runtime, elapsed: reduceMotion ? 0 : timeline.date.timeIntervalSince(previewStarted))
-                        .frame(width: 76, height: 76)
-                }
+                SelectedPetPreview(runtime: runtime, reduceMotion: reduceMotion)
+                    .frame(width: 76, height: 76)
                 VStack(spacing: 4) {
                     Image(nsImage: runtime.softwareIcon).resizable().interpolation(.high).frame(width: 64, height: 64)
                         .accessibilityLabel(runtime.localized("当前软件图标", "Selected application icon"))

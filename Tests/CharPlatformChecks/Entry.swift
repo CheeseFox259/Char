@@ -10,8 +10,14 @@ import ServiceManagement
     var activationSucceeds = true
     var uniqueInstance = true
     var activations: [(String, Int32?)] = []
+    var geometryQueries = 0
+    var identityQueries = 0
 
-    func foreground() -> ForegroundSnapshot? { current }
+    func foregroundApplication() -> ForegroundSnapshot? {
+        identityQueries += 1
+        return current.map { ForegroundSnapshot(bundleIdentifier: $0.bundleIdentifier, processID: $0.processID) }
+    }
+    func foreground() -> ForegroundSnapshot? { geometryQueries += 1; return current }
     func isRunning(bundleID: String, processID: Int32) -> Bool { live.contains(processID) }
     func hasUniqueRunningInstance(bundleID: String) -> Bool { uniqueInstance }
     func activate(bundleID: String, preferredProcessID: Int32?) async -> Bool {
@@ -101,8 +107,10 @@ import ServiceManagement
 
         apps.current = ForegroundSnapshot(bundleIdentifier: MacOSPlatform.warpBundleID, processID: 10, windowNumber: 5, displayID: 2)
         assert(platform.foreground()?.displayID == 2)
+        let geometryQueries = apps.geometryQueries
         assert(platform.captureSource()?.accuracy == .application)
         assert(platform.focusContext(for: nil).isAgent)
+        assert(apps.geometryQueries == geometryQueries && apps.identityQueries == 2, "capture and route checks must use identity without window geometry")
 
         apps.current = ForegroundSnapshot(bundleIdentifier: MacOSPlatform.tabbitBundleID, processID: 10)
         assert(platform.captureSource()?.accuracy == .application)
@@ -158,6 +166,7 @@ import ServiceManagement
         apps.live.remove(30)
         assert(platform.isAnchorValid(wechatAnchor) == false)
         platform.release(wechatAnchor)
+        assert(apps.geometryQueries == geometryQueries, "exact/application anchors and focus checks must not enumerate windows")
 
         let login = MockLogin()
         let controller = LoginItemController(service: login)

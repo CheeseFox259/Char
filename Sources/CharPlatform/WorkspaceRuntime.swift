@@ -6,10 +6,15 @@ import Foundation
 @MainActor public final class WorkspaceRuntime: ApplicationRuntime {
     public init() {}
 
-    public func foreground() -> ForegroundSnapshot? {
+    public func foregroundApplication() -> ForegroundSnapshot? {
         guard let app = NSWorkspace.shared.frontmostApplication,
               let bundleID = app.bundleIdentifier else { return nil }
-        let pid = app.processIdentifier
+        return ForegroundSnapshot(bundleIdentifier: bundleID, processID: app.processIdentifier)
+    }
+
+    public func foreground() -> ForegroundSnapshot? {
+        guard let identity = foregroundApplication() else { return nil }
+        let bundleID = identity.bundleIdentifier, pid = identity.processID
         // Read geometry and numeric IDs only. Window titles and contents are never requested.
         let windows = CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID) as? [[String: Any]] ?? []
         let geometry = windows.compactMap { window -> WindowGeometry? in

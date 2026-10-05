@@ -10,7 +10,7 @@ CLI 支持直接在 Warp 或 Warp + tmux 中运行。点击气泡激活对应工
 
 ## 下载与安装
 
-[下载 macOS v0.1.1](https://github.com/CheeseFox259/Char/releases/tag/v0.1.1)：支持 Apple Silicon 和 Intel，要求 macOS 13+。下载 DMG 后将 Char.app 拖到系统“应用程序”（`/Applications`）后启动；也可解压 ZIP 后复制到同一位置。无需本地构建；中英设置可随时切换。安装与签名说明见 [发布指南](docs/macos-release.md)。
+[下载 macOS v0.1.2](https://github.com/CheeseFox259/Char/releases/tag/v0.1.2)：支持 Apple Silicon 和 Intel，要求 macOS 13+。下载 DMG 后将 Char.app 拖到系统“应用程序”（`/Applications`）后启动；也可解压 ZIP 后复制到同一位置。无需本地构建；中英设置可随时切换。安装与签名说明见 [发布指南](docs/macos-release.md)。
 
 ## 构建与检查
 

@@ -16,6 +16,8 @@ public struct ForegroundSnapshot: Equatable, Sendable {
 }
 
 @MainActor public protocol ApplicationRuntime {
+    /// Identity only; callers that do not need a display must not query window geometry.
+    func foregroundApplication() -> ForegroundSnapshot?
     func foreground() -> ForegroundSnapshot?
     func isRunning(bundleID: String, processID: Int32) -> Bool
     func hasUniqueRunningInstance(bundleID: String) -> Bool
@@ -93,7 +95,7 @@ public struct ForegroundSnapshot: Equatable, Sendable {
     }
 
     public func captureSource() -> ReturnAnchor? {
-        guard let source = apps.foreground(), source.bundleIdentifier != "com.cheesefox.char",
+        guard let source = apps.foregroundApplication(), source.bundleIdentifier != "com.cheesefox.char",
               source.bundleIdentifier != Bundle.main.bundleIdentifier else { return nil }
         var captured: Captured = .application(processID: source.processID, bundleID: source.bundleIdentifier)
         var accuracy: AnchorAccuracy = .application
@@ -134,7 +136,7 @@ public struct ForegroundSnapshot: Equatable, Sendable {
     }
 
     public func focusContext(for anchor: ReturnAnchor?) -> FocusContext {
-        let current = apps.foreground()
+        let current = apps.foregroundApplication()
         let isAgent = current.map { foreground in plugins.contains { plugin in plugin.workEnd != nil && plugin.bundleIdentifier == foreground.bundleIdentifier } } ?? false
         guard let anchor, let current, isAnchorValid(anchor) == true, let captured = anchors[anchor.id] else {
             return FocusContext(isAgent: isAgent)

@@ -238,11 +238,13 @@ actor ObservationWorker {
     }
     func retryHomeShortcut() { homeShortcut.retry(); refreshHomeShortcutStatus() }
     func refreshHomeShortcutStatus() {
+        let next: String
         switch homeShortcut.status {
-        case .inactive: homeShortcutStatus = localized("Ctrl+B 未启用", "Ctrl+B inactive")
-        case .registered: homeShortcutStatus = smoke ? localized("演示：Ctrl+B 回城", "Fixture: Ctrl+B return") : localized("Ctrl+B 已注册，可回城", "Ctrl+B ready")
-        case let .failed(code): homeShortcutStatus = localized("Ctrl+B 注册失败（\(code)）", "Ctrl+B registration failed (\(code))")
+        case .inactive: next = localized("Ctrl+B 未启用", "Ctrl+B inactive")
+        case .registered: next = smoke ? localized("演示：Ctrl+B 回城", "Fixture: Ctrl+B return") : localized("Ctrl+B 已注册，可回城", "Ctrl+B ready")
+        case let .failed(code): next = localized("Ctrl+B 注册失败（\(code)）", "Ctrl+B registration failed (\(code))")
         }
+        if homeShortcutStatus != next { homeShortcutStatus = next }
     }
     func petClicked() {
         guard !busy else { return }
@@ -356,7 +358,7 @@ actor ObservationWorker {
 
     func windowWillClose(_ notification: Notification) {
         guard let window = notification.object as? NSWindow, window === settingsWindow else { return }
-        // A closed TimelineView otherwise keeps an offscreen SwiftUI layout/render loop alive.
+        // Release the hosting view and its preview clock when settings close.
         window.contentView = nil
         settingsWindow = nil
     }
@@ -537,6 +539,56 @@ actor ObservationWorker {
             // visible pixels, allowing <1 eight-bit level of average error per channel.
             let error = zip(a, b).reduce(0) { $0 + abs(Int($1.0) - Int($1.1)) }
             return Double(error) / Double(a.count) < 1
+        }
+        if CommandLine.arguments.contains("--settings-preview-check") {
+            func findPreview(in view: NSView) -> PetPreviewView? {
+                if let preview = view as? PetPreviewView { return preview }
+                return view.subviews.lazy.compactMap { findPreview(in: $0) }.first
+            }
+            var statusPublications = 0
+            let subscription = $homeShortcutStatus.dropFirst().sink { _ in statusPublications += 1 }
+            for _ in 0..<5 { publish() }
+            guard statusPublications == 0 else { fail("unchanged shortcut status invalidated settings") }
+            setLanguage(.chinese)
+            guard statusPublications == 1, homeShortcutStatus == "Ctrl+B 未启用" else { fail("shortcut translation did not publish") }
+            setLanguage(.english)
+            guard statusPublications == 2, homeShortcutStatus == "Ctrl+B inactive" else { fail("shortcut translation did not restore") }
+            subscription.cancel()
+            showSettings()
+            try? await Task.sleep(nanoseconds: 300_000_000)
+            guard let content = settingsWindow?.contentView, let preview = findPreview(in: content) else { fail("settings preview missing") }
+            preview.configure(reduceMotion: false)
+            let initialElapsed = preview.animationElapsed
+            try? await Task.sleep(nanoseconds: 300_000_000)
+            guard preview.isAnimating, preview.animationElapsed > initialElapsed else { fail("visible preview clock did not advance") }
+            preview.isHidden = true
+            let hiddenElapsed = preview.animationElapsed
+            try? await Task.sleep(nanoseconds: 200_000_000)
+            guard preview.animationElapsed == hiddenElapsed else { fail("hidden preview kept rendering") }
+            preview.isHidden = false
+            try? await Task.sleep(nanoseconds: 200_000_000)
+            guard preview.animationElapsed > hiddenElapsed else { fail("visible preview did not resume rendering") }
+            guard let skinStore, let sample = Bundle.main.resourceURL?.appendingPathComponent("Skins/example.charpet") else { fail("preview skin fixture missing") }
+            do {
+                let defaultArtwork = preview.artworkPixelData
+                let skin = try skinStore.importPackage(at: sample)
+                selectSkin(skin.id)
+                try? await Task.sleep(nanoseconds: 200_000_000)
+                guard preview.artworkPixelData != nil, preview.artworkPixelData != defaultArtwork else { fail("preview did not update selected skin") }
+                deleteSkin(skin.id)
+                try? await Task.sleep(nanoseconds: 200_000_000)
+                guard preview.artworkPixelData == defaultArtwork else { fail("preview did not restore default skin") }
+            } catch { fail("preview skin fixture: \(error)") }
+            preview.configure(reduceMotion: true)
+            try? await Task.sleep(nanoseconds: 200_000_000)
+            guard !preview.isAnimating, preview.animationElapsed == 0 else { fail("Reduce Motion preview kept animating") }
+            preview.configure(reduceMotion: false)
+            guard preview.isAnimating else { fail("preview clock did not resume") }
+            settingsWindow?.close()
+            try? await Task.sleep(nanoseconds: 200_000_000)
+            guard settingsWindow == nil, preview.window == nil, !preview.isAnimating else { fail("closed preview retained its clock") }
+            print("Char settings preview check passed: unchanged status gate/translation, visible/hidden clock, skin selection/restoration, Reduce Motion, resume, close cleanup")
+            NSApp.terminate(nil); return
         }
         if CommandLine.arguments.contains("--appearance-icon-check") {
             guard let skinStore, let sample = Bundle.main.resourceURL?.appendingPathComponent("Skins/example.charpet") else { fail("icon fixture missing") }

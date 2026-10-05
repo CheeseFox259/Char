@@ -1,8 +1,8 @@
-# macOS v0.1.1
+# macOS v0.1.2
 
 ## 下载与安装
 
-[GitHub Release](https://github.com/CheeseFox259/Char/releases/tag/v0.1.1) 提供 Universal ZIP、DMG 和 SHA256SUMS。两个可执行文件均包含 arm64 与 x86_64，要求 macOS 13 或更高版本。Intel 架构已编译并检查，运行验收在 Apple Silicon 上进行。v0.1.1 的附件由 GitHub Actions 构建，安装无需本地工具链。
+[GitHub Release](https://github.com/CheeseFox259/Char/releases/tag/v0.1.2) 提供 Universal ZIP、DMG 和 SHA256SUMS。两个可执行文件均包含 arm64 与 x86_64，要求 macOS 13 或更高版本。Intel 架构已编译并检查，运行验收在 Apple Silicon 上进行。附件由 GitHub Actions 构建，安装无需本地工具链。
 
 1. 下载 DMG，将 Char.app 拖到系统“应用程序”（`/Applications`）；或解压 ZIP 后复制到同一位置。`~/Applications` 是独立的用户应用目录，系统“应用程序”窗口不会直接列出其中的 App。
 2. 从这个固定位置启动，避免同时运行旧的 build/Char.app。
@@ -18,6 +18,11 @@ shasum -a 256 -c SHA256SUMS
 ```
 
 ## 本次变化
+
+- 设置预览局部更新，Ctrl+B 状态只在变化时发布；静止设置的七气泡演示 CPU 对照由 37.79% 降至 2.65%。不可见预览跳过绘制，减少动态效果与关闭设置时停止时钟。测试条件与范围见 [性能实测](performance-optimization-2026-10-06.md)。
+- 前台身份与显示器几何查询分开，来源捕获与回城状态检查减少重复几何读取；焦点跟随继续使用 150 ms 几何检查。
+
+### v0.1.1 已包含的变化
 
 - 默认项目与软件图标采用右边缘探头的桌宠形象。
 - 形象包可声明 appIcon，运行中的应用图标、状态栏图标和设置预览随形象切换；旧形象包自动生成图标。删除所选形象会恢复默认。Finder/Launchpad 使用签名包内的默认图标。
@@ -41,8 +46,8 @@ scripts/check.sh
 scripts/package-release.sh
 ```
 
-产物位于 `build/release/0.1.1/`。打包脚本分别编译两种架构，通过 lipo 合并 Char 与 char-hook，重新签名，制作 ZIP、只读 DMG 和校验和；不会复制开发 AGENTS.md 或安装用户观察 Hook。常规安装使用已发布附件，不需要执行重建命令。
+产物位于 `build/release/0.1.2/`。打包脚本分别编译两种架构，通过 lipo 合并 Char 与 char-hook，重新签名，制作 ZIP、只读 DMG 和校验和；不会复制开发 AGENTS.md 或安装用户观察 Hook。常规安装使用已发布附件，不需要执行重建命令。
 
 ## 验证边界
 
-图标行为证据见 [图标验证记录](appearance-icons-verification-2026-10-05.md)，先前功能证据见 [v0.1.0 验证记录](release-verification-0.1.0.md)。没有执行真实注销/重新登录、Intel 实机、全套 VoiceOver 或新的跨版本性能基准；这些不能由编译或烟测替代。历史性能数据仍见 [性能分析](companion-performance-2026-10-04.md)，不声称这些数据是本版的新测量。
+设置与查询优化证据见 [性能实测](performance-optimization-2026-10-06.md)，图标行为证据见 [图标验证记录](appearance-icons-verification-2026-10-05.md)，先前功能证据见 [v0.1.0 验证记录](release-verification-0.1.0.md)。没有执行真实注销/重新登录、Intel 实机或全套 VoiceOver；这些不能由编译或烟测替代。演示性能结果不代表真实观察模式的相同降幅。
