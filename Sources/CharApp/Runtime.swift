@@ -676,6 +676,10 @@ actor ObservationWorker {
                 guard pet.artworkPixelData == withoutBadge else { fail("static custom frame retained removed source badge") }
                 // A failed return requires an active Hold. This fixture has already
                 // ended it, so exercise a failed visit to create navigation feedback.
+                let navigationKey = SessionKey(workEnd: .claudeCode, nativeID: "fixture-static-navigation")
+                router.ingest([ObservationEvent(key: navigationKey, target: SessionTarget(bundleIdentifier: "dev.warp.Warp-Stable"),
+                                                timestamp: Date(), state: .stopped(.question))])
+                router.advance(to: Date())
                 guard let attention = router.nextVisit(for: .claudeCode) else { fail("static frame navigation fixture missing") }
                 router.completeVisit(key: attention.key, outcome: .unavailable, sourceAnchor: nil, at: Date())
                 publish(); pet.refreshPetArtwork()
