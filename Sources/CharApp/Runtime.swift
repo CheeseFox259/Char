@@ -517,6 +517,44 @@ actor ObservationWorker {
         func fail(_ message: String) -> Never {
             FileHandle.standardError.write(Data("Char fixture smoke failed: \(message)\n".utf8)); exit(1)
         }
+        func iconPixels(_ image: NSImage?) -> Data? {
+            guard let image else { return nil }
+            let bitmap = NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: 256, pixelsHigh: 256,
+                bitsPerSample: 8, samplesPerPixel: 4, hasAlpha: true, isPlanar: false,
+                colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0)!
+            bitmap.bitmapData!.initialize(repeating: 0, count: bitmap.bytesPerRow * bitmap.pixelsHigh)
+            let old = NSGraphicsContext.current
+            NSGraphicsContext.current = NSGraphicsContext(bitmapImageRep: bitmap)
+            NSGraphicsContext.current?.imageInterpolation = .high
+            NSColor.white.setFill(); NSRect(x: 0, y: 0, width: 256, height: 256).fill()
+            image.draw(in: NSRect(x: 0, y: 0, width: 256, height: 256))
+            NSGraphicsContext.current = old
+            return Data(bytes: bitmap.bitmapData!, count: bitmap.bytesPerRow * bitmap.pixelsHigh)
+        }
+        func iconsMatch(_ lhs: NSImage?, _ rhs: NSImage?) -> Bool {
+            guard let a = iconPixels(lhs), let b = iconPixels(rhs), a.count == b.count else { return false }
+            // AppKit rebuilds the app icon's representations and antialiasing. Compare
+            // visible pixels, allowing <1 eight-bit level of average error per channel.
+            let error = zip(a, b).reduce(0) { $0 + abs(Int($1.0) - Int($1.1)) }
+            return Double(error) / Double(a.count) < 1
+        }
+        if CommandLine.arguments.contains("--appearance-icon-check") {
+            guard let skinStore, let sample = Bundle.main.resourceURL?.appendingPathComponent("Skins/example.charpet") else { fail("icon fixture missing") }
+            do {
+                let originalApp = NSApp.applicationIconImage?.copy() as? NSImage
+                let originalMenu = statusBar?.iconImage?.copy() as? NSImage
+                let skin = try skinStore.importPackage(at: sample)
+                selectSkin(skin.id)
+                guard !iconsMatch(softwareIcon, originalApp) else { fail("icon fixture must distinguish default from authored artwork") }
+                guard iconsMatch(NSApp.applicationIconImage, softwareIcon),
+                      iconsMatch(statusBar?.iconImage, softwareIcon), statusBar?.representedSkinID == skin.id else { fail("targeted icon selection") }
+                deleteSkin(skin.id)
+                guard iconsMatch(NSApp.applicationIconImage, originalApp), iconsMatch(statusBar?.iconImage, originalMenu),
+                      statusBar?.representedSkinID == "char.default" else { fail("targeted icon restoration") }
+                print("Char appearance icon check passed: authored/default pixel content, menu binding and delete restoration")
+                NSApp.terminate(nil); return
+            } catch { fail("icon fixture: \(error)") }
+        }
         if CommandLine.arguments.contains("--space-motion-check") {
             panel.surface.prepareSpaceAppearance()
             guard panel.surface.visualOpacity == 0,
@@ -665,15 +703,13 @@ actor ObservationWorker {
         guard !panel.surface.isSpaceFeedbackActive, panel.surface.pet.spaceTuck == 0, panel.surface.visualOpacity == 1, panel.surface.sceneLayer?.opacity == 1, panel.alphaValue == 1 else { fail("Space feedback completion") }
         if let sample = Bundle.main.resourceURL?.appendingPathComponent("Skins/example.charpet"), let skinStore {
             do {
-                let defaultIcon = NSApp.applicationIconImage?.tiffRepresentation
-                let defaultMenuIcon = statusBar?.iconImage?.tiffRepresentation
+                let defaultIcon = NSApp.applicationIconImage?.copy() as? NSImage
+                let defaultMenuIcon = statusBar?.iconImage?.copy() as? NSImage
                 let skin = try skinStore.importPackage(at: sample)
                 selectSkin(skin.id)
                 guard customPetImage(clip: "idle", elapsed: 0) != nil else { fail("imported skin rendering") }
-                guard NSApp.applicationIconImage?.tiffRepresentation == softwareIcon.tiffRepresentation,
-                      NSApp.applicationIconImage?.tiffRepresentation != defaultIcon,
-                      statusBar?.representedSkinID == skin.id,
-                      statusBar?.iconImage?.tiffRepresentation != defaultMenuIcon else { fail("appearance software/menu icon did not follow selection") }
+                guard !iconsMatch(softwareIcon, defaultIcon), iconsMatch(NSApp.applicationIconImage, softwareIcon),
+                      iconsMatch(statusBar?.iconImage, softwareIcon), statusBar?.representedSkinID == skin.id else { fail("appearance software/menu icon did not follow selection") }
                 let pet = panel.surface.pet
                 pet.clip = "idle"; pet.clipElapsed = 0; pet.feedbackElapsed = nil
                 router.clearNavigationFeedback(); publish()
@@ -705,8 +741,8 @@ actor ObservationWorker {
                 guard pet.artworkPixelData == withoutBadge else { fail("static custom frame retained navigation feedback") }
                 deleteSkin(skin.id)
                 guard selectedSkinID == "char.default" else { fail("skin deletion fallback") }
-                guard NSApp.applicationIconImage?.tiffRepresentation == defaultIcon,
-                      statusBar?.iconImage?.tiffRepresentation == defaultMenuIcon,
+                guard iconsMatch(NSApp.applicationIconImage, defaultIcon),
+                      iconsMatch(statusBar?.iconImage, defaultMenuIcon),
                       statusBar?.representedSkinID == "char.default" else { fail("deleted skin did not restore software/menu icon") }
             } catch { fail("sample skin import: \(error)") }
         } else { fail("bundled sample missing") }
