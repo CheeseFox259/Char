@@ -151,7 +151,12 @@ actor ObservationWorker {
         else {
             refreshStatus()
             if settings.launchAtLogin {
-                do { _ = try login?.setEnabled(true) } catch { setupMessage = error.localizedDescription }
+                do {
+                    _ = try login?.setEnabled(true)
+                    loginFailure = nil
+                } catch {
+                    loginFailure = (error as? LoginItemError) ?? .failed(error.localizedDescription)
+                }
                 refreshStatus()
             }
         }
