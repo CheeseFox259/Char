@@ -105,6 +105,7 @@ extension CompanionRuntime {
     func importPlugin() {
         let picker = NSOpenPanel(); picker.canChooseDirectories = true; picker.canChooseFiles = false
         picker.title = localized("导入 .charintegration 插件目录", "Import .charintegration package")
+        picker.prompt = localized("导入", "Import")
         if picker.runModal() == .OK, let url = picker.url {
             do { try pluginStore?.importPackage(at: url); reloadPlugins() }
             catch { setupMessage = localized("导入失败：\(error)", "Import failed: \(error)") }
@@ -113,6 +114,7 @@ extension CompanionRuntime {
     func importSkin() {
         let picker = NSOpenPanel(); picker.canChooseDirectories = true; picker.canChooseFiles = false
         picker.title = localized("导入 .charpet 形象目录", "Import .charpet package")
+        picker.prompt = localized("导入", "Import")
         if picker.runModal() == .OK, let url = picker.url {
             do {
                 if let skin = try skinStore?.importPackage(at: url) { try skinStore?.select(id: skin.id) }

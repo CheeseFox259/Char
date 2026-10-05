@@ -292,6 +292,8 @@ actor ObservationWorker {
         let picker = NSOpenPanel()
         picker.canChooseDirectories = false; picker.allowsMultipleSelection = false
         picker.allowedContentTypes = [.audio]
+        picker.title = localized("选择音频", "Choose audio")
+        picker.prompt = localized("选择", "Choose")
         if picker.runModal() == .OK, let path = picker.url?.path {
             guard NSSound(contentsOfFile: path, byReference: true) != nil else {
                 setupMessage = localized("无法播放所选音频。", "The selected audio file cannot be played by macOS."); return
