@@ -1,0 +1,9 @@
+{
+  "name": "char-vscode-return",
+  "version": "0.1.0",
+  "private": true,
+  "main": "./extension.js",
+  "engines": { "vscode": "^1.85.0" },
+  "activationEvents": ["onStartupFinished"],
+  "scripts": { "test": "node --test" }
+}

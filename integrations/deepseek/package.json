@@ -1,0 +1,16 @@
+{
+  "name": "@char/deepseek-observer",
+  "version": "0.1.0",
+  "type": "module",
+  "main": "index.js",
+  "files": [
+    "index.js",
+    "README.md"
+  ],
+  "scripts": {
+    "test": "node --test index.test.js"
+  },
+  "engines": {
+    "dsh": "0.2.0-rc.2"
+  }
+}
