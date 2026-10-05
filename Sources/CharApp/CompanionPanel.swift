@@ -306,16 +306,11 @@ import CharCore
     @objc fileprivate func nextBubbles() -> Bool { cycleBubbles(by: 1) }
     @objc fileprivate func previousBubbles() -> Bool { cycleBubbles(by: -1) }
     func spaceFeedback() {
-        // A display migration already owns the shared departure/arrival pose.
-        guard movement == nil else { return }
+        // A Space notification is delivered after the system transition. Never
+        // replay departure/arrival on a scene that is already fully visible.
+        guard movement == nil, spaceLifecycle.state == .prepared else { return }
         spaceChangeObserved = true; visibilityRestoreAt = nil
-        if spaceLifecycle.state == .prepared { beginSpaceArrival() }
-        else if spaceLifecycle.beginVisibleDeparture() {
-            // Public AppKit reports the completed Space change, not gesture start.
-            // A continuously visible all-Spaces panel withdraws and reappears once.
-            spaceAt = ProcessInfo.processInfo.systemUptime
-        }
-        ensureClock()
+        beginSpaceArrival(); ensureClock()
     }
     func returnFeedback() { pet.feedbackClip = "return"; feedbackAt = ProcessInfo.processInfo.systemUptime; ensureClock() }
     func pressFeedback() { pet.feedbackClip = "press"; feedbackAt = ProcessInfo.processInfo.systemUptime; ensureClock() }
@@ -386,15 +381,7 @@ import CharCore
         }
         if let start = spaceAt, movement == nil {
             let elapsed = now - start
-            if spaceLifecycle.state == .departing {
-                let duration = reduce ? 0.10 : 0.18
-                let withdrawal = CGFloat(CompanionGeometry.departureProgress(elapsed / duration))
-                visualOpacity = 1 - withdrawal
-                pet.spaceTuck = reduce ? 0 : withdrawal
-                pet.edgeRetraction = placement == .desktop || reduce ? 0 : withdrawal * (pet.frame.width / 2 + 8)
-                pet.clip = placement == .desktop ? "depart" : "edgeHide"; pet.clipElapsed = elapsed
-                if elapsed >= duration, spaceLifecycle.beginArrivalAfterDeparture() { startSpaceArrival() }
-            } else if spaceLifecycle.state == .arriving {
+            if spaceLifecycle.state == .arriving {
                 let duration = reduce ? 0.16 : 0.60
                 if elapsed >= duration { finishSpaceMotion() }
                 else {
@@ -504,6 +491,10 @@ import CharCore
     let graphicLayer = CALayer()
     private let textureLayer = CALayer()
     private let hoverLayer = CALayer()
+    private let hoverPulseLayer = CALayer()
+    private let hoverHalo = CALayer()
+    private let hoverInnerLight = CAShapeLayer()
+    private let hoverOuterLight = CAShapeLayer()
     private var externalArtwork = false
     private var petArtworkKey = ""
     private var customImageIdentity: ObjectIdentifier?
@@ -552,10 +543,28 @@ import CharCore
     private let hoverRim = CAShapeLayer()
     private var rimBounds = NSRect.zero
     func updateHoverRim() {
-        if rimBounds != textureLayer.bounds { rimBounds = textureLayer.bounds; hoverRim.path = CGPath(ellipseIn: textureLayer.bounds.insetBy(dx: 2, dy: 2), transform: nil) }
+        guard case .bubble = kind else { return }
         CATransaction.begin(); CATransaction.setDisableActions(true)
-        hoverRim.opacity = Float(hover)
+        if rimBounds != textureLayer.bounds {
+            rimBounds = textureLayer.bounds
+            hoverHalo.frame = rimBounds
+            for (rim, inset) in [(hoverRim, CGFloat(2)), (hoverInnerLight, CGFloat(3.5)), (hoverOuterLight, CGFloat(0.5))] {
+                rim.frame = rimBounds
+                rim.path = CGPath(ellipseIn: rimBounds.insetBy(dx: inset, dy: inset), transform: nil)
+                rim.shadowPath = rim.path
+            }
+        }
+        hoverHalo.opacity = Float(hover)
         hoverLayer.setAffineTransform(CGAffineTransform(translationX: 0, y: hover * 3).scaledBy(x: 1 + hover * 0.09, y: 1 + hover * 0.09))
+        if hover > 0.10 && !reducedMotion && !isHidden {
+            if hoverPulseLayer.animation(forKey: "hover-pulse") == nil {
+                let pulse = CAKeyframeAnimation(keyPath: "transform.scale")
+                pulse.values = [1, 1.035, 1]; pulse.keyTimes = [0, 0.5, 1]
+                pulse.duration = 1.8; pulse.repeatCount = .infinity
+                pulse.timingFunctions = [CAMediaTimingFunction(name: .easeInEaseOut), CAMediaTimingFunction(name: .easeInEaseOut)]
+                hoverPulseLayer.add(pulse, forKey: "hover-pulse")
+            }
+        } else { hoverPulseLayer.removeAnimation(forKey: "hover-pulse") }
         CATransaction.commit()
     }
     var spaceTuck: CGFloat = 0
@@ -585,11 +594,14 @@ import CharCore
         wantsLayer = true
         graphicLayer.bounds = NSRect(x: 0, y: 0, width: 44, height: 44)
         hoverLayer.frame = graphicLayer.bounds
+        hoverPulseLayer.frame = graphicLayer.bounds
         textureLayer.frame = graphicLayer.bounds
         textureLayer.contentsScale = 2
-        graphicLayer.addSublayer(hoverLayer); hoverLayer.addSublayer(textureLayer); layer?.addSublayer(graphicLayer)
+        graphicLayer.addSublayer(hoverLayer); hoverLayer.addSublayer(hoverPulseLayer)
+        hoverPulseLayer.addSublayer(textureLayer); layer?.addSublayer(graphicLayer)
         let actions: [String: CAAction] = ["contents": NSNull(), "bounds": NSNull(), "position": NSNull(), "transform": NSNull(), "opacity": NSNull()]
         graphicLayer.actions = actions; textureLayer.actions = actions; hoverLayer.actions = actions
+        hoverPulseLayer.actions = actions; hoverHalo.actions = actions
         setAccessibilityRole(.button)
         switch kind {
         case .pet:
@@ -598,10 +610,19 @@ import CharCore
                 NSAccessibilityCustomAction(name: "Toggle Mute", target: self, selector: #selector(accessibleMute)),
                 NSAccessibilityCustomAction(name: "结束回城", target: self, selector: #selector(accessibleEnd))])
         case .bubble:
-            hoverRim.fillColor = NSColor.clear.cgColor
-            hoverRim.strokeColor = NSColor.white.withAlphaComponent(0.95).cgColor
-            hoverRim.lineWidth = 2; hoverRim.opacity = 0
-            textureLayer.addSublayer(hoverRim)
+            for rim in [hoverRim, hoverInnerLight, hoverOuterLight] {
+                rim.fillColor = NSColor.clear.cgColor; rim.actions = actions
+            }
+            hoverRim.strokeColor = NSColor(calibratedWhite: 0.20, alpha: 1).cgColor
+            hoverRim.lineWidth = 1.8
+            for rim in [hoverInnerLight, hoverOuterLight] {
+                rim.strokeColor = NSColor.white.withAlphaComponent(0.92).cgColor
+                rim.lineWidth = 1.2; rim.shadowColor = NSColor.white.cgColor
+                rim.shadowRadius = 2; rim.shadowOpacity = 0.65; rim.shadowOffset = .zero
+            }
+            hoverHalo.opacity = 0
+            hoverHalo.addSublayer(hoverOuterLight); hoverHalo.addSublayer(hoverInnerLight); hoverHalo.addSublayer(hoverRim)
+            hoverPulseLayer.addSublayer(hoverHalo)
             setAccessibilityCustomActions([NSAccessibilityCustomAction(name: "Ignore first attention item", target: self, selector: #selector(accessibleIgnore))])
         }
     }
@@ -691,6 +712,7 @@ import CharCore
         if !externalArtwork {
             graphicLayer.bounds = bounds; graphicLayer.position = NSPoint(x: bounds.midX, y: bounds.midY)
             hoverLayer.frame = graphicLayer.bounds
+            hoverPulseLayer.frame = graphicLayer.bounds
             textureLayer.frame = graphicLayer.bounds
             refreshPetArtwork()
         }
@@ -712,6 +734,7 @@ import CharCore
         graphicLayer.bounds = NSRect(origin: .zero, size: frame.size)
         graphicLayer.position = NSPoint(x: frame.midX, y: frame.midY)
         hoverLayer.frame = graphicLayer.bounds
+        hoverPulseLayer.frame = graphicLayer.bounds
         textureLayer.frame = graphicLayer.bounds
         CATransaction.commit()
         refreshPetArtwork()
@@ -724,6 +747,7 @@ import CharCore
         let wasMiniature = self.miniature, wasVisible = !isHidden
         self.miniature = miniature; self.frame = frame
         isHidden = !visible
+        if !visible { hover = 0; updateHoverRim() }
         presentationGeneration += 1; let generation = presentationGeneration
         graphicLayer.isHidden = !visible && (!animated || opacity <= 0)
         let target = NSPoint(x: frame.midX, y: frame.midY)
@@ -731,6 +755,7 @@ import CharCore
         CATransaction.begin(); CATransaction.setDisableActions(true)
         graphicLayer.bounds = NSRect(x: 0, y: 0, width: 44, height: 44)
         hoverLayer.frame = graphicLayer.bounds
+        hoverPulseLayer.frame = graphicLayer.bounds
         textureLayer.frame = graphicLayer.bounds
         graphicLayer.position = target
         graphicLayer.setAffineTransform(CGAffineTransform(scaleX: targetScale, y: targetScale))
@@ -805,6 +830,7 @@ import CharCore
         textureLayer.contents = renderedImage
     }
     func configureIdle(reduced: Bool) {
+        reducedMotion = reduced; updateHoverRim()
         if reduced { textureLayer.removeAnimation(forKey: "idle"); return }
         guard textureLayer.animation(forKey: "idle") == nil else { return }
         let rotate = CAKeyframeAnimation(keyPath: "transform.rotation.z")

@@ -105,11 +105,6 @@ struct CompanionGeometryChecks {
         try check(!space.beginPreparedArrival(), "late workspace notification cannot replay completed arrival")
         try check(space.prepareHiddenAppearance(), "a new hide cycle can animate again")
         space.finishArrival()
-        try check(space.beginVisibleDeparture(), "confirmed visible Space change withdraws")
-        try check(!space.beginVisibleDeparture(), "duplicate signal cannot restart departure")
-        try check(space.beginArrivalAfterDeparture())
-        try check(!space.beginVisibleDeparture(), "arrival cannot be restarted by duplicates")
-        try check(space.prepareHiddenAppearance(), "hide interrupts the cycle before next visible frame")
         for progress in stride(from: 0.0, through: 0.99, by: 0.01) {
             try check(CompanionGeometry.orbitProgress(progress + 0.01) >= CompanionGeometry.orbitProgress(progress), "orbit must remain monotone on reversal")
         }

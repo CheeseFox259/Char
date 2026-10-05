@@ -515,10 +515,10 @@ actor ObservationWorker {
             guard !panel.surface.isSpaceFeedbackActive, panel.surface.visualOpacity == 1 else { fail("arrival did not finish") }
             NSWorkspace.shared.notificationCenter.post(name: NSWorkspace.activeSpaceDidChangeNotification, object: NSWorkspace.shared)
             try? await Task.sleep(nanoseconds: 80_000_000)
-            guard panel.surface.isSpaceFeedbackActive, panel.surface.visualOpacity < 1 else { fail("visible Space change has no departure") }
+            guard !panel.surface.isSpaceFeedbackActive, panel.surface.visualOpacity == 1 else { fail("already-visible Space replayed appearance") }
             try? await Task.sleep(nanoseconds: 1_000_000_000)
-            guard !panel.surface.isSpaceFeedbackActive, panel.surface.visualOpacity == 1 else { fail("departure/arrival did not settle") }
-            print("Char Space motion check passed: transparent preparation, confirmed arrival, visible departure/arrival")
+            guard !panel.surface.isSpaceFeedbackActive, panel.surface.visualOpacity == 1 else { fail("visible Space did not remain continuous") }
+            print("Char Space motion check passed: transparent preparation, confirmed arrival, no late visible replay")
             NSApp.terminate(nil); return
         }
         if CommandLine.arguments.contains("--orbit-path-check") {
@@ -621,9 +621,9 @@ actor ObservationWorker {
         }
         setPlacement(.desktop)
         try? await Task.sleep(nanoseconds: 450_000_000)
-        // Actual workspace changes animate even when the all-Spaces panel stays visible.
+        // A scene already visible after the system transition must never replay.
         NSWorkspace.shared.notificationCenter.post(name: NSWorkspace.activeSpaceDidChangeNotification, object: NSWorkspace.shared)
-        guard panel.surface.isSpaceFeedbackActive else { fail("visible Space did not begin departure") }
+        guard !panel.surface.isSpaceFeedbackActive else { fail("visible Space replayed appearance") }
         try? await Task.sleep(nanoseconds: 900_000_000)
         panel.surface.prepareSpaceAppearance()
         guard panel.surface.visualOpacity == 0, panel.surface.sceneLayer?.opacity == 0 else { fail("hidden Space first frame visible") }
