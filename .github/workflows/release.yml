@@ -36,7 +36,9 @@ jobs:
           ditto -x -k "Char-$CHAR_VERSION-macos-universal.zip" verify-zip
           codesign --verify --deep --strict verify-zip/Char.app
           for executable in Char char-hook; do
-            lipo -verify_arch arm64 x86_64 "verify-zip/Char.app/Contents/MacOS/$executable"
+            archs=$(lipo -archs "verify-zip/Char.app/Contents/MacOS/$executable")
+            [[ " $archs " == *" arm64 "* ]]
+            [[ " $archs " == *" x86_64 "* ]]
           done
           hdiutil verify "Char-$CHAR_VERSION-macos-universal.dmg"
       - name: Upload draft release
