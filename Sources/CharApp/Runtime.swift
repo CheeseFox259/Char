@@ -503,6 +503,24 @@ actor ObservationWorker {
         func fail(_ message: String) -> Never {
             FileHandle.standardError.write(Data("Char fixture smoke failed: \(message)\n".utf8)); exit(1)
         }
+        if CommandLine.arguments.contains("--space-motion-check") {
+            panel.surface.prepareSpaceAppearance()
+            guard panel.surface.visualOpacity == 0,
+                  panel.surface.sceneLayer?.opacity == 0 else { fail("hidden Space first frame is not transparent") }
+            NSWorkspace.shared.notificationCenter.post(name: NSWorkspace.activeSpaceDidChangeNotification, object: NSWorkspace.shared)
+            try? await Task.sleep(nanoseconds: 100_000_000)
+            guard panel.surface.isSpaceFeedbackActive, panel.surface.visualOpacity > 0,
+                  panel.surface.visualOpacity < 1 else { fail("confirmed Space did not arrive") }
+            try? await Task.sleep(nanoseconds: 800_000_000)
+            guard !panel.surface.isSpaceFeedbackActive, panel.surface.visualOpacity == 1 else { fail("arrival did not finish") }
+            NSWorkspace.shared.notificationCenter.post(name: NSWorkspace.activeSpaceDidChangeNotification, object: NSWorkspace.shared)
+            try? await Task.sleep(nanoseconds: 80_000_000)
+            guard panel.surface.isSpaceFeedbackActive, panel.surface.visualOpacity < 1 else { fail("visible Space change has no departure") }
+            try? await Task.sleep(nanoseconds: 1_000_000_000)
+            guard !panel.surface.isSpaceFeedbackActive, panel.surface.visualOpacity == 1 else { fail("departure/arrival did not settle") }
+            print("Char Space motion check passed: transparent preparation, confirmed arrival, visible departure/arrival")
+            NSApp.terminate(nil); return
+        }
         if CommandLine.arguments.contains("--orbit-path-check") {
             guard !panel.surface.reducesMotionForDiagnostics else {
                 FileHandle.standardOutput.write(Data("Char orbit layer-path check NOT RUN: Reduce Motion is enabled; animated coverage skipped\n".utf8))
@@ -602,11 +620,13 @@ actor ObservationWorker {
             }
         }
         setPlacement(.desktop)
-        try? await Task.sleep(nanoseconds: 300_000_000)
-        // A workspace notification alone must not replay a full appearance.
-        panel.surface.spaceFeedback()
-        guard !panel.surface.isSpaceFeedbackActive else { fail("visible Space notification replayed arrival") }
+        try? await Task.sleep(nanoseconds: 450_000_000)
+        // Actual workspace changes animate even when the all-Spaces panel stays visible.
+        NSWorkspace.shared.notificationCenter.post(name: NSWorkspace.activeSpaceDidChangeNotification, object: NSWorkspace.shared)
+        guard panel.surface.isSpaceFeedbackActive else { fail("visible Space did not begin departure") }
+        try? await Task.sleep(nanoseconds: 900_000_000)
         panel.surface.prepareSpaceAppearance()
+        guard panel.surface.visualOpacity == 0, panel.surface.sceneLayer?.opacity == 0 else { fail("hidden Space first frame visible") }
         NSWorkspace.shared.notificationCenter.post(name: NSWorkspace.activeSpaceDidChangeNotification, object: NSWorkspace.shared)
         try? await Task.sleep(nanoseconds: 70_000_000)
         guard panel.surface.isSpaceFeedbackActive, panel.surface.visualOpacity > 0, panel.surface.visualOpacity < 1 else { fail("Space notification arrival feedback") }
@@ -616,8 +636,6 @@ actor ObservationWorker {
         guard panel.surface.isSpaceFeedbackActive else { fail("second hidden cycle did not begin a fresh arrival") }
         try? await Task.sleep(nanoseconds: 800_000_000)
         guard !panel.surface.isSpaceFeedbackActive, panel.surface.pet.spaceTuck == 0, panel.surface.visualOpacity == 1, panel.surface.sceneLayer?.opacity == 1, panel.alphaValue == 1 else { fail("Space feedback completion") }
-        panel.surface.spaceFeedback()
-        guard !panel.surface.isSpaceFeedbackActive else { fail("completed Space arrival replayed") }
         if let sample = Bundle.main.resourceURL?.appendingPathComponent("Skins/example.charpet"), let skinStore {
             do {
                 let skin = try skinStore.importPackage(at: sample)

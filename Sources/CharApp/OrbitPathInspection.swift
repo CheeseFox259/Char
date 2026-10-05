@@ -3,7 +3,7 @@ import QuartzCore
 // Regression inspection reads the actual submitted layer path.
 enum OrbitPathInspection {
     struct Samples { let positions: [NSValue]; let scales: [NSNumber] }
-    enum Failure: Error { case missing(String) }
+    enum Failure: Error { case missing(String), uniformMotion }
     static func read(_ layer: CALayer, required: Bool) throws -> Samples? {
         guard let group = layer.animation(forKey: "orbit") as? CAAnimationGroup else {
             if required { throw Failure.missing("required orbit group") }
@@ -18,6 +18,12 @@ enum OrbitPathInspection {
             scales = values.indices.map { NSNumber(value: from.doubleValue + (to.doubleValue-from.doubleValue)*Double($0)/Double(values.count-1)) }
         } else { throw Failure.missing("scale samples") }
         guard scales.count == values.count else { throw Failure.missing("matching scale samples") }
+        // Read the submitted geometry, not a second implementation of the easing.
+        let distances = zip(values, values.dropFirst()).map { a, b in
+            hypot(b.pointValue.x - a.pointValue.x, b.pointValue.y - a.pointValue.y)
+        }
+        if let largest = distances.max(), largest > 0.5,
+           let smallest = distances.min(), largest < smallest * 1.4 { throw Failure.uniformMotion }
         return Samples(positions: values, scales: scales)
     }
 }

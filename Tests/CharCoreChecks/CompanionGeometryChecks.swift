@@ -75,7 +75,7 @@ struct CompanionGeometryChecks {
         try checkEqual(mouseWheel.step(delta: 1, precise: false, momentum: false, count: 7, now: 0), 1)
         try checkEqual(mouseWheel.step(delta: 1, precise: false, momentum: false, count: 7, now: 0.05), 0)
         try checkEqual(mouseWheel.step(delta: 1, precise: false, momentum: false, count: 7, now: 0.20), 1)
-        try checkEqual(CompanionPlayback(departure: nil, arrival: nil).duration, 0.24)
+        try checkEqual(CompanionPlayback(departure: nil, arrival: nil).duration, 0.32)
         for reason in [StopReason.question, .approval, .unclassified] { try checkEqual(AttentionPresentationGroup.forReason(reason), .interaction) }
         for reason in [StopReason.failure, .rateLimit, .contextExhausted] { try checkEqual(AttentionPresentationGroup.forReason(reason), .issue) }
         try checkEqual(AttentionPresentationGroup.forReason(.turnEnded), .ended)
@@ -104,6 +104,18 @@ struct CompanionGeometryChecks {
         space.finishArrival()
         try check(!space.beginPreparedArrival(), "late workspace notification cannot replay completed arrival")
         try check(space.prepareHiddenAppearance(), "a new hide cycle can animate again")
+        space.finishArrival()
+        try check(space.beginVisibleDeparture(), "confirmed visible Space change withdraws")
+        try check(!space.beginVisibleDeparture(), "duplicate signal cannot restart departure")
+        try check(space.beginArrivalAfterDeparture())
+        try check(!space.beginVisibleDeparture(), "arrival cannot be restarted by duplicates")
+        try check(space.prepareHiddenAppearance(), "hide interrupts the cycle before next visible frame")
+        for progress in stride(from: 0.0, through: 0.99, by: 0.01) {
+            try check(CompanionGeometry.orbitProgress(progress + 0.01) >= CompanionGeometry.orbitProgress(progress), "orbit must remain monotone on reversal")
+        }
+        try check(CompanionGeometry.orbitProgress(0.1) < 0.1)
+        try check(CompanionGeometry.orbitProgress(0.9) > 0.9)
+        try check(CompanionGeometry.arrivalProgress(0.01) < 0.01, "migration starts without a velocity jump")
         let long = CompanionPlayback(departure: 120, arrival: 80)
         try check(!long.isArriving(at: 119.9))
         try check(long.isArriving(at: 120))
@@ -121,6 +133,6 @@ struct CompanionGeometryChecks {
         try check(CompanionGeometry.spaceArrivalProgress(0.15) < CompanionGeometry.arrivalProgress(0.15))
         try checkEqual(CompanionGeometry.arrivalProgress(0), 0)
         try checkEqual(CompanionGeometry.arrivalProgress(1), 1)
-        try check(CompanionGeometry.arrivalProgress(0.3) > 1, "arrival has elastic overshoot")
+        try check(CompanionGeometry.arrivalProgress(0.5) > 1, "arrival has elastic overshoot")
     }
 }

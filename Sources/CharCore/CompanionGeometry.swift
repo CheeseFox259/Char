@@ -78,11 +78,21 @@ public enum CompanionGeometry {
         if t == 1 { return 1 }
         return 1 - exp(-6 * t) * (cos(5 * t) + 1.2 * sin(5 * t))
     }
-    /// Spring response used only for drawing; event bounds never deform.
+    /// Monotone ease-in/out: zero speed at both ends, no directional overshoot.
+    public static func orbitProgress(_ progress: Double) -> Double {
+        let t = min(max(progress, 0), 1)
+        return t * t * (3 - 2 * t)
+    }
+    /// Accelerating withdrawal with a smooth start and finish.
+    public static func departureProgress(_ progress: Double) -> Double {
+        let t = min(max(progress, 0), 1)
+        return t * t * t * (10 + t * (-15 + 6 * t))
+    }
+    /// Zero initial velocity with one small elastic recovery; exact end pose.
     public static func arrivalProgress(_ progress: Double) -> Double {
         let t = min(max(progress, 0), 1)
         if t == 1 { return 1 }
-        return 1 - exp(-7 * t) * cos(10 * t)
+        return 1 - exp(-7 * t) * (cos(7 * t) + sin(7 * t))
     }
 }
 
@@ -91,7 +101,7 @@ public struct CompanionPlayback: Sendable {
     public let departure: TimeInterval
     public let arrival: TimeInterval
     public init(departure: TimeInterval?, arrival: TimeInterval?) {
-        self.departure = departure ?? 0.09; self.arrival = arrival ?? 0.15
+        self.departure = departure ?? 0.10; self.arrival = arrival ?? 0.22
     }
     public var duration: TimeInterval { departure + arrival }
     public func isArriving(at elapsed: TimeInterval) -> Bool { elapsed >= departure }

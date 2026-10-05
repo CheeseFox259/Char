@@ -11,7 +11,7 @@
 | 当前实现机制、模块地图、本地数据和性能摘要 | [实现总览](architecture.md) |
 | 自制配置插件 / 新Agent / 新准确返回 | [集成插件开发指南](plugin-development.md) |
 | 自制桌宠形象与动作 | [外观包开发指南](appearance-development.md) |
-| 可直接交给代码Agent的完整开发任务 | [三份完整提示词](development-prompts.md) |
+| 随开发目录自动加载的通用指令 | [三份 AGENTS.md](development-prompts.md) |
 | 生产格式细则 | [集成配置v2](integration-plugin-format.md) / [形象包v1](pet-skin-format.md) |
 | Windows可行性、风险与分阶段门槛 | [Windows评估](windows-feasibility.md) |
 

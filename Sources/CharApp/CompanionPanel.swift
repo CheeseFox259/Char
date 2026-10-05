@@ -74,14 +74,15 @@ import CharCore
     var isClockRunning: Bool { clock != nil }
     private var scrollPolicy = CompanionScrollPolicy()
     private var spaceAt: TimeInterval?
-    private var pendingSpaceFeedback = false
+    private var spaceChangeObserved = false
+    private var visibilityRestoreAt: TimeInterval?
     private var spaceLifecycle = CompanionSpaceLifecycle()
     private var occlusionObserver: NSObjectProtocol?
     private var lastPointer: NSPoint?
     var capacity: Int { CompanionGeometry.capacity(placement: placement, petSize: runtime.petSize, bubbleDistance: runtime.bubbleDistance) }
     var canCycle: Bool { runtime.snapshot.bubbles.count > capacity }
     var reducesMotionForDiagnostics: Bool { reducedMotion }
-    var isSpaceFeedbackActive: Bool { spaceAt != nil || pendingSpaceFeedback }
+    var isSpaceFeedbackActive: Bool { spaceAt != nil }
     private(set) var visualOpacity: CGFloat = 1
     private var overflowArtwork: NSImage?
     private var overflowCount = -1
@@ -100,6 +101,7 @@ import CharCore
         let playback: CompanionPlayback
         let initialOpacity: CGFloat
         let initialScale: CGFloat
+        let initialRetraction: CGFloat
         var arrived = false
     }
     private var movement: Transition?
@@ -155,29 +157,39 @@ import CharCore
     }
     private func occlusionChanged() {
         guard let window, movement == nil else { return }
-        if window.occlusionState.contains(.visible) { beginSpaceArrival() }
-        else { prepareSpaceAppearance() }
+        if window.occlusionState.contains(.visible) {
+            if spaceChangeObserved { beginSpaceArrival() }
+            else if spaceLifecycle.state == .prepared {
+                // Occlusion can also be lock/sleep or ordinary coverage. Give the
+                // workspace notification one short ordering window, then restore.
+                visibilityRestoreAt = ProcessInfo.processInfo.systemUptime + 0.16
+                ensureClock()
+            }
+        } else { prepareSpaceAppearance() }
     }
-    /// Called by an actual occlusion loss; exposed internally for the fixture lifecycle check.
+    /// Prepare while hidden, before the window can be composited on the new Space.
     func prepareSpaceAppearance() {
         guard spaceLifecycle.prepareHiddenAppearance() else { return }
-        spaceAt = nil; pendingSpaceFeedback = false; visualOpacity = 1
-        pet.spaceTuck = reducedMotion ? 0 : 1
-        if placement != .desktop { pet.edgeRetraction = reducedMotion ? 0 : min(24, pet.frame.width * 0.5) }
+        spaceAt = nil; visibilityRestoreAt = nil
+        visualOpacity = 0; pet.spaceTuck = reducedMotion ? 0 : 1
+        if placement != .desktop { pet.edgeRetraction = reducedMotion ? 0 : pet.frame.width / 2 + 8 }
         applySharedTransform()
-        pet.needsDisplay = true
     }
     private func beginSpaceArrival() {
         guard window?.occlusionState.contains(.visible) == true,
               spaceLifecycle.beginPreparedArrival() else { return }
-        pendingSpaceFeedback = false
+        startSpaceArrival()
+    }
+    private func startSpaceArrival() {
+        visibilityRestoreAt = nil
         spaceAt = ProcessInfo.processInfo.systemUptime
-        pet.spaceTuck = reducedMotion ? 0 : 1
-        visualOpacity = reducedMotion ? 0.75 : 0.45
-        applySharedTransform()
-        pet.refreshPetArtwork()
-        configureIdle()
-        ensureClock()
+        pet.spaceTuck = reducedMotion ? 0 : 1; visualOpacity = 0
+        applySharedTransform(); pet.refreshPetArtwork(); ensureClock()
+    }
+    private func finishSpaceMotion() {
+        spaceAt = nil; spaceChangeObserved = false
+        visibilityRestoreAt = nil; spaceLifecycle.finishArrival()
+        pet.spaceTuck = 0; pet.edgeRetraction = 0; visualOpacity = 1
     }
     required init?(coder: NSCoder) { nil }
     func refresh() {
@@ -247,7 +259,7 @@ import CharCore
     }
     @discardableResult func cycleBubbles(by step: Int) -> Bool {
         guard canCycle, step != 0 else { return false }
-        orbitUntil = reducedMotion ? 0 : ProcessInfo.processInfo.systemUptime + 0.18
+        orbitUntil = reducedMotion ? 0 : ProcessInfo.processInfo.systemUptime + 0.24
         offset += step; layoutVisibleBubbles(animated: true)
         return true
     }
@@ -294,26 +306,34 @@ import CharCore
     @objc fileprivate func nextBubbles() -> Bool { cycleBubbles(by: 1) }
     @objc fileprivate func previousBubbles() -> Bool { cycleBubbles(by: -1) }
     func spaceFeedback() {
-        // Notifications may arrive after the pet already became visible. A
-        // preserved window needs no replay; an observed hidden cycle arrives once.
-        guard spaceLifecycle.state == .prepared else { return }
-        if movement != nil { pendingSpaceFeedback = true }
-        else { beginSpaceArrival() }
+        // A display migration already owns the shared departure/arrival pose.
+        guard movement == nil else { return }
+        spaceChangeObserved = true; visibilityRestoreAt = nil
+        if spaceLifecycle.state == .prepared { beginSpaceArrival() }
+        else if spaceLifecycle.beginVisibleDeparture() {
+            // Public AppKit reports the completed Space change, not gesture start.
+            // A continuously visible all-Spaces panel withdraws and reappears once.
+            spaceAt = ProcessInfo.processInfo.systemUptime
+        }
         ensureClock()
     }
     func returnFeedback() { pet.feedbackClip = "return"; feedbackAt = ProcessInfo.processInfo.systemUptime; ensureClock() }
     func pressFeedback() { pet.feedbackClip = "press"; feedbackAt = ProcessInfo.processInfo.systemUptime; ensureClock() }
     func transition(to frame: NSRect, placement: PetPlacement, animated: Bool) {
         guard animated else {
-            movement = nil; self.placement = placement; visualOpacity = 1
+            movement = nil; finishSpaceMotion(); self.placement = placement
             window?.setFrame(frame, display: true); pet.motionScale = 1; pet.edgeRetraction = 0; layoutVisibleBubbles(); applySharedTransform(); return
         }
         // Replacing this value interrupts both phases; there are no stale completion callbacks.
-        movement = Transition(frame: frame, placement: placement, started: ProcessInfo.processInfo.systemUptime,
+        let next = Transition(frame: frame, placement: placement, started: ProcessInfo.processInfo.systemUptime,
                               reduced: reducedMotion,
                               playback: CompanionPlayback(departure: runtime.customPetClipDuration(clip: self.placement == .desktop ? "depart" : "edgeHide"),
                                                           arrival: runtime.customPetClipDuration(clip: placement == .desktop ? "arrive" : "edgePeek")),
-                              initialOpacity: visualOpacity, initialScale: pet.motionScale)
+                              initialOpacity: visualOpacity, initialScale: pet.motionScale * (1 - pet.spaceTuck * 0.45),
+                              initialRetraction: pet.edgeRetraction)
+        finishSpaceMotion()
+        movement = next
+        visualOpacity = next.initialOpacity; pet.motionScale = next.initialScale; pet.edgeRetraction = next.initialRetraction
         ensureClock()
     }
     private func ensureClock() {
@@ -334,7 +354,7 @@ import CharCore
         pet.feedbackElapsed = feedbackAt.map { reduce ? 0 : now - $0 }
         if let feedbackAt, now - feedbackAt > (runtime.customPetClipDuration(clip: pet.feedbackClip) ?? 0.65) { self.feedbackAt = nil; pet.feedbackElapsed = nil }
         if var motion = movement {
-            if spaceAt != nil { spaceAt = nil; spaceLifecycle.finishArrival(); pet.spaceTuck = 0 }
+            if spaceAt != nil { finishSpaceMotion() }
             // A placement transition interrupts feedback; its authored departure/arrival wins.
             feedbackAt = nil; pet.feedbackElapsed = nil
             let elapsed = now - motion.started
@@ -345,40 +365,44 @@ import CharCore
             pet.clip = arriving ? (motion.placement == .desktop ? "arrive" : "edgePeek") : (placement == .desktop ? "depart" : "edgeHide")
             pet.clipElapsed = reduce ? 0 : playback.clipElapsed(at: elapsed)
             if !arriving {
-                visualOpacity = motion.initialOpacity * (1 - phase * phase)
-                pet.motionScale = motion.reduced || placement != .desktop ? 1 : motion.initialScale * (1 - 0.8 * phase * phase)
-                pet.edgeRetraction = motion.reduced || placement == .desktop ? 0 : phase * 38
+                let withdrawal = CGFloat(CompanionGeometry.departureProgress(phase))
+                visualOpacity = motion.initialOpacity * (1 - withdrawal)
+                pet.motionScale = motion.reduced || placement != .desktop ? 1 : motion.initialScale * (1 - 0.8 * withdrawal)
+                pet.edgeRetraction = motion.reduced || placement == .desktop ? 0 : motion.initialRetraction + (38 - motion.initialRetraction) * withdrawal
             } else {
                 if !motion.arrived {
                     window?.setFrame(motion.frame, display: true)
                     placement = motion.placement; layoutVisibleBubbles(); motion.arrived = true
                 }
-                visualOpacity = motion.reduced ? phase : min(1, phase * 3)
+                visualOpacity = CGFloat(CompanionGeometry.orbitProgress(min(1, phase * 1.8)))
                 pet.motionScale = motion.reduced || placement != .desktop ? 1 : CGFloat(0.2 + 0.8 * CompanionGeometry.arrivalProgress(phase))
                 pet.edgeRetraction = motion.reduced || placement == .desktop ? 0 : CGFloat(38 * (1 - CompanionGeometry.arrivalProgress(phase)))
             }
             movement = t == 1 ? nil : motion
             if t == 1 { visualOpacity = 1; pet.motionScale = 1; pet.edgeRetraction = 0 }
         }
-        if movement == nil, pendingSpaceFeedback {
-            pendingSpaceFeedback = false
-            beginSpaceArrival()
+        if let restore = visibilityRestoreAt, now >= restore, !spaceChangeObserved {
+            finishSpaceMotion(); applySharedTransform()
         }
         if let start = spaceAt, movement == nil {
-            let t = now - start
-            let duration = reduce ? 0.16 : 0.70
-            if t >= duration {
-                spaceAt = nil; spaceLifecycle.finishArrival(); pet.spaceTuck = 0; pet.edgeRetraction = 0; visualOpacity = 1
-            } else {
-                if reduce {
-                    pet.spaceTuck = 0
-                    visualOpacity = 0.75 + CGFloat(t / duration) * 0.25
-                } else {
-                    // Arrival-only feedback avoids a full-size appearance followed by withdrawal.
-                    let tuck = 1 - CompanionGeometry.spaceArrivalProgress(t / duration)
-                    pet.spaceTuck = CGFloat(max(-0.12, tuck))
-                    visualOpacity = min(1, 0.45 + CGFloat(t / duration) * 0.90)
-                    if placement != .desktop { pet.edgeRetraction = pet.spaceTuck * min(24, pet.frame.width * 0.5) }
+            let elapsed = now - start
+            if spaceLifecycle.state == .departing {
+                let duration = reduce ? 0.10 : 0.18
+                let withdrawal = CGFloat(CompanionGeometry.departureProgress(elapsed / duration))
+                visualOpacity = 1 - withdrawal
+                pet.spaceTuck = reduce ? 0 : withdrawal
+                pet.edgeRetraction = placement == .desktop || reduce ? 0 : withdrawal * (pet.frame.width / 2 + 8)
+                pet.clip = placement == .desktop ? "depart" : "edgeHide"; pet.clipElapsed = elapsed
+                if elapsed >= duration, spaceLifecycle.beginArrivalAfterDeparture() { startSpaceArrival() }
+            } else if spaceLifecycle.state == .arriving {
+                let duration = reduce ? 0.16 : 0.60
+                if elapsed >= duration { finishSpaceMotion() }
+                else {
+                    let progress = elapsed / duration
+                    pet.spaceTuck = reduce ? 0 : CGFloat(max(-0.10, 1 - CompanionGeometry.spaceArrivalProgress(progress)))
+                    visualOpacity = CGFloat(CompanionGeometry.orbitProgress(min(1, progress * 1.8)))
+                    pet.edgeRetraction = placement == .desktop || reduce ? 0 : pet.spaceTuck * (pet.frame.width / 2 + 8)
+                    pet.clip = placement == .desktop ? "arrive" : "edgePeek"; pet.clipElapsed = elapsed
                 }
             }
         }
@@ -723,37 +747,37 @@ import CharCore
             let r0 = hypot(initial.x-orbitCenter.x, initial.y-orbitCenter.y), r1 = hypot(target.x-orbitCenter.x, target.y-orbitCenter.y)
             // An open edge arc has no visible wrap route. Compress at the old
             // position, transport while tiny and transparent, then expand at the
-            // fold/entry. Neighboring primary slots keep their linear 180ms orbit.
+            // fold/entry. Neighboring slots follow the same eased, monotone orbit.
             let boundary = abs(delta) > 1.3 && (wasMiniature != miniature || !visible || !wasVisible)
             let transport: (CGFloat) -> CGFloat = { t in boundary ? min(1, max(0, (t - 0.3) / 0.4)) : t }
             path.values = (0...24).map { index in
-                let t = transport(CGFloat(index)/24), radius = r0+(r1-r0)*t, angle = a+delta*t
+                let t = transport(CGFloat(CompanionGeometry.orbitProgress(Double(index)/24))), radius = r0+(r1-r0)*t, angle = a+delta*t
                 return NSValue(point: NSPoint(x: orbitCenter.x+cos(angle)*radius, y: orbitCenter.y+sin(angle)*radius))
             }
             path.calculationMode = .linear
             let grow = CAKeyframeAnimation(keyPath: "transform.scale")
             let fade = CAKeyframeAnimation(keyPath: "opacity")
             grow.values = (0...24).map { index -> CGFloat in
-                let t = CGFloat(index)/24
+                let t = CGFloat(CompanionGeometry.orbitProgress(Double(index)/24))
                 if !boundary { return scale + (targetScale-scale)*t }
                 if t < 0.3 { return scale + (0.08-scale)*t/0.3 }
                 if t < 0.7 { return 0.08 }
                 return 0.08 + (targetScale-0.08)*(t-0.7)/0.3
             }
             fade.values = (0...24).map { index -> Float in
-                let t = Float(index)/24, target: Float = visible ? 1 : 0
+                let t = Float(CompanionGeometry.orbitProgress(Double(index)/24)), target: Float = visible ? 1 : 0
                 if !boundary { return opacity + (target-opacity)*t }
                 if t < 0.3 { return opacity*(1-t/0.3) }
                 if t < 0.7 { return 0 }
                 return target*(t-0.7)/0.3
             }
             grow.calculationMode = .linear; fade.calculationMode = .linear
-            for animation in [path, grow, fade] { animation.duration = 0.18; animation.timingFunction = CAMediaTimingFunction(name: .linear) }
-            let group = CAAnimationGroup(); group.animations = [path, grow, fade]; group.duration = 0.18
+            for animation in [path, grow, fade] { animation.duration = 0.24; animation.timingFunction = CAMediaTimingFunction(name: .linear) }
+            let group = CAAnimationGroup(); group.animations = [path, grow, fade]; group.duration = 0.24
             group.timingFunction = CAMediaTimingFunction(name: .linear)
             graphicLayer.add(group, forKey: "orbit")
             if !visible {
-                DispatchQueue.main.asyncAfter(deadline: .now()+0.18) { [weak self] in
+                DispatchQueue.main.asyncAfter(deadline: .now()+0.24) { [weak self] in
                     guard let self, self.presentationGeneration == generation else { return }
                     self.graphicLayer.isHidden = true
                 }

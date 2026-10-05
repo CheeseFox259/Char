@@ -57,4 +57,4 @@ Char validates file structure and pixels. It cannot mechanically judge whether b
 `PetSkinStore.image(for:clip:elapsed:)` returns an `NSImage` for the chosen frame. Built-in `char.default` deliberately returns nil because the app draws that pet as a resolution-independent vector. Its empty clip table is internal metadata and is not a valid import manifest.
 
 
-Developer walkthrough: [appearance-development.md](appearance-development.md). Complete copyable prompt: [development-prompts.md](development-prompts.md#外观形象包完整制作提示词). Validate a real package with: swift run char-package-check skin /absolute/path/your.charpet.
+Developer walkthrough: [appearance-development.md](appearance-development.md). Complete copyable prompt: [development-prompts.md](development-prompts.md). Validate a real package with: swift run char-package-check skin /absolute/path/your.charpet.
