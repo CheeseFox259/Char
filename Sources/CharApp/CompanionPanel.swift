@@ -551,17 +551,26 @@ import CharCore
             for (rim, inset) in [(hoverRim, CGFloat(2)), (hoverInnerLight, CGFloat(3.5)), (hoverOuterLight, CGFloat(0.5))] {
                 rim.frame = rimBounds
                 rim.path = CGPath(ellipseIn: rimBounds.insetBy(dx: inset, dy: inset), transform: nil)
-                rim.shadowPath = rim.path
+                rim.shadowPath = rim.path?.copy(strokingWithWidth: rim.lineWidth, lineCap: .round, lineJoin: .round, miterLimit: 1)
             }
         }
         hoverHalo.opacity = Float(hover)
         hoverLayer.setAffineTransform(CGAffineTransform(translationX: 0, y: hover * 3).scaledBy(x: 1 + hover * 0.09, y: 1 + hover * 0.09))
         if hover > 0.10 && !reducedMotion && !isHidden {
             if hoverPulseLayer.animation(forKey: "hover-pulse") == nil {
-                let pulse = CAKeyframeAnimation(keyPath: "transform.scale")
-                pulse.values = [1, 1.035, 1]; pulse.keyTimes = [0, 0.5, 1]
-                pulse.duration = 1.8; pulse.repeatCount = .infinity
-                pulse.timingFunctions = [CAMediaTimingFunction(name: .easeInEaseOut), CAMediaTimingFunction(name: .easeInEaseOut)]
+                let x = CAKeyframeAnimation(keyPath: "transform.scale.x")
+                x.values = [1, 1.075, 0.965, 1]
+                let y = CAKeyframeAnimation(keyPath: "transform.scale.y")
+                y.values = [1, 1 / 1.075, 1 / 0.965, 1]
+                let lift = CAKeyframeAnimation(keyPath: "transform.translation.y")
+                lift.values = [0, 2.5, -1.5, 0]
+                for animation in [x, y, lift] {
+                    animation.keyTimes = [0, 0.35, 0.70, 1]
+                    animation.duration = 1.6
+                    animation.timingFunctions = Array(repeating: CAMediaTimingFunction(name: .easeInEaseOut), count: 3)
+                }
+                let pulse = CAAnimationGroup(); pulse.animations = [x, y, lift]
+                pulse.duration = 1.6; pulse.repeatCount = .infinity
                 hoverPulseLayer.add(pulse, forKey: "hover-pulse")
             }
         } else { hoverPulseLayer.removeAnimation(forKey: "hover-pulse") }
@@ -613,12 +622,12 @@ import CharCore
             for rim in [hoverRim, hoverInnerLight, hoverOuterLight] {
                 rim.fillColor = NSColor.clear.cgColor; rim.actions = actions
             }
-            hoverRim.strokeColor = NSColor(calibratedWhite: 0.20, alpha: 1).cgColor
-            hoverRim.lineWidth = 1.8
+            hoverRim.strokeColor = NSColor(calibratedWhite: 0.46, alpha: 0.88).cgColor
+            hoverRim.lineWidth = 1.4
             for rim in [hoverInnerLight, hoverOuterLight] {
-                rim.strokeColor = NSColor.white.withAlphaComponent(0.92).cgColor
-                rim.lineWidth = 1.2; rim.shadowColor = NSColor.white.cgColor
-                rim.shadowRadius = 2; rim.shadowOpacity = 0.65; rim.shadowOffset = .zero
+                rim.strokeColor = NSColor.white.withAlphaComponent(0.58).cgColor
+                rim.lineWidth = 0.9; rim.shadowColor = NSColor.white.cgColor
+                rim.shadowRadius = 1.5; rim.shadowOpacity = 0.25; rim.shadowOffset = .zero
             }
             hoverHalo.opacity = 0
             hoverHalo.addSublayer(hoverOuterLight); hoverHalo.addSublayer(hoverInnerLight); hoverHalo.addSublayer(hoverRim)
