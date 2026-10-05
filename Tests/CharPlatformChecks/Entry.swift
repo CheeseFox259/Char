@@ -1,6 +1,8 @@
 import CharCore
 import CharPlatform
 import Foundation
+import CoreGraphics
+import ServiceManagement
 
 @MainActor final class MockApps: ApplicationRuntime {
     var current: ForegroundSnapshot?
@@ -65,6 +67,19 @@ import Foundation
             catch { print("Native Carbon contract failed: \(error)"); exit(1) }
             return
         }
+        assert(MainAppLoginService.state(for: .notFound) == .disabled, "a packaged unregistered main app must be allowed to register")
+        let left = DisplayGeometry(id: 1, bounds: CGRect(x: 0, y: 0, width: 100, height: 100))
+        let right = DisplayGeometry(id: 2, bounds: CGRect(x: 150, y: 0, width: 100, height: 100))
+        let front = WindowGeometry(processID: 40, number: 5, layer: 0, bounds: CGRect(x: 160, y: 10, width: 80, height: 80))
+        let other = WindowGeometry(processID: 99, number: 6, layer: 0, bounds: left.bounds)
+        assert(DisplayFocusGeometry.windowBounds(axBounds: nil, processID: 40, windows: [other, front]) == front.bounds, "missing AX authorization must not stop geometry following")
+        assert(DisplayFocusGeometry.displayID(for: CGRect(x: 50, y: 10, width: 140, height: 80), displays: [left, right]) == 1, "window center in screen gap must use actual overlap")
+        assert(DisplayFocusGeometry.windowBounds(axBounds: nil, processID: 41, windows: [other, front]) == nil, "never use another application's geometry")
+        assert(DisplayFocusGeometry.windowBounds(axBounds: left.bounds, processID: 40, windows: [front]) == left.bounds, "authorized focused-window geometry has precedence")
+        let overlay = WindowGeometry(processID: 40, number: 7, layer: 3, bounds: left.bounds)
+        let empty = WindowGeometry(processID: 40, number: 8, layer: 0, bounds: .zero)
+        assert(DisplayFocusGeometry.windowBounds(axBounds: nil, processID: 40, windows: [overlay, empty, front]) == front.bounds, "ignore overlays and empty windows")
+        assert(DisplayFocusGeometry.displayID(for: CGRect(x: 300, y: 0, width: 10, height: 10), displays: [left, right]) == nil, "offscreen windows do not follow a guessed display")
         let apps = MockApps()
         let tabbit = MockTabbit()
         let vscode = MockVSCode()

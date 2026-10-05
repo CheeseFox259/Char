@@ -1,5 +1,6 @@
 import Foundation
 import ServiceManagement
+import CoreServices
 
 public enum LoginItemState: Equatable, Sendable {
     case enabled
@@ -56,17 +57,24 @@ public enum LoginItemError: LocalizedError {
         guard Bundle.main.bundleURL.pathExtension == "app" else {
             return .unavailable("Launch-at-login requires the packaged Char.app.")
         }
-        switch SMAppService.mainApp.status {
+        return Self.state(for: SMAppService.mainApp.status)
+    }
+
+    public static func state(for status: SMAppService.Status) -> LoginItemState {
+        switch status {
         case .enabled: return .enabled
         case .notRegistered: return .disabled
         case .requiresApproval: return .requiresApproval
-        case .notFound: return .unavailable("Char.app is not registered with ServiceManagement.")
+        case .notFound: return .disabled
         @unknown default: return .unavailable("Unknown ServiceManagement status.")
         }
     }
 
     public func register() throws {
         guard Bundle.main.bundleURL.pathExtension == "app" else { throw LoginItemError.notPackaged }
+        // Refresh registration for this installed bundle before ServiceManagement resolves mainApp.
+        let result = LSRegisterURL(Bundle.main.bundleURL as CFURL, true)
+        guard result == noErr else { throw NSError(domain: NSOSStatusErrorDomain, code: Int(result)) }
         try SMAppService.mainApp.register()
     }
 

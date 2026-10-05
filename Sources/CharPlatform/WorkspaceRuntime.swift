@@ -10,11 +10,19 @@ import Foundation
         guard let app = NSWorkspace.shared.frontmostApplication,
               let bundleID = app.bundleIdentifier else { return nil }
         let pid = app.processIdentifier
-        guard let focusedBounds = focusedWindowBounds(processID: pid) else {
-            return ForegroundSnapshot(bundleIdentifier: bundleID, processID: pid)
-        }
         // Read geometry and numeric IDs only. Window titles and contents are never requested.
         let windows = CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID) as? [[String: Any]] ?? []
+        let geometry = windows.compactMap { window -> WindowGeometry? in
+            guard let pid = (window[kCGWindowOwnerPID as String] as? NSNumber)?.int32Value,
+                  let number = (window[kCGWindowNumber as String] as? NSNumber)?.uint32Value,
+                  let layer = (window[kCGWindowLayer as String] as? NSNumber)?.intValue,
+                  let dictionary = window[kCGWindowBounds as String] as? [String: CGFloat],
+                  let bounds = CGRect(dictionaryRepresentation: dictionary as CFDictionary) else { return nil }
+            return WindowGeometry(processID: pid, number: number, layer: layer, bounds: bounds)
+        }
+        guard let focusedBounds = DisplayFocusGeometry.windowBounds(axBounds: focusedWindowBounds(processID: pid), processID: pid, windows: geometry) else {
+            return ForegroundSnapshot(bundleIdentifier: bundleID, processID: pid)
+        }
         let matches = windows.filter { window in
             guard (window[kCGWindowOwnerPID as String] as? Int32) == pid,
                   (window[kCGWindowLayer as String] as? Int) == 0,
@@ -30,8 +38,9 @@ import Foundation
         var count: UInt32 = 0
         var displays = [CGDirectDisplayID](repeating: 0, count: 16)
         if CGGetActiveDisplayList(UInt32(displays.count), &displays, &count) == .success {
-            let center = CGPoint(x: focusedBounds.midX, y: focusedBounds.midY)
-            displayID = displays.prefix(Int(count)).first { CGDisplayBounds($0).contains(center) }
+            displayID = DisplayFocusGeometry.displayID(for: focusedBounds, displays: displays.prefix(Int(count)).map {
+                DisplayGeometry(id: $0, bounds: CGDisplayBounds($0))
+            })
         }
         return ForegroundSnapshot(bundleIdentifier: bundleID, processID: pid,
                                   windowNumber: windowID, displayID: displayID)
