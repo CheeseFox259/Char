@@ -6,24 +6,26 @@ import CharCore
     private let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
     private var previous: AttentionSnapshot?
     private var previousSound: Bool?
+    private var previousLanguage: AppLanguage?
     init(runtime: CompanionRuntime) {
         self.runtime = runtime
         super.init()
         item.button?.image = Self.faceIcon()
-        item.button?.setAccessibilityLabel("Char 状态栏")
+        item.button?.setAccessibilityLabel(runtime.localized("Char 状态栏", "Char menu bar"))
         refresh()
     }
     func refresh() {
-        guard previous != runtime.snapshot || previousSound != runtime.settings.soundEnabled else { return }
-        previous = runtime.snapshot; previousSound = runtime.settings.soundEnabled
+        guard previous != runtime.snapshot || previousSound != runtime.settings.soundEnabled || previousLanguage != runtime.settings.language else { return }
+        previous = runtime.snapshot; previousSound = runtime.settings.soundEnabled; previousLanguage = runtime.settings.language
+        item.button?.setAccessibilityLabel(runtime.localized("Char 状态栏", "Char menu bar"))
         let menu = NSMenu()
-        add("显示桌宠", action: #selector(showPet), to: menu)
-        add("设置…", action: #selector(settings), to: menu)
-        let home = add("回城 · Ctrl+B", action: #selector(returnHome), to: menu)
+        add(runtime.localized("显示桌宠", "Show pet"), action: #selector(showPet), to: menu)
+        add(runtime.localized("设置…", "Settings…"), action: #selector(settings), to: menu)
+        let home = add(runtime.localized("回城 · Ctrl+B", "Return · Ctrl+B"), action: #selector(returnHome), to: menu)
         home.isEnabled = runtime.snapshot.hold != nil && !runtime.busy
-        add(runtime.settings.soundEnabled ? "静音提醒" : "取消静音", action: #selector(mute), to: menu)
+        add(runtime.settings.soundEnabled ? runtime.localized("静音提醒", "Mute notifications") : runtime.localized("取消静音", "Unmute notifications"), action: #selector(mute), to: menu)
         menu.addItem(.separator())
-        add("退出 Char", action: #selector(quit), to: menu)
+        add(runtime.localized("退出 Char", "Quit Char"), action: #selector(quit), to: menu)
         menu.autoenablesItems = false
         item.menu = menu
         item.button?.toolTip = "Char"

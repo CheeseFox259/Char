@@ -79,7 +79,7 @@ actor ObservationWorker {
     @Published var accessibilityStatus = ""
     @Published var automationStatus = ""
     @Published var busy = false
-    @Published var homeShortcutStatus = "回城仅在 Hold 中可用"
+    @Published var homeShortcutStatus = ""
     private var homeShortcut: HomeShortcutController!
     private var fixtureHotKey: FixtureHomeHotKeyService?
     private var timer: Timer?
@@ -92,7 +92,7 @@ actor ObservationWorker {
     private var badgeFadeTimer: Timer?
     private var badgeFadeGeneration = 0
     var panel: CompanionPanel!
-    private var settingsWindow: NSWindow?
+    var settingsWindow: NSWindow?
     private var currentDisplay: String?
     private var feedbackGeneration = 0
     private var responseGeneration = 0
@@ -110,7 +110,7 @@ actor ObservationWorker {
         let loaded: CharSettings
         let loadMessage: String
         do { loaded = try store.load(); loadMessage = "" }
-        catch { loaded = CharSettings(); loadMessage = "Could not load preferences: \(error.localizedDescription)" }
+        catch { loaded = CharSettings(); loadMessage = (loaded.language == .chinese ? "无法读取设置：" : "Could not load preferences: ") + error.localizedDescription }
         let initialSettings = demo ? CharSettings(filterSeconds: 0, launchAtLogin: false) : loaded
         settings = initialSettings
         let engine = AttentionRouter(settings: initialSettings)
@@ -129,7 +129,7 @@ actor ObservationWorker {
         }
         setupMessage = loadMessage
         if let pluginStore { pluginEntries = pluginStore.entries }
-        else { setupMessage = "插件目录无法加载；请检查本地配置。" }
+        else { setupMessage = localized("插件目录无法加载；请检查本地配置。", "Could not load plugin directory.") }
         platform?.configure(plugins: pluginEntries.filter(\.enabled).map(\.plugin))
         refreshSkins()
         if let data = try? Data(contentsOf: companionPreferencesURL),
@@ -228,11 +228,11 @@ actor ObservationWorker {
         petClicked()
     }
     func retryHomeShortcut() { homeShortcut.retry(); refreshHomeShortcutStatus() }
-    private func refreshHomeShortcutStatus() {
+    func refreshHomeShortcutStatus() {
         switch homeShortcut.status {
-        case .inactive: homeShortcutStatus = "Ctrl+B 未注册；保存来源后启用回城"
-        case .registered: homeShortcutStatus = smoke ? "Fixture：模拟 Ctrl+B 回城" : "Ctrl+B 已注册，可回城"
-        case let .failed(code): homeShortcutStatus = "Ctrl+B 注册失败（系统错误 \(code)）。可能与其他应用冲突；可重试，或点击桌宠回城。"
+        case .inactive: homeShortcutStatus = localized("Ctrl+B 未启用", "Ctrl+B inactive")
+        case .registered: homeShortcutStatus = smoke ? localized("演示：Ctrl+B 回城", "Fixture: Ctrl+B return") : localized("Ctrl+B 已注册，可回城", "Ctrl+B ready")
+        case let .failed(code): homeShortcutStatus = localized("Ctrl+B 注册失败（\(code)）", "Ctrl+B registration failed (\(code))")
         }
     }
     func petClicked() {
@@ -294,31 +294,31 @@ actor ObservationWorker {
         picker.allowedContentTypes = [.audio]
         if picker.runModal() == .OK, let path = picker.url?.path {
             guard NSSound(contentsOfFile: path, byReference: true) != nil else {
-                setupMessage = "The selected audio file cannot be played by macOS."; return
+                setupMessage = localized("无法播放所选音频。", "The selected audio file cannot be played by macOS."); return
             }
             settings.audioFilePath = path; saveSettings()
         }
     }
     func refreshStatus() {
         guard !demo else {
-            loginStatus = "Fixture mode — login unchanged"
-            accessibilityStatus = "Fixture mode — no permission checks"
-            automationStatus = "Fixture mode — no automation"
+            loginStatus = localized("演示：启动状态不变", "Fixture: login unchanged")
+            accessibilityStatus = localized("演示：不检查权限", "Fixture: permissions unchecked")
+            automationStatus = localized("演示：无自动化", "Fixture: automation inactive")
             return
         }
         switch login?.status {
-        case .enabled: loginStatus = "Enabled"
-        case .disabled: loginStatus = "Disabled"
-        case .requiresApproval: loginStatus = "Requires approval in System Settings → General → Login Items"
+        case .enabled: loginStatus = localized("已启用", "Enabled")
+        case .disabled: loginStatus = localized("已停用", "Disabled")
+        case .requiresApproval: loginStatus = localized("需在登录项中批准", "Approval needed in Login Items")
         case let .unavailable(message): loginStatus = message
-        case nil: loginStatus = "Unavailable"
+        case nil: loginStatus = localized("不可用", "Unavailable")
         }
-        accessibilityStatus = AXIsProcessTrusted() ? "Authorized" : "Not authorized — focused-display tracking unavailable"
+        accessibilityStatus = AXIsProcessTrusted() ? localized("已授权", "Authorized") : localized("未授权（可选）", "Not authorized (optional)")
         switch platform?.tabbitAutomationStatus() {
-        case .authorized: automationStatus = "Authorized"
-        case .needsConsent: automationStatus = "Permission needed for exact tab return"
-        case .denied: automationStatus = "Denied — enable Char in Privacy & Security → Automation"
-        default: automationStatus = "Unavailable — Tabbit may not be running"
+        case .authorized: automationStatus = localized("已授权", "Authorized")
+        case .needsConsent: automationStatus = localized("需要授权", "Permission needed")
+        case .denied: automationStatus = localized("已拒绝，请检查自动化权限", "Denied — check Automation settings")
+        default: automationStatus = localized("不可用", "Unavailable")
         }
     }
     func showSettings() {
@@ -326,7 +326,7 @@ actor ObservationWorker {
         if settingsWindow == nil {
             let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 530, height: 630),
                                   styleMask: [.titled, .closable], backing: .buffered, defer: false)
-            window.title = "Char Settings"
+            window.title = localized("Char 设置", "Char Settings")
             window.collectionBehavior = [.fullScreenNone]
             window.standardWindowButton(.miniaturizeButton)?.isHidden = true
             window.standardWindowButton(.zoomButton)?.isHidden = true
@@ -467,7 +467,7 @@ actor ObservationWorker {
     }
     private func saveCompanionPreferences() {
         do { try JSONEncoder().encode(companionPreferences).write(to: companionPreferencesURL, options: .atomic) }
-        catch { setupMessage = "无法保存桌宠位置：\(error.localizedDescription)" }
+        catch { setupMessage = localized("无法保存桌宠位置：\(error.localizedDescription)", "Could not save pet position: \(error.localizedDescription)") }
     }
     private func position(on screen: NSScreen, center: NSPoint, placement: PetPlacement, animated: Bool, remember: Bool = false) {
         currentDisplay = displayKey(screen)

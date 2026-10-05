@@ -3,83 +3,72 @@ import CharCore
 
 struct SettingsView: View {
     @ObservedObject var runtime: CompanionRuntime
+    private func l(_ zh: String, _ en: String) -> String { runtime.localized(zh, en) }
     var body: some View {
         Form {
-            Section("桌宠与动效") { AppearanceSettingsView(runtime: runtime) }
-            Section("插件") { PluginSettingsView(runtime: runtime) }
-            Section("Timing") {
-                HStack {
-                    Text("Filter threshold (seconds)")
-                    Spacer()
-                    TextField("Seconds", value: $runtime.settings.filterSeconds, format: .number)
-                        .labelsHidden().accessibilityLabel("过滤阈值，秒")
-                        .frame(width: 90).onSubmit { runtime.saveSettings() }
+            Section {
+                Picker(l("语言", "Language"), selection: Binding(get: { runtime.settings.language }, set: { runtime.setLanguage($0) })) {
+                    Text("中文").tag(AppLanguage.chinese)
+                    Text("English").tag(AppLanguage.english)
                 }
-                HStack {
-                    Text("Hold grace (seconds)")
-                    Spacer()
-                    TextField("Seconds", value: $runtime.settings.graceSeconds, format: .number)
-                        .labelsHidden().accessibilityLabel("回城宽限期，秒")
-                        .frame(width: 90).onSubmit { runtime.saveSettings() }
-                }
-                Text("Hold grace accumulates while you are away from Agent apps. Returning to an Agent pauses it.")
-                    .font(.caption).foregroundStyle(.secondary)
             }
-            Section("回城") {
+            Section(l("桌宠与动效", "Appearance")) { AppearanceSettingsView(runtime: runtime) }
+            Section(l("插件", "Plugins")) { PluginSettingsView(runtime: runtime) }
+            Section(l("时间", "Timing")) {
+                HStack {
+                    Text(l("过滤阈值（秒）", "Filter threshold (seconds)")); Spacer()
+                    TextField(l("秒", "Seconds"), value: $runtime.settings.filterSeconds, format: .number)
+                        .labelsHidden().accessibilityLabel(l("过滤阈值，秒", "Filter threshold, seconds"))
+                        .frame(width: 90).onSubmit { runtime.saveSettings() }
+                }
+                HStack {
+                    Text(l("回城宽限期（秒）", "Return grace (seconds)")); Spacer()
+                    TextField(l("秒", "Seconds"), value: $runtime.settings.graceSeconds, format: .number)
+                        .labelsHidden().accessibilityLabel(l("回城宽限期，秒", "Return grace, seconds"))
+                        .frame(width: 90).onSubmit { runtime.saveSettings() }
+                }
+            }
+            Section(l("回城", "Return")) {
                 Text(runtime.homeShortcutStatus)
-                Text("Hold 中按 Ctrl+B 或点击桌宠，返回首次离开前的来源。没有 Hold 时不注册快捷键。")
-                    .font(.caption).foregroundStyle(.secondary)
-                Button("重试 Ctrl+B 注册") { runtime.retryHomeShortcut() }
+                Button(l("重试 Ctrl+B", "Retry Ctrl+B")) { runtime.retryHomeShortcut() }
                     .disabled(runtime.snapshot.hold == nil)
             }
-            Section("Sound") {
-                Toggle("Play one sound for a batch of new attention", isOn: $runtime.settings.soundEnabled)
+            Section(l("声音", "Sound")) {
+                Toggle(l("提醒音效", "Attention sound"), isOn: $runtime.settings.soundEnabled)
                     .onChange(of: runtime.settings.soundEnabled) { _ in runtime.saveSettings() }
                 HStack {
-                    Text(runtime.settings.audioFilePath.map { URL(fileURLWithPath: $0).lastPathComponent } ?? "System Ping")
+                    Text(runtime.settings.audioFilePath.map { URL(fileURLWithPath: $0).lastPathComponent } ?? l("系统提示音", "System Ping"))
                         .lineLimit(1).truncationMode(.middle)
                     Spacer()
-                    Button("Choose Audio…") { runtime.chooseAudio() }.disabled(runtime.demo)
-                    Button("Reset") { runtime.settings.audioFilePath = nil; runtime.saveSettings() }
+                    Button(l("选择音频…", "Choose audio…")) { runtime.chooseAudio() }.disabled(runtime.demo)
+                    Button(l("重置", "Reset")) { runtime.settings.audioFilePath = nil; runtime.saveSettings() }
                 }
             }
-            Section("Startup & integrations") {
-                Text("pi、Kimi CLI/App 与 DeepSeek Desktop 需显式安装本地观察集成。步骤见项目 README；未启用时这些工作端不会产生原生提醒。")
-                    .font(.caption).foregroundStyle(.secondary)
-                Toggle("Launch at login", isOn: Binding(get: { runtime.settings.launchAtLogin }, set: { runtime.setLogin($0) }))
-                    .disabled(runtime.demo)
-                LabeledContent("Actual login status", value: runtime.loginStatus)
-                LabeledContent("Accessibility", value: runtime.accessibilityStatus)
-                Button("Authorize focused display tracking…") { runtime.requestAccessibility() }.disabled(runtime.demo)
-                LabeledContent("Tabbit Automation", value: runtime.automationStatus)
-                Button("Authorize Tabbit return…") { runtime.requestAutomation() }.disabled(runtime.demo)
-                Text("任意前台应用（包括 Agent 和 Warp）均可作为回城起点。VS Code 准确返回需要可选的本地 Char Return Anchor 扩展；准确捕获不可用时保存应用级起点，并明确标记降级。")
-                    .font(.caption).foregroundStyle(.secondary)
-                Button("Refresh Status") { runtime.refreshStatus() }
+            Section(l("启动与权限", "Startup & permissions")) {
+                Toggle(l("登录时启动", "Launch at login"), isOn: Binding(get: { runtime.settings.launchAtLogin }, set: { runtime.setLogin($0) })).disabled(runtime.demo)
+                LabeledContent(l("启动状态", "Login status"), value: runtime.loginStatus)
+                LabeledContent(l("辅助功能", "Accessibility"), value: runtime.accessibilityStatus)
+                Button(l("授权辅助功能…", "Authorize Accessibility…")) { runtime.requestAccessibility() }.disabled(runtime.demo)
+                LabeledContent(l("Tabbit 自动化", "Tabbit Automation"), value: runtime.automationStatus)
+                Button(l("授权 Tabbit 回城…", "Authorize Tabbit return…")) { runtime.requestAutomation() }.disabled(runtime.demo)
+                Button(l("刷新状态", "Refresh status")) { runtime.refreshStatus() }
             }
-            Section("Graphical legend") {
+            Section(l("图例", "Legend")) {
                 LazyVGrid(columns: [GridItem(.flexible(), alignment: .leading), GridItem(.flexible(), alignment: .leading)], alignment: .leading, spacing: 9) {
-                    ForEach(AttentionPresentationGroup.allCases, id: \.self) { group in
-                        Label(group.title, systemImage: group.symbol)
-                    }
-                    Label("CLI 工作端", systemImage: "terminal.fill")
-                    Label("已恢复：状态胶囊变淡", systemImage: "circle.lefthalf.filled")
+                    ForEach(AttentionPresentationGroup.allCases, id: \.self) { group in Label(runtime.localizedTitle(group), systemImage: group.symbol) }
+                    Label(l("CLI 工作端", "CLI client"), systemImage: "terminal.fill")
+                    Label(l("已恢复", "Resumed"), systemImage: "circle.lefthalf.filled")
+                    Label(l("提醒", "Notifications"), systemImage: "bell.fill")
+                    Label(l("准确回城", "Exact return"), systemImage: NavigationPresentation.exactSymbol)
+                    Label(l("应用级回城", "Application return"), systemImage: NavigationPresentation.applicationSymbol)
+                    Label(l("目标不可用", "Target unavailable"), systemImage: NavigationPresentation.unavailableSymbol)
                 }.font(.caption)
-                VStack(alignment: .leading, spacing: 9) {
-                    Text("导航反馈（独立于 Agent 停顿状态）").font(.caption.weight(.semibold))
-                    Label("应用级降级：可返回应用，无法精确定位原窗口或标签", systemImage: "arrow.triangle.turn.up.right.diamond.fill")
-                    Label("目标不可用：无法找到或激活来源或 Agent 目标", systemImage: "exclamationmark.circle.fill")
-                }.font(.caption)
-                Text("气泡只显示一个状态胶囊和未查看数量：需关注、发生问题、轮次结束。淡色胶囊表示该停顿已恢复；精确原因和运行数量可通过无障碍说明查看。CLI 带小终端标识。点击气泡访问，右键忽略首项；状态栏提供设置与回城入口。")
-                    .font(.caption).foregroundStyle(.secondary)
             }
             if !runtime.setupMessage.isEmpty {
-                Section("Setup") { Text(runtime.setupMessage).foregroundStyle(.red).textSelection(.enabled) }
+                Section(l("错误", "Error")) { Text(runtime.setupMessage).foregroundStyle(.red).textSelection(.enabled) }
             }
         }
-        .formStyle(.grouped)
-        .padding(8)
-        .frame(minWidth: 500, minHeight: 590)
+        .formStyle(.grouped).padding(8).frame(minWidth: 500, minHeight: 590)
         .onChange(of: runtime.settings.filterSeconds) { _ in runtime.saveSettings() }
         .onChange(of: runtime.settings.graceSeconds) { _ in runtime.saveSettings() }
         .onDisappear { runtime.saveSettings() }

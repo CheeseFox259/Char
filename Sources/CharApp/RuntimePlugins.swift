@@ -88,45 +88,45 @@ extension CompanionRuntime {
             let configuration = observationGeneration
             Task { await worker?.configure(configuration) }
             publish()
-        } catch { setupMessage = "插件未重新加载：\(error)" }
+        } catch { setupMessage = localized("插件未重新加载：\(error)", "Could not reload plugins: \(error)") }
     }
     func setPlugin(_ id: String, enabled: Bool) {
         do { try pluginStore?.setEnabled(enabled, for: id); reloadPlugins() }
-        catch { setupMessage = "无法修改插件：\(error)" }
+        catch { setupMessage = localized("无法修改插件：\(error)", "Could not update plugin: \(error)") }
     }
     func deletePlugin(_ id: String) {
         do { try pluginStore?.remove(id: id); reloadPlugins() }
-        catch { setupMessage = "无法删除插件：\(error)" }
+        catch { setupMessage = localized("无法删除插件：\(error)", "Could not delete plugin: \(error)") }
     }
     func restorePlugins() {
         do { try pluginStore?.restoreBuiltIns(); reloadPlugins() }
-        catch { setupMessage = "无法恢复插件：\(error)" }
+        catch { setupMessage = localized("无法恢复插件：\(error)", "Could not restore plugins: \(error)") }
     }
     func importPlugin() {
         let picker = NSOpenPanel(); picker.canChooseDirectories = true; picker.canChooseFiles = false
-        picker.title = "导入 .charintegration 插件目录"
+        picker.title = localized("导入 .charintegration 插件目录", "Import .charintegration package")
         if picker.runModal() == .OK, let url = picker.url {
             do { try pluginStore?.importPackage(at: url); reloadPlugins() }
-            catch { setupMessage = "导入失败：\(error)" }
+            catch { setupMessage = localized("导入失败：\(error)", "Import failed: \(error)") }
         }
     }
     func importSkin() {
         let picker = NSOpenPanel(); picker.canChooseDirectories = true; picker.canChooseFiles = false
-        picker.title = "导入 .charpet 形象目录"
+        picker.title = localized("导入 .charpet 形象目录", "Import .charpet package")
         if picker.runModal() == .OK, let url = picker.url {
             do {
                 if let skin = try skinStore?.importPackage(at: url) { try skinStore?.select(id: skin.id) }
                 refreshSkins()
-            } catch { setupMessage = "形象导入失败：\(error)" }
+            } catch { setupMessage = localized("形象导入失败：\(error)", "Appearance import failed: \(error)") }
         }
     }
     func selectSkin(_ id: String) {
         do { try skinStore?.select(id: id); refreshSkins() }
-        catch { setupMessage = "无法选择形象：\(error)" }
+        catch { setupMessage = localized("无法选择形象：\(error)", "Could not select appearance: \(error)") }
     }
     func deleteSkin(_ id: String) {
         do { try skinStore?.delete(id: id); refreshSkins() }
-        catch { setupMessage = "无法删除形象：\(error)" }
+        catch { setupMessage = localized("无法删除形象：\(error)", "Could not delete appearance: \(error)") }
     }
     func refreshSkins() {
         skins = skinStore?.skins ?? []

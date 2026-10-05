@@ -53,4 +53,24 @@ struct SettingsChecks {
             try checkEqual(try store.load(), CharSettings())
         }
     }
+    func testLanguageDefaultsMigrationAndPersistence() throws {
+        try checkEqual(AppLanguage.preferred(for: ["zh-TW", "en"]), .chinese)
+        try checkEqual(AppLanguage.preferred(for: ["en-US", "zh-Hans"]), .english)
+        try checkEqual(AppLanguage.preferred(for: []), .english)
+        try withStore { store in
+            try FileManager.default.createDirectory(at: store.fileURL.deletingLastPathComponent(), withIntermediateDirectories: true)
+            let legacy = #"{"filterSeconds":2,"graceSeconds":90,"soundEnabled":false,"launchAtLogin":false}"#
+            try Data(legacy.utf8).write(to: store.fileURL)
+            let migrated = try store.load()
+            try checkEqual(migrated.language, .systemDefault)
+            try checkEqual(migrated.filterSeconds, 2)
+            for language in AppLanguage.allCases {
+                var settings = migrated
+                settings.language = language
+                try store.save(settings)
+                try checkEqual(try store.load(), settings)
+            }
+        }
+    }
+
 }

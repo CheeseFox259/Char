@@ -1,20 +1,41 @@
 import Foundation
 
+public enum AppLanguage: String, Codable, CaseIterable, Sendable {
+    case chinese = "zh-Hans", english = "en"
+    public static func preferred(for languages: [String]) -> AppLanguage {
+        languages.first?.lowercased().hasPrefix("zh") == true ? .chinese : .english
+    }
+    public static var systemDefault: AppLanguage { preferred(for: Locale.preferredLanguages) }
+}
+
 public struct CharSettings: Equatable, Codable, Sendable {
     public var filterSeconds: TimeInterval
     public var graceSeconds: TimeInterval
     public var soundEnabled: Bool
     public var audioFilePath: String?
     public var launchAtLogin: Bool
+    public var language: AppLanguage
 
     public init(filterSeconds: TimeInterval = 10, graceSeconds: TimeInterval = 300,
-                soundEnabled: Bool = true, audioFilePath: String? = nil, launchAtLogin: Bool = true) {
+                soundEnabled: Bool = true, audioFilePath: String? = nil, launchAtLogin: Bool = true, language: AppLanguage = .systemDefault) {
         self.filterSeconds = filterSeconds
         self.graceSeconds = graceSeconds
         self.soundEnabled = soundEnabled
         self.audioFilePath = audioFilePath
         self.launchAtLogin = launchAtLogin
+        self.language = language
         self = normalized()
+    }
+
+    private enum CodingKeys: String, CodingKey { case filterSeconds, graceSeconds, soundEnabled, audioFilePath, launchAtLogin, language }
+    public init(from decoder: Decoder) throws {
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        self.init(filterSeconds: try values.decode(TimeInterval.self, forKey: .filterSeconds),
+                  graceSeconds: try values.decode(TimeInterval.self, forKey: .graceSeconds),
+                  soundEnabled: try values.decode(Bool.self, forKey: .soundEnabled),
+                  audioFilePath: try values.decodeIfPresent(String.self, forKey: .audioFilePath),
+                  launchAtLogin: try values.decode(Bool.self, forKey: .launchAtLogin),
+                  language: try values.decodeIfPresent(AppLanguage.self, forKey: .language) ?? .systemDefault)
     }
 
     /// Invalid durations revert to their defaults. Zero is a valid immediate threshold.

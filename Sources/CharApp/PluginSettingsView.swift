@@ -6,38 +6,34 @@ struct PluginSettingsView: View {
     @State private var deleteID: String?
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
-            Text("所有前台应用都可记录为回城起点，包括 Agent。插件统一配置提醒和准确返回能力；停用提醒不影响应用级回城。")
-                .font(.caption).foregroundStyle(.secondary)
             ForEach(runtime.pluginEntries) { entry in
                 HStack {
                     Toggle(entry.plugin.name, isOn: Binding(get: { entry.enabled }, set: { runtime.setPlugin(entry.id, enabled: $0) }))
                     Spacer()
                     capabilityIcons(entry.plugin)
                     Button { deleteID = entry.id } label: { Image(systemName: "trash") }
-                        .accessibilityLabel("删除 \(entry.plugin.name)")
+                        .accessibilityLabel(runtime.localized("删除 \(entry.plugin.name)", "Delete \(entry.plugin.name)"))
                 }
             }
             HStack {
-                Button("导入插件…") { runtime.importPlugin() }
-                Button("恢复已删除的内置插件") { runtime.restorePlugins() }
+                Button(runtime.localized("导入插件…", "Import plugin…")) { runtime.importPlugin() }
+                Button(runtime.localized("恢复已删除的内置插件", "Restore built-in plugins")) { runtime.restorePlugins() }
             }
-            Text("自定义插件可配置现有 Agent 的目标应用、图标及准确返回适配器。未安装插件的应用也支持应用级回城；停用准确返回适配器会结束依赖它的回城。")
-                .font(.caption).foregroundStyle(.secondary)
         }
-        .alert("删除插件？", isPresented: Binding(get: { deleteID != nil }, set: { if !$0 { deleteID = nil } })) {
-            Button("取消", role: .cancel) { deleteID = nil }
-            Button("删除", role: .destructive) { if let id = deleteID { runtime.deletePlugin(id) }; deleteID = nil }
-        } message: { Text("插件将从 Char 移除。已安装在 Agent 客户端的观察 Hook 保留，可按集成文档卸载。") }
+        .alert(runtime.localized("删除插件？", "Delete plugin?"), isPresented: Binding(get: { deleteID != nil }, set: { if !$0 { deleteID = nil } })) {
+            Button(runtime.localized("取消", "Cancel"), role: .cancel) { deleteID = nil }
+            Button(runtime.localized("删除", "Delete"), role: .destructive) { if let id = deleteID { runtime.deletePlugin(id) }; deleteID = nil }
+        } message: { Text(runtime.localized("客户端 Hook 会保留。", "Client hooks remain installed.")) }
     }
     private func capabilityIcons(_ plugin: IntegrationPlugin) -> some View {
         HStack(spacing: 8) {
             if plugin.workEnd != nil {
-                capabilityIcon("bell.fill", label: "提醒")
+                capabilityIcon("bell.fill", label: runtime.localized("提醒", "Notifications"))
             }
             if plugin.returnAdapter == .tabbit || plugin.returnAdapter == .vscode {
-                capabilityIcon("scope", label: "准确回城能力，需要可用集成及授权")
+                capabilityIcon(NavigationPresentation.exactSymbol, label: runtime.localized("准确回城能力，需要可用集成及授权", "Exact return (requires integration and permission)"))
             } else {
-                capabilityIcon("macwindow", label: "应用级回城")
+                capabilityIcon(NavigationPresentation.applicationSymbol, label: runtime.localized("应用级回城", "Application return"))
             }
         }
         .frame(width: 48, alignment: .trailing)
@@ -59,10 +55,11 @@ private struct SelectedPetPreview: NSViewRepresentable {
         let view = GraphicButton(kind: .pet, runtime: runtime)
         view.isEnabled = false
         view.setAccessibilityRole(.image)
-        view.setAccessibilityLabel("当前桌宠形象预览")
+        view.setAccessibilityLabel(runtime.localized("当前桌宠形象预览", "Selected pet preview"))
         return view
     }
     func updateNSView(_ view: GraphicButton, context: Context) {
+        view.setAccessibilityLabel(runtime.localized("当前桌宠形象预览", "Selected pet preview"))
         view.elapsed = elapsed; view.clipElapsed = elapsed; view.needsDisplay = true
     }
 }
@@ -72,30 +69,29 @@ struct AppearanceSettingsView: View {
     @State private var previewStarted = Date()
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Picker("放置方式", selection: Binding(get: { runtime.petPlacement }, set: { runtime.setPlacement($0) })) {
-                Text("桌面").tag(PetPlacement.desktop)
-                Text("左边缘").tag(PetPlacement.left)
-                Text("右边缘").tag(PetPlacement.right)
-                Text("上边缘").tag(PetPlacement.top)
-                Text("下边缘").tag(PetPlacement.bottom)
+            Picker(runtime.localized("放置方式", "Placement"), selection: Binding(get: { runtime.petPlacement }, set: { runtime.setPlacement($0) })) {
+                Text(runtime.localized("桌面", "Desktop")).tag(PetPlacement.desktop)
+                Text(runtime.localized("左边缘", "Left edge")).tag(PetPlacement.left)
+                Text(runtime.localized("右边缘", "Right edge")).tag(PetPlacement.right)
+                Text(runtime.localized("上边缘", "Top edge")).tag(PetPlacement.top)
+                Text(runtime.localized("下边缘", "Bottom edge")).tag(PetPlacement.bottom)
             }
             HStack {
-                Text("桌宠大小")
+                Text(runtime.localized("桌宠大小", "Pet size"))
                 Slider(value: Binding(get: { runtime.petSize }, set: { runtime.setPetSize($0) }), in: 36...88, step: 2)
-                    .accessibilityLabel("桌宠大小")
+                    .accessibilityLabel(runtime.localized("桌宠大小", "Pet size"))
                 Text("\(Int(runtime.petSize)) pt").monospacedDigit().frame(width: 46)
-                Button("重置") { runtime.setPetSize(48) }
+                Button(runtime.localized("重置", "Reset")) { runtime.setPetSize(48) }
             }
             HStack {
-                Text("气泡距离")
+                Text(runtime.localized("气泡距离", "Bubble distance"))
                 Slider(value: Binding(get: { runtime.bubbleDistance }, set: { runtime.setBubbleDistance($0) }), in: 8...72, step: 2)
-                    .accessibilityLabel("气泡与桌宠的距离")
+                    .accessibilityLabel(runtime.localized("气泡与桌宠的距离", "Distance between pet and bubbles"))
                 Text("\(Int(runtime.bubbleDistance)) pt").monospacedDigit().frame(width: 46)
-                Button("重置") { runtime.setBubbleDistance(20) }
+                Button(runtime.localized("重置", "Reset")) { runtime.setBubbleDistance(20) }
             }
-            Text("当前轨道可容纳 \(runtime.bubbleCapacity) 个气泡，超过后自动折叠。")
-                .font(.caption).foregroundStyle(.secondary)
-            Picker("桌宠形象", selection: Binding(get: { runtime.selectedSkinID }, set: { runtime.selectSkin($0) })) {
+            LabeledContent(runtime.localized("可见气泡", "Visible bubbles"), value: "\(runtime.bubbleCapacity)")
+            Picker(runtime.localized("桌宠形象", "Pet appearance"), selection: Binding(get: { runtime.selectedSkinID }, set: { runtime.selectSkin($0) })) {
                 ForEach(runtime.skins, id: \.id) { skin in Text(skin.name).tag(skin.id) }
             }
             TimelineView(.animation(minimumInterval: 1 / 12, paused: reduceMotion)) { timeline in
@@ -103,11 +99,9 @@ struct AppearanceSettingsView: View {
                     .frame(width: 76, height: 76)
             }
             HStack {
-                Button("导入形象…") { runtime.importSkin() }
-                Button("删除当前形象") { runtime.deleteSkin(runtime.selectedSkinID) }.disabled(runtime.selectedSkinID == "char.default")
+                Button(runtime.localized("导入形象…", "Import appearance…")) { runtime.importSkin() }
+                Button(runtime.localized("删除当前形象", "Delete appearance")) { runtime.deleteSkin(runtime.selectedSkinID) }.disabled(runtime.selectedSkinID == "char.default")
             }
-            Text("拖动桌宠靠近屏幕边缘可吸附。有折叠气泡时才可用滚轮缓慢循环；末尾气泡最多显示 3 个小气泡。所有屏幕共享放置方式。切换桌面时桌宠轻缩再探出。系统的整屏桌面切换由 macOS 控制。")
-                .font(.caption).foregroundStyle(.secondary)
         }
     }
 }
