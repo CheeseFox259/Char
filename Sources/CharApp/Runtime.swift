@@ -536,6 +536,63 @@ actor ObservationWorker {
             NSApp.terminate(nil)
             return
         }
+        if CommandLine.arguments.contains("--bubble-state-check") {
+            for end in enabledWorkEnds { router.remove(workEnd: end) }
+            var filtered = settings; filtered.filterSeconds = 10; filtered.soundEnabled = false
+            router.updateSettings(filtered)
+            setPlacement(.desktop)
+            try? await Task.sleep(nanoseconds: 450_000_000)
+            let epoch = Date()
+            let key = SessionKey(workEnd: .pi, nativeID: "state-continuity-fixture")
+            func event(_ seconds: Double, _ state: SessionState) -> ObservationEvent {
+                ObservationEvent(key: key, target: SessionTarget(bundleIdentifier: "fixture-only"),
+                                 timestamp: epoch.addingTimeInterval(seconds), state: state)
+            }
+            router.ingest([event(0, .running)]); router.advance(to: epoch); publish()
+            guard let bubble = panel.surface.buttons.first(where: { $0.renderedWorkEnd == .pi }),
+                  let shell = bubble.ownedShellImage else { fail("running continuity bubble missing") }
+            let frame = bubble.frame
+            let preview = CommandLine.arguments.contains("--bubble-state-preview")
+            if preview { try? await Task.sleep(nanoseconds: 3_000_000_000) }
+            let cycles = preview ? 100 : 3
+            for cycle in 0..<cycles {
+                let start = Double(cycle * 20)
+                router.ingest([event(start + 1, .stopped(.turnEnded))])
+                router.advance(to: epoch.addingTimeInterval(start + 1)); publish()
+                guard let fade = bubble.statusLayer.animation(forKey: "transition") as? CATransition,
+                      fade.type == .fade else { fail("pending status missing compositor transition") }
+                if !bubble.reducedMotion {
+                    guard let settle = bubble.statusLayer.animation(forKey: "status-settle") as? CAAnimationGroup,
+                          settle.animations?.count == 2 else { fail("pending status missing elastic settle") }
+                }
+                for _ in 0..<5 {
+                    guard !bubble.isHidden, !bubble.graphicLayer.isHidden, bubble.graphicLayer.opacity == 1,
+                          bubble.frame == frame, bubble.ownedShellImage === shell,
+                          snapshot.bubbles.first?.pendingCount == 1, snapshot.bubbles.first?.count == 0,
+                          bubble.statusLayer.contents != nil else { fail("filter interval hid or replaced the running bubble") }
+                    try? await Task.sleep(nanoseconds: 20_000_000)
+                }
+                if preview { try? await Task.sleep(nanoseconds: 2_000_000_000) }
+                router.advance(to: epoch.addingTimeInterval(start + 11)); publish()
+                guard !bubble.isHidden, bubble.graphicLayer.opacity == 1, bubble.frame == frame,
+                      bubble.ownedShellImage === shell, snapshot.bubbles.first?.head?.reason == .turnEnded,
+                      bubble.statusLayer.animation(forKey: "transition") != nil,
+                      bubble.dismissalFragments(reducedMotion: false) != nil else { fail("completed state broke continuity or click artwork") }
+                if preview { try? await Task.sleep(nanoseconds: 2_000_000_000) }
+                router.ignoreNext(for: .pi)
+                router.ingest([event(start + 12, .running)]); router.advance(to: epoch.addingTimeInterval(start + 12)); publish()
+                guard !bubble.isHidden, bubble.ownedShellImage === shell,
+                      snapshot.bubbles.first?.runningCount == 1 else { fail("resume state broke continuity") }
+                if preview { try? await Task.sleep(nanoseconds: 2_000_000_000) }
+            }
+            bubble.reducedMotion = true
+            router.ingest([event(Double(cycles * 20 + 1), .stopped(.question))]); router.advance(to: epoch.addingTimeInterval(Double(cycles * 20 + 1))); publish()
+            guard bubble.statusLayer.animation(forKey: "status-settle") == nil,
+                  let fade = bubble.statusLayer.animation(forKey: "transition") as? CATransition,
+                  fade.duration == 0.12, bubble.graphicLayer.opacity == 1 else { fail("Reduce Motion continuity") }
+            print("Char bubble continuity check passed: running → filtered stop → completed → running; stable shell/slot, status fade/settle, dismissal image and Reduce Motion")
+            NSApp.terminate(nil); return
+        }
         func iconPixels(_ image: NSImage?) -> Data? {
             guard let image else { return nil }
             let bitmap = NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: 256, pixelsHigh: 256,

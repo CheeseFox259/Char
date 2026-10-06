@@ -32,6 +32,8 @@
 
 ## 性能与验收
 
+- [气泡状态连续性修复](bubble-state-continuity-2026-10-06.md)：过滤期持续可见、状态图层过渡与回归检查。
+
 - [能力插件验证](capability-plugins-verification-2026-10-06.md)：动态客户端、进程协议、稳定生命周期、原生App路径与成本。
 
 - [设置与前台查询性能优化实测](performance-optimization-2026-10-06.md)：设置 CPU 同场景从 37.79% 降至 2.65%、预览生命周期、轻量身份查询与验证范围。
