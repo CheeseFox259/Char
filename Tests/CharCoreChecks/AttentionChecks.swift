@@ -37,6 +37,46 @@ struct AttentionChecks {
         try check(transient.drainEffects().isEmpty)
     }
 
+    func testRunningToStopKeepsBubbleThroughFilter() throws {
+        let r = router()
+        r.ingest([event("a", 0, .running)])
+        r.advance(to: time(0))
+        try checkEqual(r.snapshot.bubbles.map(\.workEnd), [.claudeCode])
+        r.ingest([event("a", 1, .stopped(.turnEnded))])
+        for second in [1.0, 1.5, 5.0, 10.99] {
+            r.advance(to: time(second))
+            try checkEqual(r.snapshot.bubbles.map(\.workEnd), [.claudeCode])
+            try checkEqual(r.snapshot.bubbles.first?.count, 0)
+            try checkEqual(r.snapshot.bubbles.first?.pendingCount, 1)
+            try checkEqual(r.snapshot.bubbles.first?.runningCount, 0)
+            try check(r.nextVisit(for: .claudeCode) == nil)
+            try check(r.drainEffects().isEmpty)
+        }
+        r.advance(to: time(11))
+        try checkEqual(r.snapshot.bubbles.map(\.workEnd), [.claudeCode])
+        try checkEqual(r.nextVisit(for: .claudeCode)?.reason, .turnEnded)
+        try checkEqual(r.snapshot.bubbles.first?.pendingCount, 0)
+        r.ignoreNext(for: .claudeCode)
+        try check(r.snapshot.bubbles.isEmpty, "acknowledged stop resurrected the continuity bubble")
+
+        let transient = router()
+        transient.ingest([event("a", 0, .running), event("a", 1, .stopped(.question))])
+        transient.advance(to: time(2))
+        try checkEqual(transient.snapshot.bubbles.first?.pendingCount, 1)
+        transient.ingest([event("a", 3, .running)])
+        transient.advance(to: time(20))
+        try checkEqual(transient.snapshot.bubbles.first?.runningCount, 1)
+        try checkEqual(transient.snapshot.bubbles.first?.pendingCount, 0)
+        try checkEqual(transient.snapshot.bubbles.first?.count, 0)
+        try check(transient.drainEffects().isEmpty)
+        transient.ingest([event("a", 21, .stopped(.approval))])
+        transient.updateFocus(FocusContext(exactSession: key("a"), isAgent: true), at: time(22))
+        try check(transient.snapshot.bubbles.isEmpty, "exact focus must acknowledge the pending stop")
+        transient.ingest([event("a", 23, .running), event("a", 24, .stopped(.failure))])
+        transient.ingest([event("a", 25, .closed)])
+        try check(transient.snapshot.bubbles.isEmpty, "closed pending session remained visible")
+    }
+
     func testExactFocusAndApplicationFocus() throws {
         let r = router()
         r.updateFocus(FocusContext(exactSession: key("a"), isAgent: true), at: time(0))

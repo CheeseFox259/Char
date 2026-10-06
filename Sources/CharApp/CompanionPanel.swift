@@ -519,6 +519,7 @@ import CharPlatform
     var isEnabled = true
     let graphicLayer = CALayer()
     private let textureLayer = CALayer()
+    let statusLayer = CALayer()
     private let hoverLayer = CALayer()
     private let hoverPulseLayer = CALayer()
     private let hoverHalo = CALayer()
@@ -530,13 +531,14 @@ import CharPlatform
     private var presentationGeneration = 0
     var renderedWorkEnd: WorkEnd? { if case let .bubble(end) = kind { return end }; return nil }
     var hasOwnedImage: Bool { textureLayer.contents != nil }
+    private(set) var ownedShellImage: CGImage?
     private var renderedImage: CGImage?
     var artworkPixelData: Data? { renderedImage?.dataProvider?.data as Data? }
     var presentationFrame: NSRect { graphicLayer.presentation()?.frame ?? graphicLayer.frame }
     unowned let runtime: CompanionRuntime
     private struct ArtworkKey: Equatable {
         let workEnd: WorkEnd
-        let bubble: AttentionBubble?
+        let cli: Bool
         let icon: ObjectIdentifier?
         let miniature: Bool
         let size: NSSize
@@ -546,19 +548,76 @@ import CharPlatform
     private var sourceIconBundle: String?
     private var sourceIcon: NSImage?
     private var symbolImages: [String: NSImage] = [:]
+    private struct StatusKey: Equatable {
+        let group: AttentionPresentationGroup?
+        let pending: Bool
+        let count: Int
+        let past: Bool
+        init(_ bubble: AttentionBubble) {
+            group = bubble.head.map { AttentionPresentationGroup.forReason($0.reason) }
+            pending = bubble.head == nil && bubble.runningCount == 0 && bubble.pendingCount > 0
+            count = bubble.head != nil ? bubble.count : pending ? bubble.pendingCount : bubble.runningCount
+            past = bubble.head?.isPast == true
+        }
+    }
+    private var statusKey: StatusKey?
+    private var statusArtwork: NSImage?
+    private func isCLI(_ end: WorkEnd) -> Bool {
+        runtime.pluginEntries.first(where: { $0.enabled && $0.plugin.workEnd == end })?.plugin.clientInterface == .cli
+            || [.claudeCode, .codexCLI, .kimiCLI, .pi].contains(end)
+    }
     func refreshArtwork() {
         guard case let .bubble(end) = kind else { return }
-        let next = ArtworkKey(workEnd: end, bubble: runtime.snapshot.bubbles.first { $0.workEnd == end },
+        let bubble = runtime.snapshot.bubbles.first { $0.workEnd == end }
+        let next = ArtworkKey(workEnd: end, cli: isCLI(end),
                               icon: runtime.agentIcon(for: end).map(ObjectIdentifier.init), miniature: miniature, size: bounds.size)
-        if next != artworkKey {
+        let shellChanged = next != artworkKey
+        if shellChanged {
             artworkKey = next
             artwork = BubbleDrawing.raster(size: NSSize(width: 44, height: 44)) { drawBubbleContent(end) }
-            renderedImage = artwork?.cgImage(forProposedRect: nil, context: nil, hints: nil)
-            textureLayer.contents = renderedImage
+            ownedShellImage = artwork?.cgImage(forProposedRect: nil, context: nil, hints: nil)
+            textureLayer.contents = ownedShellImage
         }
-        let bubble = next.bubble
+        let nextStatus = miniature ? nil : bubble.map(StatusKey.init)
+        if shellChanged || nextStatus != statusKey {
+            let animate = !shellChanged && statusKey != nil && nextStatus != nil && !isHidden
+            statusKey = nextStatus
+            statusArtwork = nextStatus.map { value in
+                BubbleDrawing.raster(size: NSSize(width: 44, height: 44)) { drawStatus(value) }
+            }
+            CATransaction.begin(); CATransaction.setDisableActions(true)
+            statusLayer.contents = statusArtwork?.cgImage(forProposedRect: nil, context: nil, hints: nil)
+            statusLayer.removeAllAnimations()
+            if animate {
+                let fade = CATransition(); fade.type = .fade
+                fade.duration = reducedMotion ? 0.12 : 0.28
+                fade.timingFunction = CAMediaTimingFunction(controlPoints: 0.25, 0, 0.25, 1)
+                statusLayer.add(fade, forKey: "transition")
+                if !reducedMotion {
+                    let x = CAKeyframeAnimation(keyPath: "transform.scale.x")
+                    let y = CAKeyframeAnimation(keyPath: "transform.scale.y")
+                    x.values = [1, 1.065, 0.99, 1]; y.values = [1, 0.94, 1.01, 1]
+                    for motion in [x, y] {
+                        motion.duration = 0.32
+                        motion.keyTimes = [0, 0.38, 0.72, 1]
+                        motion.timingFunctions = Array(repeating: CAMediaTimingFunction(name: .easeInEaseOut), count: 3)
+                    }
+                    let settle = CAAnimationGroup(); settle.animations = [x, y]; settle.duration = 0.32
+                    statusLayer.add(settle, forKey: "status-settle")
+                }
+            }
+            CATransaction.commit()
+            // Keep a complete image for the existing click-to-shatter effect.
+            let composite = BubbleDrawing.raster(size: NSSize(width: 44, height: 44)) {
+                let rect = NSRect(x: 0, y: 0, width: 44, height: 44)
+                artwork?.draw(in: rect); statusArtwork?.draw(in: rect)
+            }
+            renderedImage = composite.cgImage(forProposedRect: nil, context: nil, hints: nil)
+        }
         let detail = bubble?.head.map { ", \(runtime.localizedTitle($0.reason))\($0.isPast ? runtime.localized("，已恢复", ", past") : "")" } ?? ""
-        setAccessibilityLabel("\(runtime.pluginEntries.first { $0.enabled && $0.plugin.workEnd == end }?.plugin.name ?? end.title): \(bubble?.count ?? 0) \(runtime.localized("待查看", "unviewed")), \(bubble?.runningCount ?? 0) \(runtime.localized("运行中", "running"))\(detail)")
+        let pendingCount = bubble?.pendingCount ?? 0
+        let pending = pendingCount > 0 ? ", \(pendingCount) \(runtime.localized("等待确认", "confirming stop"))" : ""
+        setAccessibilityLabel("\(runtime.pluginEntries.first { $0.enabled && $0.plugin.workEnd == end }?.plugin.name ?? end.title): \(bubble?.count ?? 0) \(runtime.localized("待查看", "unviewed")), \(bubble?.runningCount ?? 0) \(runtime.localized("运行中", "running"))\(pending)\(detail)")
     }
     /// Reuse the owned image and presentation geometry, including an interrupted
     /// orbit and hover deformation. Texture coordinates avoid rendering new images.
@@ -685,10 +744,13 @@ import CharPlatform
         hoverPulseLayer.frame = graphicLayer.bounds
         textureLayer.frame = graphicLayer.bounds
         textureLayer.contentsScale = 2
+        statusLayer.frame = textureLayer.bounds; statusLayer.contentsScale = 2
+        statusLayer.anchorPoint = NSPoint(x: 31 / 44.0, y: 7.5 / 44.0)
+        statusLayer.position = NSPoint(x: 31, y: 7.5)
         graphicLayer.addSublayer(hoverLayer); hoverLayer.addSublayer(hoverPulseLayer)
-        hoverPulseLayer.addSublayer(textureLayer); layer?.addSublayer(graphicLayer)
+        hoverPulseLayer.addSublayer(textureLayer); textureLayer.addSublayer(statusLayer); layer?.addSublayer(graphicLayer)
         let actions: [String: CAAction] = ["contents": NSNull(), "bounds": NSNull(), "position": NSNull(), "transform": NSNull(), "opacity": NSNull()]
-        graphicLayer.actions = actions; textureLayer.actions = actions; hoverLayer.actions = actions
+        graphicLayer.actions = actions; textureLayer.actions = actions; statusLayer.actions = actions; hoverLayer.actions = actions
         hoverPulseLayer.actions = actions; hoverHalo.actions = actions
         setAccessibilityRole(.button)
         switch kind {
@@ -1016,26 +1078,27 @@ import CharPlatform
     }
     private func drawBubbleContent(_ end: WorkEnd) {
         let bounds = NSRect(x: 0, y: 0, width: 44, height: 44)
-        guard let bubble = runtime.snapshot.bubbles.first(where: { $0.workEnd == end }) else { return }
         BubbleDrawing.shell(in: bounds, tint: .clear)
         let iconRect = bounds.insetBy(dx: miniature ? 3 : 7, dy: miniature ? 3 : 7)
         if let icon = runtime.agentIcon(for: end) { icon.draw(in: iconRect) }
         else { symbol(end.symbol, in: iconRect, color: .labelColor) }
-        if runtime.pluginEntries.first(where: { $0.enabled && $0.plugin.workEnd == end })?.plugin.clientInterface == .cli || [.claudeCode, .codexCLI, .kimiCLI, .pi].contains(end) {
+        if isCLI(end) {
             let size: CGFloat = miniature ? 8 : 14
             let rect = NSRect(x: 0, y: bounds.height - size, width: size, height: size)
             NSColor(calibratedWhite: 0.09, alpha: 0.95).setFill()
             NSBezierPath(roundedRect: rect, xRadius: 4, yRadius: 4).fill()
             symbol("terminal", in: rect.insetBy(dx: 2, dy: 2), color: .white)
         }
-        guard !miniature else { return }
-        let group = bubble.head.map { AttentionPresentationGroup.forReason($0.reason) }
-        let color: NSColor = group == nil ? .systemMint : group == .issue ? .systemOrange : group == .interaction ? .systemBlue : .systemGreen
-        let badge = NSRect(x: bounds.maxX - 26, y: 0, width: 26, height: 15)
-        color.withAlphaComponent(bubble.head?.isPast == true ? 0.45 : 1).setFill()
+    }
+    private func drawStatus(_ status: StatusKey) {
+        let color: NSColor = status.pending ? .systemGray : status.group == nil ? .systemMint
+            : status.group == .issue ? .systemOrange : status.group == .interaction ? .systemBlue : .systemGreen
+        let badge = NSRect(x: 18, y: 0, width: 26, height: 15)
+        color.withAlphaComponent(status.past ? 0.45 : 1).setFill()
         NSBezierPath(roundedRect: badge, xRadius: 7.5, yRadius: 7.5).fill()
-        symbol(group?.symbol ?? "circle.fill", in: NSRect(x: badge.minX + 3, y: 3, width: 9, height: 9), color: .white)
-        number(bubble.head == nil ? bubble.runningCount : bubble.count, rect: NSRect(x: badge.minX + 12, y: 1, width: 12, height: 13), color: .white, size: 10)
+        symbol(status.pending ? "ellipsis" : status.group?.symbol ?? "circle.fill",
+               in: NSRect(x: badge.minX + 3, y: 3, width: 9, height: 9), color: .white)
+        number(status.count, rect: NSRect(x: badge.minX + 12, y: 1, width: 12, height: 13), color: .white, size: 10)
     }
     private func symbol(_ name: String, in rect: NSRect, color: NSColor) {
         let key = "\(name)/\(rect.height)/\(color.description)"

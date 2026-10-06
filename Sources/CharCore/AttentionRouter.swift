@@ -18,10 +18,12 @@ public struct AttentionBubble: Equatable, Sendable {
     public var workEnd: WorkEnd
     public var items: [AttentionItem]
     public var runningCount: Int
+    /// Stops following observed running activity, still inside the notification filter.
+    public var pendingCount: Int
     public var count: Int { items.count }
     public var head: AttentionItem? { items.first }
-    public init(workEnd: WorkEnd, items: [AttentionItem], runningCount: Int) {
-        self.workEnd = workEnd; self.items = items; self.runningCount = runningCount
+    public init(workEnd: WorkEnd, items: [AttentionItem], runningCount: Int, pendingCount: Int = 0) {
+        self.workEnd = workEnd; self.items = items; self.runningCount = runningCount; self.pendingCount = pendingCount
     }
 }
 
@@ -51,6 +53,7 @@ public final class AttentionRouter {
         var event: ObservationEvent
         var stoppedAt: Date?
         var acknowledged = false
+        var hasObservedRunning = false
     }
     private let startedAt: Date
     private var now: Date
@@ -74,7 +77,13 @@ public final class AttentionRouter {
         let bubbles = ends.compactMap { end -> AttentionBubble? in
             let queue = items.values.filter { $0.key.workEnd == end }.sorted(by: Self.precedes)
             let running = sessions.values.filter { $0.event.key.workEnd == end && $0.event.state == .running }.count
-            return queue.isEmpty && running == 0 ? nil : AttentionBubble(workEnd: end, items: queue, runningCount: running)
+            let pending = sessions.values.filter {
+                guard $0.event.key.workEnd == end, $0.hasObservedRunning, !$0.acknowledged,
+                      items[$0.event.key] == nil, case .stopped = $0.event.state else { return false }
+                return true
+            }.count
+            return queue.isEmpty && running == 0 && pending == 0 ? nil
+                : AttentionBubble(workEnd: end, items: queue, runningCount: running, pendingCount: pending)
         }
         return AttentionSnapshot(bubbles: bubbles, hold: hold, navigationFeedback: navigationFeedback)
     }
@@ -116,7 +125,7 @@ public final class AttentionRouter {
             var session = old ?? Session(event: event)
             switch event.state {
             case .running:
-                session.stoppedAt = nil; session.acknowledged = false
+                session.stoppedAt = nil; session.acknowledged = false; session.hasObservedRunning = true
                 if var item = items[event.key] {
                     item.isPast = true; item.target = event.target
                     items[event.key] = item
