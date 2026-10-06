@@ -62,3 +62,7 @@ python3 integrations/kimi/install.py \
 ## 安装后用户验证
 
 使用者随后反馈“功能正常”。共享原生流实际产生 Kimi Desktop 的 SessionStart 和 pi 的 running → turnEnded（0600）；正常 Char 的 AX 状态显示 Kimi Code Desktop 与 pi 的 Turn ended 气泡，并有应用级降级。没有注入测试元数据。Codex Desktop 的已恢复 Question 同时可见。DeepSeek 当前未获得独立原生事件记录，不能把总体反馈扩大为该客户端全生命周期通过。
+
+## v0.2.0 稳定目录迁移（2026-10-06）
+
+延续用户批准的三项本地集成，在正式 Release 设置中更新 pi、Kimi CLI/App、DeepSeek。当前配置使用 `~/Library/Application Support/Char/runtime/`；由维护适配器创建私有备份，实际自检均为 ready。既有会话仍需用户安排重载；未发起模型请求。保留审计与安装来源见 [v0.2.0 验证](release-verification-0.2.0.md)。

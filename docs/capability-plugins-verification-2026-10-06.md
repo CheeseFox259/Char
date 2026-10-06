@@ -68,3 +68,7 @@
 ## 发布前复验
 
 2026-10-06：再次运行 `build/Char.app/Contents/MacOS/Char --smoke`，包括此前失败的 Space notification arrival feedback 在内的完整原生烟测通过。未修改生产 Space 行为或削弱断言。v0.2.0 发布与下载安装证据另记于版本验证记录。
+
+## 发布完成
+
+v0.2.0 已合入 main、经远端 Universal 构建发布，并从 GitHub Release 安装到 `/Applications/Char.app`。此前未发布状态与失败记录为开发时历史；最终下载产物的完整烟测通过。实际配置迁移与验收边界见 [版本验证记录](release-verification-0.2.0.md)。

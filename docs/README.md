@@ -25,6 +25,8 @@
 
 ## 发布
 
+- [v0.2.0 Release 发布、替换与集成迁移](release-verification-0.2.0.md)。
+
 - [macOS 安装、构建与发布](macos-release.md)。
 - [v0.1.2 Release 发布、下载安装与实测](release-verification-0.1.2.md)。
 
