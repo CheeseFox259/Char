@@ -35,7 +35,7 @@ extension CompanionRuntime {
         case .codexCLI, .codexDesktop: bundle = MacOSPlatform.codexBundleID
         case .kimiCLI, .kimiDesktop: bundle = MacOSPlatform.kimiBundleID
         case .deepseekDesktop: bundle = MacOSPlatform.deepseekBundleID
-        case .claudeCode, .pi: bundle = nil
+        default: bundle = entry.plugin.bundleIdentifier
         }
         if let bundle, let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundle) {
             return NSWorkspace.shared.icon(forFile: url.path)
@@ -79,17 +79,24 @@ extension CompanionRuntime {
             let next = pluginStore.entries
             guard next != pluginEntries else { return }
             let old = enabledWorkEnds
+            let replaced = Set(next.compactMap { entry -> WorkEnd? in
+                guard entry.enabled, let previous = pluginEntries.first(where: { $0.id == entry.id }),
+                      previous.plugin != entry.plugin || previous.packageURL != entry.packageURL else { return nil }
+                return entry.plugin.workEnd
+            })
             pluginEntries = next
             agentIconCache.removeAll()
-            for end in old.subtracting(enabledWorkEnds) { router.remove(workEnd: end) }
+            for end in old.subtracting(enabledWorkEnds).union(replaced) { router.remove(workEnd: end) }
             platform?.configure(plugins: next.filter(\.enabled).map(\.plugin))
             if let anchor = router.snapshot.hold?.anchor,
-               anchor.accuracy == .exact && platform?.isAnchorValid(anchor) == false {
+               anchor.accuracy == .exact && capabilityOrigins[anchor.id] == nil && platform?.isAnchorValid(anchor) == false {
                 router.endHold()
             }
+            if !replaced.isEmpty { observationGeneration.configure(enabled: enabledWorkEnds.subtracting(replaced), at: Date()) }
             observationGeneration.configure(enabled: enabledWorkEnds, at: Date())
             let configuration = observationGeneration
             Task { await worker?.configure(configuration) }
+            configureCapabilityHost()
             publish()
         } catch { setupMessage = localized("插件未重新加载：\(error)", "Could not reload plugins: \(error)") }
     }
@@ -97,9 +104,24 @@ extension CompanionRuntime {
         do { try pluginStore?.setEnabled(enabled, for: id); reloadPlugins() }
         catch { setupMessage = localized("无法修改插件：\(error)", "Could not update plugin: \(error)") }
     }
-    func deletePlugin(_ id: String) {
-        do { try pluginStore?.remove(id: id); reloadPlugins() }
-        catch { setupMessage = localized("无法删除插件：\(error)", "Could not delete plugin: \(error)") }
+    func deletePlugin(_ id: String, cleanIntegration: Bool = false) {
+        if cleanIntegration {
+            guard !busy, let entry = pluginEntries.first(where: { $0.id == id }), let host = capabilityHost else { return }
+            busy = true
+            Task {
+                do {
+                    let shared = [.kimiCLI, .kimiDesktop].contains(entry.plugin.workEnd) && pluginEntries.contains {
+                        $0.id != id && $0.enabled && [.kimiCLI, .kimiDesktop].contains($0.plugin.workEnd)
+                    }
+                    _ = try await host.lifecycle(effectiveCapabilityEntry(entry), method: "uninstall", params: ["retainSharedIntegration": shared])
+                    try pluginStore?.remove(id: id); reloadPlugins()
+                } catch { setupMessage = localized("无法卸载插件：\(error)", "Could not uninstall plugin: \(error)") }
+                busy = false
+            }
+        } else {
+            do { try pluginStore?.remove(id: id); reloadPlugins() }
+            catch { setupMessage = localized("无法删除插件：\(error)", "Could not delete plugin: \(error)") }
+        }
     }
     func restorePlugins() {
         do { try pluginStore?.restoreBuiltIns(); reloadPlugins() }
@@ -110,7 +132,17 @@ extension CompanionRuntime {
         picker.title = localized("导入 .charintegration 插件目录", "Import .charintegration package")
         picker.prompt = localized("导入", "Import")
         if picker.runModal() == .OK, let url = picker.url {
-            do { try pluginStore?.importPackage(at: url); reloadPlugins() }
+            do {
+                let manifest = try JSONDecoder().decode(IntegrationPlugin.self, from: Data(contentsOf: url.appendingPathComponent("manifest.json")))
+                if manifest.adapter != nil {
+                    let alert = NSAlert()
+                    alert.messageText = localized("运行能力插件？", "Run capability plugin?")
+                    alert.informativeText = localized("\(manifest.name) 会以当前用户权限运行进程。请只导入可信代码。", "\(manifest.name) runs a process with your user permissions. Import trusted code only.")
+                    alert.addButton(withTitle: localized("导入", "Import")); alert.addButton(withTitle: localized("取消", "Cancel"))
+                    guard alert.runModal() == .alertFirstButtonReturn else { return }
+                }
+                try pluginStore?.importPackage(at: url, replacingExisting: true); reloadPlugins()
+            }
             catch { setupMessage = localized("导入失败：\(error)", "Import failed: \(error)") }
         }
     }

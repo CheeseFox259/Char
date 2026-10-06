@@ -1,100 +1,62 @@
-# 集成插件开发指南
+# 能力插件开发指南
 
-适用于当前 macOS 实现。先选择扩展方式，再使用[完整开发提示词](development-prompts.md)。
+新客户端可以在不修改 Char 源码的情况下接入监控、跳转、准确回城和安装维护。一个包可选择其中任意能力；任意应用仍有内置应用级回城。旧 v1/v2 配置包继续使用现有能力。
 
-## 1. 选择扩展方式
+## 1. 开始开发
 
-| 目标 | 当前可直接导入吗 | 实现入口 |
-| --- | --- | --- |
-| 换已有工作端的目标应用、名称或图标 | 可以，配置包 | .charintegration |
-| 为已有 Tabbit / VS Code 准确适配器提供配置 | 可以，仍依赖原生授权/桥接 | .charintegration |
-| 为任意应用添加应用级回城配置 | 可以，但未安装插件也支持这种回城 | .charintegration |
-| 接入新的 Agent 事件协议 | 不可以只改 JSON，需要源码贡献 | WorkEnd、观察器、Hook、测试 |
-| 新增浏览器/编辑器的准确返回能力 | 需要源码贡献及该应用可靠接口 | ReturnAdapter、平台适配器、生命周期测试 |
+三份通用、可自动读取的[完整开发指令](development-prompts.md)分别位于实现、交付包和外观目录。把具体客户端、运行方式和目标告诉代码 Agent；指令没有预设某个客户端或角色。
 
-**配置插件不执行代码、不安装 Hook、不加载动态库。** Char 不支持把任意 JS/Python 放入包中获得新观察能力。Agent 自身的原生扩展（例如 pi、DeepSeek）与 Char 的配置包是两个不同安装环节。
+从仓库根运行骨架工具（把占位值替换为需求中的真实值）：
 
-插件列表中的铃铛表示提醒，准星表示已配置准确回城能力，窗口表示应用级回城。准星不表示当前已授权或目标必然可用；状态页和实际导航结果仍决定是否能准确返回。
+```sh
+python3 scripts/new-capability-plugin.py <输出目录.charintegration> \
+  --id <唯一插件ID> --name <显示名称> --bundle <真实bundleID> \
+  --work-end <唯一工作端ID> --interface <cli或desktop> \
+  --capabilities monitor,visit,origin,lifecycle
+```
 
-## 2. 最小可用配置包
+只需要部分能力就删去对应项；不监控时可省略 work-end。骨架可通过格式和协议校验，但 inspect 明确返回 notInstalled，其他能力尚未实现；**它不是可交付的客户端集成**。将实现、依赖及资源放入包，文档/fixture/生成器留在包外。不要更改 WorkEnd/ReturnAdapter 来增加新客户端。
 
-在仓库根目录执行，所有命令只写工作目录，不安装用户配置：
+## 2. 查证和实现
 
-~~~sh
-mkdir -p build/personal-safari.charintegration
-cat > build/personal-safari.charintegration/manifest.json <<'JSON'
-{
-  "schemaVersion": 2,
-  "id": "personal.safari",
-  "name": "Safari",
-  "bundleIdentifier": "com.apple.Safari",
-  "returnAdapter": "application"
-}
-JSON
-swift run char-package-check integration build/personal-safari.charintegration
-~~~
+阅读[清单](integration-plugin-format.md)和[完整协议](capability-adapter-protocol.md)。从官方事件/API或已安装源码确认：根会话身份、CLI/Desktop、状态原因、终端/tmux环境、窗口/标签聚焦能力和客户端加载方式。记录未知类别，不能从回答正文或无输出推断。
 
-预期输出包含 VALID integration: personal.safari，退出码0。这是完整有效的无图标包，不需要制造任何资源文件。从设置 → 插件 → 导入插件，选择该目录。应用级回城无需额外插件，示例用于学习导入与生命周期。
+| 能力 | 开发要求 |
+| --- | --- |
+| monitor | 原生订阅优先；增量日志从 EOF 开始，处理完整行/轮转；转换必要元数据为 v1 事件 |
+| visit | 通过可靠接口聚焦 nativeID；确认后 exact+verified，应用激活 fallback，失败 unavailable |
+| origin | capture/check/focus/release；opaque token 绑定原 PID，确定关闭与查询失败分开 |
+| lifecycle | inspect/install/update/uninstall；只管理自己所属配置，备份、幂等、可回退，不自动重启客户端 |
 
-已有 Codex CLI 改用 Terminal 的完整清单如下：
+stdin/stdout 用 JSON Lines，stdout 不写诊断文字；配置根、终端环境通过清单 configuration 与宿主上下文配置。安装目标引用 `CHAR_HOOK_BINARY` 等稳定入口，不能引用构建目录。客户端原生扩展可以随包携带并由 lifecycle 安装，不能只在 README 写一条开发路径。
 
-~~~json
-{
-  "schemaVersion": 2,
-  "id": "personal.codex-terminal",
-  "name": "Codex CLI in Terminal",
-  "workEnd": "codexCLI",
-  "bundleIdentifier": "com.apple.Terminal"
-}
-~~~
+首次/最近/禁用起点、过滤、气泡排序与回城快捷键由 Char 统一处理。开发者只实现具体软件接口；无需复制一套公共规则。相同应用的多个准确提供者不能同时启用。
 
-将清单存为另一 .charintegration 目录中的 manifest.json 后校验。导入前关闭现有 Codex CLI 插件，或移除同工作端配置，否则“同一工作端只能有一个启用插件”的检查会拒绝导入。这只改变访问的目标应用；CLI 日志仍由原有 Codex 观察器处理，**不会获得 Terminal tab 的精准导航**。
+## 3. 开发工具与测试
 
-应用 bundle ID 可在目标 .app 的 Contents/Info.plist 中查看 CFBundleIdentifier；不要从名称猜测。例如只读命令：
-
-~~~sh
-/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' /System/Applications/Utilities/Terminal.app/Contents/Info.plist
-~~~
-
-## 3. 清单与资源规则
-
-完整字段见[格式契约](integration-plugin-format.md)，生产实现是 [IntegrationPlugins.swift](../Sources/CharCore/IntegrationPlugins.swift)。
-
-- schemaVersion 使用2；id 为唯一的1–128位 ASCII 字母/数字/点/下划线/短横线，首位必须字母或数字；name 去空白后非空且不超过100字符。
-- bundleIdentifier 必须是合法的点分应用标识；workEnd 只能为 claudeCode、codexCLI、codexDesktop、deepseekDesktop、kimiCLI、kimiDesktop、pi。
-- 至少指定 workEnd 或 returnAdapter 一项。returnAdapter 仅支持 application、tabbit、vscode。
-- tabbit 必须对应 com.tabbit-ai.Tabbit，vscode 必须对应 com.microsoft.VSCode；两者不能用来配置其他浏览器/编辑器。
-- icon 可省略；如指定，文件必须存在于包内，是可解码的 PNG，宽高均不超过2048。使用 assets/icon.png 等相对路径，不用绝对路径或路径穿越；建议128/256像素正方形透明图标，保留官方图形比例。
-- 整包不超过8 MiB，包根及任何内容不能是符号链接。开发说明、安装器和源码放在包外；运行时不加载包内代码。
-
-同一工作端不能有两个启用配置，同一应用不能有两个启用的准确适配器。多个 CLI 配置可以共享同一 Terminal/Warp 应用。id 重复时，即使旧包停用也不能再次导入；更新请删除旧包后重新导入。应用级起点不按插件列表划分 Agent/普通应用。
-
-## 4. 校验、安装和回退
-
-~~~sh
-swift run char-package-check integration build/personal-safari.charintegration
+```sh
+swift run char-package-check integration <包目录>
+swift run char-plugin-check inspect <可信包目录>
+swift run char-plugin-check replay <包目录> <events.jsonl>
 bash scripts/check.sh
-bash scripts/build-app.sh
-~~~
+# 原生能力路径（隔离配置与模拟导航）
+build/Char.app/Contents/MacOS/Char --capability-smoke
+```
 
-char-package-check 通过**生产导入器**将包复制到临时注册表，退出时清理，只关闭这个临时目录内的默认插件；不访问用户注册表。退出码：0有效、1包无效、2命令格式不正确。用户实际目录的重名与能力冲突仍由设置导入检查。校验通过不证明原生 Hook 已启用、应用存在或准确返回获授权。
+包校验调用生产导入器但只写临时目录。inspect 会执行你的适配器，仅请求 hello/inspect；开发工具上下文与正式 app 运行上下文有区别，不要将工具提供的路径写成产品配置。回放文件每行是 event 对象或带 event 的帧，workEnd 必须与清单一致；回放走真实宿主解码与 AttentionRouter，既不安装 Hook，也不运行客户端适配器。日期用 ISO-8601；不要套用旧 Swift Hook 时间格式。
 
-设置导入会复制包，热更新启用观察集合并清空已停用工作端的提醒。重新启用以新活动为起点，不重播停用期间旧事件。更改已安装 manifest 不受支持：移除后重新导入。删除内置插件的记录会保留，重启不复活；“恢复已删除的内置插件”是显式操作，冲突能力恢复为停用。
+为真实协议样本构建失败 fixture，再覆盖本次涉及的根/子、CLI/Desktop、启动基线、重复/乱序、关闭、权限失败、精度确认和安装升级卸载。测试模型请求不是必需步骤；优先模拟原生事件/API，真实客户端使用用户自然发生的活动验收。
 
-停用提醒不取消仍存活的应用级返回锚点；移除其依赖的准确适配器会结束准确 Hold。删除 Char 配置**不卸载原生客户端 Hook**，按 [pi](../integrations/pi/README.md)、[Kimi](../integrations/kimi/README.md)、[DeepSeek](../integrations/deepseek/README.md) 的独立文档回退。
+## 4. 导入与交付验收
 
-## 5. 新增 Agent 协议的源码路径
+1. 用户明确导入可信包；Char 复制包、自检并显示可用状态。运行时代码拥有当前用户权限，进程隔离不是沙箱。
+2. 需要 Hook 时通过插件菜单安装/更新；显示 reloadRequired 后由用户重载客户端。不要把 ready 解释为现有会话已经加载扩展。
+3. 新活动产生气泡，点击进入、保存来源、Ctrl+B 回城；exact 必须真实确认对象，fallback 必须准确标示。
+4. 禁用不接收旧进程事件，重启只看新活动；同 ID 新包导入保留启停、重建进程代次。
+5. 删除可选保留客户端集成，或卸载自己的集成再删除。其他插件/用户 Hook、原生会话和普通应用级来源保持可用。
 
-1. 确认客户端提供可靠的原生状态事件/追加日志，查证根会话和桌面/CLI身份。列出支持与缺失的原因，不能用回答文本或沉默时间猜测失败/轮次结束。
-2. 在 [Models.swift](../Sources/CharCore/Models.swift) 增加工作端及 [CompanionPanel.swift 中的 WorkEnd 展示分支](../Sources/CharApp/CompanionPanel.swift) 等所有穷举分支；检索 WorkEnd.allCases 和 switch，处理默认配置、图标、CLI角标、几何容量、fixture。
-3. 在 [CharObservations](../Sources/CharObservations) 加分类器与本地读取路径，或在 [CharHook](../Sources/CharHook/main.swift) 增加明确模式与原生扩展。不要用现有工作端冒充新协议。
-4. 转成 ObservationEvent：稳定 SessionKey、原生时间、running/stopped/closed、target、isChild。由 Swift JSONEncoder 写日期/枚举；Date 默认是自2001-01-01起秒数，不能把 Unix 秒直接填入现有 Hook 流。现有 Kimi 元数据是另一个 typed envelope，勿混写格式。
-5. 以 EOF 建立启动/重新启用基线；只处理完整追加行，覆盖半行、截短、文件替换、乱序、重复、旧关闭水位、子会话和配置代次。
-6. 原生脚本独立安装、明确保存备份和卸载步骤。发出的记录只携带必要状态元数据，不复制 prompt/消息正文，不调用模型完成“测试”。
-7. 在 [Tests](../Tests) 与该集成目录加入能抓住实际协议错误的检查。新增停顿类别同时更新信号矩阵；运行 scripts/check.sh，再在用户批准的原生客户端做对应事件验收。
+交付完整包、能力矩阵、证据链接、运行时依赖、配置项、安装/升级/卸载/回退方法和实测记录。分别报告格式检查、回放、模拟导航与真实客户端测试。缺失信号明确列出；不要宣称所有软件能自动精确定位。
 
-## 6. 新增准确回城适配器
+## 5. 性能要求
 
-参考 [Platform.swift](../Sources/CharPlatform/Platform.swift)、[TabbitAppleScript.swift](../Sources/CharPlatform/TabbitAppleScript.swift)、[VSCodeSocketBridge.swift](../Sources/CharPlatform/VSCodeSocketBridge.swift)。
-
-需要捕获不可歧义的原窗口/标签 token、验证存活、聚焦并确认当前 token。区分“确定关闭”与“查询失败”：前者使锚点失效，后者保留重试。绑定原进程，保留首次锚点；只激活应用必须返回 fallback，不能标为 exact 或清除未查看项。新增枚举值、清单校验、平台捕获/返回/匹配和删除适配器行为必须一起完成。权限请求必须通过显式用户操作。
+一个混合包共用一个进程。监控使用原生事件推送；日志读取采用增量与目录缓存；visit/lifecycle-only 不空闲常驻。停止时取消订阅与子进程。测量适配器与 Char 的 CPU/RSS，注明会话数、文件根、气泡/设置状态、时间和样本长度。新增进程内存不可忽略；先减重复工作，再按实测优化，不能用丢事件或延长响应换数字。

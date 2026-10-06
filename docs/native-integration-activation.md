@@ -2,6 +2,8 @@
 
 当前实现与实际包：`f2b5b4b`，`/Users/superhacker/Codefield/char/build/Char.app`。2026-10-04 使用者已批准三项本地配置写入，并已按下列清单执行；未调用外部模型，未退出用户应用。
 
+以上及下方命令为 2026-10-04 的历史安装记录。2026-10-06 已修复 pi、Kimi CLI/App 和 DeepSeek Desktop 的旧构建路径，目前三项集成都使用 `/Applications/Char.app/Contents/MacOS/char-hook`。日常安装按各集成 README 选择正式 Release 路径。移除本地构建不会自动迁移已安装的配置，详见 [pi 诊断](pi-observation-fix-2026-10-06.md)和 [Kimi/DeepSeek 诊断](native-hook-path-repair-2026-10-06.md)。
+
 ## 配置写入
 
 使用 `build/Char.app/Contents/MacOS/char-hook`，共享事件流为 `/Users/superhacker/Library/Application Support/Char/harness-hooks.jsonl`，只保存会话身份、阶段、时间和状态，不保存提示词、正文、工具参数或错误文字。现有配置保留，修改前做私有备份。

@@ -1,6 +1,6 @@
 # Char 文档索引
 
-当前版本：macOS原生桌宠；七工作端被动观察，统一集成配置与数据形象包。源码推送与本地验证不代表签名、公证或全环境发布验收已完成。
+当前版本：macOS原生桌宠；七工作端被动观察，v0.2.0 v3能力插件与数据形象包。源码推送与本地验证不代表签名、公证或全环境发布验收已完成。
 
 ## 使用与开发
 
@@ -10,9 +10,10 @@
 | 一次注意力往返与首次来源 | [往返行为](attention-trip.md) / [领域术语](../CONTEXT.md) |
 | 当前实现机制、模块地图、本地数据和性能摘要 | [实现总览](architecture.md) |
 | 自制配置插件 / 新Agent / 新准确返回 | [集成插件开发指南](plugin-development.md) |
+| 进程接口与安装维护 | [能力协议v1](capability-adapter-protocol.md) |
 | 自制桌宠形象与动作 | [外观包开发指南](appearance-development.md) |
 | 随开发目录自动加载的通用指令 | [三份 AGENTS.md](development-prompts.md) |
-| 生产格式细则 | [集成配置v2](integration-plugin-format.md) / [形象包v1](pet-skin-format.md) |
+| 生产格式细则 | [集成插件v3](integration-plugin-format.md) / [形象包v1](pet-skin-format.md) |
 | Windows可行性、风险与分阶段门槛 | [Windows评估](windows-feasibility.md) |
 
 ## 原生能力与安装
@@ -29,6 +30,8 @@
 
 ## 性能与验收
 
+- [能力插件验证](capability-plugins-verification-2026-10-06.md)：动态客户端、进程协议、稳定生命周期、原生App路径与成本。
+
 - [设置与前台查询性能优化实测](performance-optimization-2026-10-06.md)：设置 CPU 同场景从 37.79% 降至 2.65%、预览生命周期、轻量身份查询与验证范围。
 - [v0.1.1 Release 优化前性能报告](performance-0.1.1-2026-10-06.md)：实际安装包 CPU/RSS、设置静止开销、多屏查询和优化顺序。
 - [性能组成、历史实测与下一步优化](companion-performance-2026-10-04.md)：CPU/RSS、场景/版本、采样方法和限制。
@@ -40,3 +43,8 @@
 历史记录中的待测/失败结论只代表当时版本，不覆盖后续明确复验；后续“通过”也只覆盖注明的配置，不能外推其他客户端和连接方式。
 
 - [形象与软件图标验证记录](appearance-icons-verification-2026-10-05.md)。
+
+## v0.2.0
+
+- [版本变化](release-notes-0.2.0.md)
+- [能力插件实现与验证](capability-plugins-verification-2026-10-06.md)

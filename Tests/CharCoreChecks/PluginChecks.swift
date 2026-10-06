@@ -39,7 +39,7 @@ struct PluginChecks {
         try checkEqual(store.entries.first { $0.id == "builtin.agent.pi" }?.enabled, false)
         try store.remove(id: plugin.id)
         try check(!FileManager.default.fileExists(atPath: imported.packageURL!.path))
-        plugin.schemaVersion = 3
+        plugin.schemaVersion = 4
         try writePackage(plugin, at: package)
         let installedCount = store.entries.count
         try expectFailure { _ = try store.importPackage(at: package) }
@@ -100,7 +100,7 @@ struct PluginChecks {
         try check(!migrated.entries.contains { $0.id == "builtin.source.wechat" })
         try migrated.setEnabled(true, for: "builtin.agent.pi")
         let upgraded = try JSONSerialization.jsonObject(with: Data(contentsOf: registryURL)) as! [String: Any]
-        try checkEqual(upgraded["schemaVersion"] as? Int, 2)
+        try checkEqual(upgraded["schemaVersion"] as? Int, 3)
         try check((upgraded["tombstones"] as! [String]).contains("builtin.source.wechat"))
         for record in upgraded["records"] as! [[String: Any]] {
             try check((record["plugin"] as! [String: Any])["kind"] == nil)

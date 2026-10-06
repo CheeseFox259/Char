@@ -1,5 +1,6 @@
 import SwiftUI
 import CharCore
+import CharPluginHost
 
 struct PluginSettingsView: View {
     @ObservedObject var runtime: CompanionRuntime
@@ -10,7 +11,23 @@ struct PluginSettingsView: View {
                 HStack {
                     Toggle(entry.plugin.name, isOn: Binding(get: { entry.enabled }, set: { runtime.setPlugin(entry.id, enabled: $0) }))
                     Spacer()
-                    capabilityIcons(entry.plugin)
+                    capabilityIcons(runtime.effectiveCapabilityEntry(entry).plugin)
+                    if let health = runtime.pluginHealth[entry.id] {
+                        Image(systemName: healthSymbol(health.status))
+                            .foregroundStyle(health.status == .ready ? Color.green : Color.orange)
+                            .help(healthLabel(health.status) + (health.detail.isEmpty ? "" : " · " + health.detail))
+                            .accessibilityLabel(healthLabel(health.status))
+                    }
+                    if runtime.effectiveCapabilityEntry(entry).plugin.adapter != nil {
+                        Menu {
+                            Button(runtime.localized("自检", "Inspect")) { runtime.pluginAction(entry.id, method: "inspect") }
+                            if runtime.effectiveCapabilityEntry(entry).plugin.adapter?.capabilities.contains(.lifecycle) == true {
+                                Button(runtime.localized("安装", "Install")) { runtime.pluginAction(entry.id, method: "install") }
+                                Button(runtime.localized("更新集成", "Update integration")) { runtime.pluginAction(entry.id, method: "update") }
+                                Button(runtime.localized("移除客户端集成", "Remove client integration")) { runtime.pluginAction(entry.id, method: "uninstall") }
+                            }
+                        } label: { Image(systemName: "wrench.and.screwdriver") }.menuStyle(.borderlessButton).frame(width: 25)
+                    }
                     Button { deleteID = entry.id } label: { Image(systemName: "trash") }
                         .accessibilityLabel(runtime.localized("删除 \(entry.plugin.name)", "Delete \(entry.plugin.name)"))
                 }
@@ -22,15 +39,36 @@ struct PluginSettingsView: View {
         }
         .alert(runtime.localized("删除插件？", "Delete plugin?"), isPresented: Binding(get: { deleteID != nil }, set: { if !$0 { deleteID = nil } })) {
             Button(runtime.localized("取消", "Cancel"), role: .cancel) { deleteID = nil }
-            Button(runtime.localized("删除", "Delete"), role: .destructive) { if let id = deleteID { runtime.deletePlugin(id) }; deleteID = nil }
-        } message: { Text(runtime.localized("客户端 Hook 会保留。", "Client hooks remain installed.")) }
+            if let id = deleteID, let entry = runtime.pluginEntries.first(where: { $0.id == id }),
+               runtime.effectiveCapabilityEntry(entry).plugin.adapter?.capabilities.contains(.lifecycle) == true {
+                Button(runtime.localized("卸载集成并删除", "Uninstall and delete"), role: .destructive) { runtime.deletePlugin(id, cleanIntegration: true); deleteID = nil }
+            }
+            Button(runtime.localized("仅删除插件", "Delete plugin only"), role: .destructive) { if let id = deleteID { runtime.deletePlugin(id) }; deleteID = nil }
+        }
+        .disabled(runtime.busy)
+    }
+    private func healthSymbol(_ status: PluginReadiness) -> String {
+        switch status {
+        case .ready: return "checkmark.circle.fill"
+        case .notInstalled: return "arrow.down.circle"
+        case .reloadRequired: return "arrow.clockwise.circle"
+        case .unavailable: return "exclamationmark.triangle"
+        }
+    }
+    private func healthLabel(_ status: PluginReadiness) -> String {
+        switch status {
+        case .ready: return runtime.localized("配置可用", "Configuration ready")
+        case .notInstalled: return runtime.localized("未安装或需要更新", "Not installed or update needed")
+        case .reloadRequired: return runtime.localized("需要重载客户端", "Reload client")
+        case .unavailable: return runtime.localized("不可用", "Unavailable")
+        }
     }
     private func capabilityIcons(_ plugin: IntegrationPlugin) -> some View {
         HStack(spacing: 8) {
             if plugin.workEnd != nil {
                 capabilityIcon("bell.fill", label: runtime.localized("提醒", "Notifications"))
             }
-            if plugin.returnAdapter == .tabbit || plugin.returnAdapter == .vscode {
+            if plugin.returnAdapter == .tabbit || plugin.returnAdapter == .vscode || plugin.adapter?.capabilities.contains(.origin) == true {
                 capabilityIcon(NavigationPresentation.exactSymbol, label: runtime.localized("准确回城能力，需要可用集成及授权", "Exact return (requires integration and permission)"))
             } else {
                 capabilityIcon(NavigationPresentation.applicationSymbol, label: runtime.localized("应用级回城", "Application return"))

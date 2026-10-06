@@ -2,6 +2,7 @@
 set -euo pipefail
 repo_root="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$repo_root"
+swift run char-plugin-checks
 swift run char-core-checks
 swift run char-observation-checks
 swift run char-platform-checks
@@ -13,3 +14,5 @@ fi
 node "$repo_root/integrations/pi/observer.test.mjs"
 python3 Tests/check_new_agent_hooks.py "$(swift build --show-bin-path)/char-hook"
 node --test integrations/deepseek/index.test.js
+
+node integrations/native/adapter.test.mjs "$(swift build --show-bin-path)/char-hook"

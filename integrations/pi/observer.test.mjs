@@ -54,6 +54,42 @@ try {
   assert(!content.includes('PRIVATE'), 'private event bodies persisted');
   assert(records.every(r => r.session_id === 'native-session' && r.process_id === process.pid));
 
+  // A removed development bundle must not write outside Pi's TUI renderer.
+  // Exercise the real execFile failure, including shutdown and print mode.
+  const failures = new Map();
+  const notices = [];
+  createCharExtension({ hookBinary: join(root, 'removed-build', 'char-hook'), eventsFile: stream })({
+    on: (name, handler) => failures.set(name, handler),
+  });
+  const uiContext = { ...ctx, hasUI: true, ui: { notify: (...args) => notices.push(args) } };
+  const stderrWrite = process.stderr.write;
+  const stdoutWrite = process.stdout.write;
+  let terminalOutput = '';
+  process.stderr.write = process.stdout.write = text => { terminalOutput += text; return true; };
+  try {
+    await failures.get('agent_start')({}, uiContext);
+    await failures.get('agent_settled')({}, uiContext);
+    await failures.get('session_shutdown')({}, uiContext);
+    const headless = new Map();
+    createCharExtension({ hookBinary: join(root, 'missing-hook'), eventsFile: stream })({
+      on: (name, handler) => headless.set(name, handler),
+    });
+    await headless.get('agent_start')({}, { ...uiContext, hasUI: false });
+    await headless.get('session_shutdown')({}, { ...uiContext, hasUI: false });
+    const shutdownOnly = new Map();
+    createCharExtension({ hookBinary: join(root, 'missing-hook'), eventsFile: stream })({
+      on: (name, handler) => shutdownOnly.set(name, handler),
+    });
+    await shutdownOnly.get('session_shutdown')({}, uiContext);
+  } finally {
+    process.stderr.write = stderrWrite;
+    process.stdout.write = stdoutWrite;
+  }
+  assert.equal(terminalOutput, '', 'missing hook leaked text into the Pi terminal');
+  assert.equal(notices.length, 1, 'write failure must use one Pi-rendered notification');
+  assert.equal(notices[0][1], 'warning');
+  assert.equal(await readFile(stream, 'utf8'), content, 'failed hook changed the observation stream');
+
   // Optional installed-Pi compatibility check: real loader and dispatch, with an in-memory session.
   if (process.env.CHAR_PI_PACKAGE) {
     const base = resolve(process.env.CHAR_PI_PACKAGE);
@@ -77,7 +113,7 @@ try {
     assert.equal(native[1].reason, 'turnEnded');
     console.log('Pi native loader/runner contract passed');
   }
-  console.log('Pi extension: direct Warp, tmux metadata, retry settlement, UI pause/resume, shutdown, privacy and explicit installer passed');
+  console.log('Pi extension: direct Warp, tmux metadata, retry settlement, UI pause/resume, shutdown, privacy, explicit installer and TUI-safe failure passed');
 } finally {
   if (oldPane === undefined) delete process.env.TMUX_PANE; else process.env.TMUX_PANE = oldPane;
   await rm(root, { recursive: true, force: true });

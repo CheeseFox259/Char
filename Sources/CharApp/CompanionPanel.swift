@@ -58,7 +58,7 @@ import CharPlatform
 @MainActor final class CompanionSurface: NSView {
     unowned let runtime: CompanionRuntime
     let pet: GraphicButton
-    let buttons: [GraphicButton]
+    private(set) var buttons: [GraphicButton]
     private let overflow = CALayer()
     private struct LayoutKey: Equatable {
         let ends: [WorkEnd]
@@ -198,14 +198,24 @@ import CharPlatform
             NSAccessibilityCustomAction(name: runtime.localized("下一组气泡", "Next Agent bubbles"), target: self, selector: #selector(nextBubbles)),
             NSAccessibilityCustomAction(name: runtime.localized("上一组气泡", "Previous Agent bubbles"), target: self, selector: #selector(previousBubbles))])
         ([pet] + buttons).forEach { $0.refreshAccessibilityActions() }
-        pet.setAccessibilityLabel(runtime.snapshot.hold == nil ? runtime.localized("Char 桌宠，当前不可回城", "Char companion, no return origin") : runtime.localized("回城，返回最初来源，Control+B", "Return to origin, Control+B") + (runtime.snapshot.hold?.anchor.accuracy == .application ? runtime.localized("，应用级降级", ", application fallback") : ""))
+        pet.setAccessibilityLabel(runtime.snapshot.hold == nil ? runtime.localized("Char 桌宠，当前不可回城", "Char companion, no return origin") : runtime.localized("回城，返回保存的起点，Control+B", "Return to origin, Control+B") + (runtime.snapshot.hold?.anchor.accuracy == .application ? runtime.localized("，应用级降级", ", application fallback") : ""))
         for button in buttons { button.refreshArtwork() }
         pet.refreshPetArtwork()
         configureIdle()
         ensureClock()
     }
     private func layoutVisibleBubbles(animated: Bool = false) {
-        let ends = WorkEnd.allCases.filter { end in runtime.snapshot.bubbles.contains { $0.workEnd == end } }
+        let ends = runtime.snapshot.bubbles.map(\.workEnd)
+        let installed = runtime.enabledWorkEnds.union(ends)
+        buttons.removeAll { button in
+            guard case let .bubble(end) = button.kind, !installed.contains(end) else { return false }
+            button.detachArtwork(); button.removeFromSuperview(); return true
+        }
+        let existing = Set(buttons.compactMap { button -> WorkEnd? in if case let .bubble(end) = button.kind { return end }; return nil })
+        for end in ends where !existing.contains(end) {
+            let button = GraphicButton(kind: .bubble(end), runtime: runtime)
+            buttons.append(button); addSubview(button); button.attachArtwork(to: sceneLayer!)
+        }
         offset = ends.count <= capacity ? 0 : CompanionGeometry.normalizedOffset(offset, count: ends.count)
         let key = LayoutKey(ends: ends, offset: offset, placement: placement, petSize: runtime.petSize, distance: runtime.bubbleDistance)
         guard key != lastLayout else { return }
@@ -548,7 +558,7 @@ import CharPlatform
         }
         let bubble = next.bubble
         let detail = bubble?.head.map { ", \(runtime.localizedTitle($0.reason))\($0.isPast ? runtime.localized("，已恢复", ", past") : "")" } ?? ""
-        setAccessibilityLabel("\(end.title): \(bubble?.count ?? 0) \(runtime.localized("待查看", "unviewed")), \(bubble?.runningCount ?? 0) \(runtime.localized("运行中", "running"))\(detail)")
+        setAccessibilityLabel("\(runtime.pluginEntries.first { $0.enabled && $0.plugin.workEnd == end }?.plugin.name ?? end.title): \(bubble?.count ?? 0) \(runtime.localized("待查看", "unviewed")), \(bubble?.runningCount ?? 0) \(runtime.localized("运行中", "running"))\(detail)")
     }
     /// Reuse the owned image and presentation geometry, including an interrupted
     /// orbit and hover deformation. Texture coordinates avoid rendering new images.
@@ -803,6 +813,7 @@ import CharPlatform
             refreshPetArtwork()
         }
     }
+    func detachArtwork() { graphicLayer.removeFromSuperlayer() }
     func attachArtwork(to host: CALayer) {
         externalArtwork = true
         graphicLayer.removeFromSuperlayer(); host.addSublayer(graphicLayer)
@@ -1010,7 +1021,7 @@ import CharPlatform
         let iconRect = bounds.insetBy(dx: miniature ? 3 : 7, dy: miniature ? 3 : 7)
         if let icon = runtime.agentIcon(for: end) { icon.draw(in: iconRect) }
         else { symbol(end.symbol, in: iconRect, color: .labelColor) }
-        if [.claudeCode, .codexCLI, .kimiCLI, .pi].contains(end) {
+        if runtime.pluginEntries.first(where: { $0.enabled && $0.plugin.workEnd == end })?.plugin.clientInterface == .cli || [.claudeCode, .codexCLI, .kimiCLI, .pi].contains(end) {
             let size: CGFloat = miniature ? 8 : 14
             let rect = NSRect(x: 0, y: bounds.height - size, width: size, height: size)
             NSColor(calibratedWhite: 0.09, alpha: 0.95).setFill()
@@ -1044,8 +1055,8 @@ import CharPlatform
 }
 
 extension WorkEnd {
-    var title: String { switch self { case .claudeCode: return "Claude Code"; case .codexCLI: return "Codex CLI"; case .codexDesktop: return "Codex Desktop"; case .deepseekDesktop: return "DeepSeek Harness"; case .kimiCLI: return "Kimi Code CLI"; case .kimiDesktop: return "Kimi Code Desktop"; case .pi: return "pi" } }
-    var symbol: String { switch self { case .claudeCode: return "terminal.fill"; case .codexCLI: return "chevron.left.forwardslash.chevron.right"; case .codexDesktop: return "macwindow"; case .deepseekDesktop: return "bolt.horizontal.circle.fill"; case .kimiCLI: return "keyboard.fill"; case .kimiDesktop: return "square.grid.2x2.fill"; case .pi: return "circle.grid.2x2.fill" } }
+    var title: String { switch self { case .claudeCode: return "Claude Code"; case .codexCLI: return "Codex CLI"; case .codexDesktop: return "Codex Desktop"; case .deepseekDesktop: return "DeepSeek Harness"; case .kimiCLI: return "Kimi Code CLI"; case .kimiDesktop: return "Kimi Code Desktop"; case .pi: return "pi"; default: return rawValue } }
+    var symbol: String { switch self { case .claudeCode: return "terminal.fill"; case .codexCLI: return "chevron.left.forwardslash.chevron.right"; case .codexDesktop: return "macwindow"; case .deepseekDesktop: return "bolt.horizontal.circle.fill"; case .kimiCLI: return "keyboard.fill"; case .kimiDesktop: return "square.grid.2x2.fill"; case .pi: return "circle.grid.2x2.fill"; default: return "app.fill" } }
 }
 extension StopReason {
     var title: String { switch self { case .question: return "Question"; case .approval: return "Approval"; case .turnEnded: return "Turn ended"; case .failure: return "Failure"; case .rateLimit: return "Rate limit"; case .contextExhausted: return "Context exhausted"; case .unclassified: return "Unclassified stop" } }

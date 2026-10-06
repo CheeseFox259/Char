@@ -29,6 +29,13 @@ struct SettingsView: View {
                 }
             }
             Section(l("回城", "Return")) {
+                Picker(l("返回起点", "Return origin"), selection: $runtime.settings.originPolicy) {
+                    Text(l("首次起点", "First origin")).tag(CharSettings.OriginPolicy.original)
+                    Text(l("最近起点", "Latest origin")).tag(CharSettings.OriginPolicy.latest)
+                    Text(l("不记录", "Disabled")).tag(CharSettings.OriginPolicy.disabled)
+                }.onChange(of: runtime.settings.originPolicy) { _ in runtime.saveSettings() }
+                Toggle(l("允许应用级起点", "Allow application origins"), isOn: $runtime.settings.applicationOrigins)
+                    .onChange(of: runtime.settings.applicationOrigins) { _ in runtime.saveSettings() }
                 Text(runtime.homeShortcutStatus)
                 Button(l("重试 Ctrl+B", "Retry Ctrl+B")) { runtime.retryHomeShortcut() }
                     .disabled(runtime.snapshot.hold == nil)

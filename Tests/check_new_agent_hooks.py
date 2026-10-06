@@ -3,6 +3,7 @@
 import concurrent.futures
 import json
 import os
+import shlex
 from pathlib import Path
 import subprocess
 import sys
@@ -50,4 +51,33 @@ with tempfile.TemporaryDirectory(prefix="char new agent's contracts ") as direct
     assert len({line["key"]["nativeID"] for line in lines[1:]}) == 16
     assert stream.stat().st_mode & 0o777 == 0o600
     assert "never retained" not in stream.read_text()
+
+    # Reinstalling from a Release must replace the installer's old build paths,
+    # without leaving dead hooks alongside the new ones or changing user hooks.
+    previous = root / "old-config.toml"
+    old_binary = root / "removed-build" / "char-hook"
+    old_command = f"CHAR_HOOK_EVENTS={shlex.quote(str(stream))} {shlex.quote(str(old_binary))} --kimi"
+    old_hooks = ''.join(f'\n[[hooks]]\nevent = {json.dumps(event)}\ncommand = {json.dumps(old_command)}\ntimeout = 5\n'
+                        for event in ("SessionStart", "PermissionRequest", "PermissionResult", "SessionEnd"))
+    preserved = original + '\n[[hooks]]\nevent = "SessionStart"\ncommand = "user-session-start-hook"\n'
+    previous.write_text(preserved + old_hooks)
+    migration = [sys.executable, str(repo / "integrations/kimi/install.py"), "--settings", str(previous),
+                 "--hook-binary", str(binary), "--events-file", str(stream)]
+    subprocess.run(migration, check=True)
+    migrated = previous.read_bytes()
+    updated = tomllib.loads(migrated.decode())
+    assert len(updated["hooks"]) == 6, 'reinstall duplicated old Char hooks instead of migrating them'
+    assert all(h["command"] == native_command for h in updated["hooks"][2:])
+    assert previous.read_text().startswith(preserved), 'migration changed unrelated config or hook'
+    subprocess.run(migration, check=True)
+    assert previous.read_bytes() == migrated, 'migration is not idempotent'
+    previous.write_bytes(migrated + old_hooks.encode())
+    subprocess.run(migration, check=True)
+    deduplicated = previous.read_bytes()
+    hooks = tomllib.loads(deduplicated.decode())["hooks"]
+    assert len(hooks) == 6 and all(h["command"] == native_command for h in hooks[2:]), 'duplicate legacy Char hooks survived upgrade'
+    assert previous.read_text().startswith(preserved), 'deduplication changed user settings'
+    subprocess.run(migration, check=True)
+    assert previous.read_bytes() == deduplicated, 'deduplicated upgrade is not idempotent'
+
 print("New Agent hooks: native adapter, Kimi installer idempotence/privacy, 16 concurrent locked writes passed")

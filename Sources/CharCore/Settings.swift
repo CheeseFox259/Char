@@ -9,6 +9,9 @@ public enum AppLanguage: String, Codable, CaseIterable, Sendable {
 }
 
 public struct CharSettings: Equatable, Codable, Sendable {
+    public enum OriginPolicy: String, Codable, CaseIterable, Sendable { case original, latest, disabled }
+    public var originPolicy: OriginPolicy
+    public var applicationOrigins: Bool
     public var filterSeconds: TimeInterval
     public var graceSeconds: TimeInterval
     public var soundEnabled: Bool
@@ -17,7 +20,9 @@ public struct CharSettings: Equatable, Codable, Sendable {
     public var language: AppLanguage
 
     public init(filterSeconds: TimeInterval = 10, graceSeconds: TimeInterval = 300,
-                soundEnabled: Bool = true, audioFilePath: String? = nil, launchAtLogin: Bool = true, language: AppLanguage = .systemDefault) {
+                soundEnabled: Bool = true, audioFilePath: String? = nil, launchAtLogin: Bool = true, language: AppLanguage = .systemDefault,
+                originPolicy: OriginPolicy = .original, applicationOrigins: Bool = true) {
+        self.originPolicy = originPolicy; self.applicationOrigins = applicationOrigins
         self.filterSeconds = filterSeconds
         self.graceSeconds = graceSeconds
         self.soundEnabled = soundEnabled
@@ -27,7 +32,7 @@ public struct CharSettings: Equatable, Codable, Sendable {
         self = normalized()
     }
 
-    private enum CodingKeys: String, CodingKey { case filterSeconds, graceSeconds, soundEnabled, audioFilePath, launchAtLogin, language }
+    private enum CodingKeys: String, CodingKey { case filterSeconds, graceSeconds, soundEnabled, audioFilePath, launchAtLogin, language, originPolicy, applicationOrigins }
     public init(from decoder: Decoder) throws {
         let values = try decoder.container(keyedBy: CodingKeys.self)
         self.init(filterSeconds: try values.decode(TimeInterval.self, forKey: .filterSeconds),
@@ -35,7 +40,9 @@ public struct CharSettings: Equatable, Codable, Sendable {
                   soundEnabled: try values.decode(Bool.self, forKey: .soundEnabled),
                   audioFilePath: try values.decodeIfPresent(String.self, forKey: .audioFilePath),
                   launchAtLogin: try values.decode(Bool.self, forKey: .launchAtLogin),
-                  language: try values.decodeIfPresent(AppLanguage.self, forKey: .language) ?? .systemDefault)
+                  language: try values.decodeIfPresent(AppLanguage.self, forKey: .language) ?? .systemDefault,
+                  originPolicy: try values.decodeIfPresent(OriginPolicy.self, forKey: .originPolicy) ?? .original,
+                  applicationOrigins: try values.decodeIfPresent(Bool.self, forKey: .applicationOrigins) ?? true)
     }
 
     /// Invalid durations revert to their defaults. Zero is a valid immediate threshold.
