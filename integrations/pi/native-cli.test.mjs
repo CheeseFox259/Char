@@ -44,12 +44,14 @@ try {
   const extension = join(root, 'extension');
   execFileSync('python3', [resolve('integrations/pi/install.py'), '--extension-dir', extension,
     '--hook-binary', resolve(hookBinary), '--events-file', events]);
-  async function run() {
+  async function run(tmuxPane) {
+    const environment = { PATH: process.env.PATH, HOME: root, PI_CODING_AGENT_DIR: agentDir, PI_OFFLINE: '1', TERM: 'dumb' };
+    if (tmuxPane) environment.TMUX_PANE = tmuxPane;
     const child = spawn(resolve(piBinary), ['--offline', '--no-extensions', '--no-skills', '--no-prompt-templates',
       '--no-themes', '--no-context-files', '--no-approve', '--no-tools', '--no-session',
       '--extension', join(extension, 'index.js'), '--provider', 'char-local', '--model', 'fixture',
       '--print', 'Harmless local fixture.'], {
-      cwd: working, env: { PATH: process.env.PATH, HOME: root, PI_CODING_AGENT_DIR: agentDir, PI_OFFLINE: '1', TERM: 'dumb' },
+      cwd: working, env: environment,
       stdio: ['ignore', 'pipe', 'pipe'],
     });
     let output = '';
@@ -64,15 +66,21 @@ try {
   await run();
   failure = true;
   await run();
+  failure = false;
+  await run('%char-fixture');
+  failure = true;
+  await run('%char-fixture');
   const records = (await readFile(events, 'utf8')).trim().split('\n').map(JSON.parse);
-  assert.equal(requests, 2, 'real CLI did not reach only the two localhost requests');
-  assert.deepEqual(records.map(r => Object.keys(r.state)[0]), ['running', 'stopped', 'closed', 'running', 'stopped', 'closed']);
-  assert.deepEqual(records.filter(r => r.state.stopped).map(r => r.state.stopped._0), ['turnEnded', 'failure']);
-  assert(records.every(r => r.key.workEnd === 'pi' && r.target.bundleIdentifier === 'dev.warp.Warp-Stable' && !r.target.tmuxPaneID));
-  assert.notEqual(records[0].key.nativeID, records[3].key.nativeID);
+  assert.equal(requests, 4, 'real CLI did not reach only the four localhost requests');
+  assert.deepEqual(records.map(r => Object.keys(r.state)[0]), Array(4).fill(['running', 'stopped', 'closed']).flat());
+  assert.deepEqual(records.filter(r => r.state.stopped).map(r => r.state.stopped._0), ['turnEnded', 'failure', 'turnEnded', 'failure']);
+  assert(records.every(r => r.key.workEnd === 'pi' && r.target.bundleIdentifier === 'dev.warp.Warp-Stable'));
+  assert(records.slice(0, 6).every(r => !r.target.tmuxPaneID));
+  assert(records.slice(6).every(r => r.target.tmuxPaneID === '%char-fixture'));
+  assert.equal(new Set(records.filter(r => r.state.running).map(r => r.key.nativeID)).size, 4);
   const stream = await readFile(events, 'utf8');
   assert(!stream.includes('fixture complete') && !stream.includes('fixture failure') && !stream.includes('Harmless'), 'private content persisted');
-  console.log('Pi native CLI localhost acceptance: completed and failed runs, native session identity, direct Warp metadata, closure and private-content exclusion passed');
+  console.log('Pi native CLI localhost acceptance: completed and failed runs, native session identity, direct Warp and tmux metadata, closure and private-content exclusion passed');
 } finally {
   await new Promise(resolve => server.close(resolve));
   await rm(root, { recursive: true, force: true });

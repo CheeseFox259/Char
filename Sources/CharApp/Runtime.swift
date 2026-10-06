@@ -6,6 +6,7 @@ import SwiftUI
 import CharCore
 import CharObservations
 import CharPlatform
+import CharPluginHost
 
 actor ObservationWorker {
     private let poller: LocalObservationPoller
@@ -32,7 +33,7 @@ actor ObservationWorker {
         // An off/on Task may overtake the off Task. Apply a new EOF baseline anyway.
         var enabled = next.enabled.subtracting(restarted)
         poller.setEnabledWorkEnds(enabled, at: next.changedAt)
-        for end in WorkEnd.allCases where restarted.contains(end) {
+        for end in restarted.sorted() {
             enabled.insert(end)
             poller.setEnabledWorkEnds(enabled, at: next.activatedAt[end] ?? next.changedAt)
         }
@@ -46,6 +47,7 @@ actor ObservationWorker {
         runtime = CompanionRuntime()
         runtime?.start()
     }
+    func applicationWillTerminate(_ notification: Notification) { runtime?.capabilityHost?.stopAll() }
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { false }
 }
 
@@ -62,6 +64,11 @@ actor ObservationWorker {
     var agentIconCache: [WorkEnd: NSImage] = [:]
     var pluginRegistryRevision: Date?
     var observationGeneration = ObservationGeneration()
+    var capabilityHost: CapabilityHost?
+    var nativeRuntimeURL: URL?
+    var capabilityOrigins: [String: CapabilityOrigin] = [:]
+    var capabilityRevision = 0
+    @Published var pluginHealth: [String: PluginHealth] = [:]
     @Published var pluginEntries: [IntegrationPluginEntry] = []
     @Published var skins: [PetSkinManifest] = []
     @Published var selectedSkinID = "char.default"
@@ -102,7 +109,7 @@ actor ObservationWorker {
     private var demoSoundCount = 0
 
     override init() {
-        smoke = CommandLine.arguments.contains("--smoke")
+        smoke = CommandLine.arguments.contains("--smoke") || CommandLine.arguments.contains("--capability-smoke")
         demo = smoke || CommandLine.arguments.contains("--demo")
         let directory = demo ? FileManager.default.temporaryDirectory.appendingPathComponent("Char-fixture-\(UUID().uuidString)")
             : CharSettingsStore.defaultFileURL.deletingLastPathComponent()
@@ -143,6 +150,7 @@ actor ObservationWorker {
     }
 
     func start() {
+        initializeCapabilityHost()
         panel = CompanionPanel(runtime: self)
         place(on: NSScreen.main ?? NSScreen.screens.first, animated: false)
         panel.orderFrontRegardless()
@@ -205,10 +213,17 @@ actor ObservationWorker {
         defer { polling = false }
         let batch = await worker?.poll()
         let events = batch.map { batch in batch.events.filter { observationGeneration.accepts($0.key.workEnd, from: batch.configuration) } } ?? []
-        router.ingest(events) // A complete sleep/wake batch precedes any focus or time advancement.
+        let pluginEvents = capabilityHost?.drainEvents().filter { enabledWorkEnds.contains($0.key.workEnd) && $0.timestamp >= (observationGeneration.activatedAt[$0.key.workEnd] ?? .distantPast) } ?? []
+        router.ingest((events + pluginEvents).sorted { $0.timestamp < $1.timestamp }) // A complete sleep/wake batch precedes any focus or time advancement.
+        refreshCapabilityHealth()
         if let platform {
-            if let anchor = router.snapshot.hold?.anchor, platform.isAnchorValid(anchor) == false { router.invalidateAnchor(id: anchor.id) }
-            router.updateFocus(platform.focusContext(for: router.snapshot.hold?.anchor), at: Date())
+            var focus = platform.focusContext(for: router.snapshot.hold?.anchor)
+            if let anchor = router.snapshot.hold?.anchor {
+                let state = await originState(anchor)
+                if state.valid == false { router.invalidateAnchor(id: anchor.id) }
+                if state.active { focus.sourceAnchorID = anchor.id }
+            }
+            router.updateFocus(focus, at: Date())
         } else { router.advance(to: Date()) }
         publish()
     }
@@ -217,13 +232,12 @@ actor ObservationWorker {
         guard !busy, let item = router.nextVisit(for: workEnd) else { return }
         busy = true
         Task {
-            let source = router.snapshot.hold == nil ? (demo ? fixtureAnchor() : platform?.captureSource()) : nil
-            let outcome: NavigationOutcome
-            if let platform { outcome = await platform.activate(workEnd: workEnd, target: item.target) }
-            else { outcome = .fallback }
+            let capture = settings.originPolicy != .disabled && (router.snapshot.hold == nil || settings.originPolicy == .latest)
+            let source = capture ? (demo ? fixtureAnchor() : await captureOrigin()) : nil
+            let outcome = await visitCapability(workEnd, target: item.target)
             if outcome != .unavailable { panel.surface.dismissFeedback(for: workEnd) }
             router.completeVisit(key: item.key, outcome: outcome, sourceAnchor: source, at: Date())
-            if let source, router.snapshot.hold?.anchor.id != source.id { platform?.release(source) }
+            if let source, router.snapshot.hold?.anchor.id != source.id { releaseOrigin(source) }
             busy = false
             publish()
             scheduleFeedbackClear()
@@ -263,9 +277,7 @@ actor ObservationWorker {
         busy = true
         panel.surface.returnFeedback()
         Task {
-            let outcome: NavigationOutcome
-            if let platform { outcome = await platform.returnToSource(anchor) }
-            else { outcome = anchor.accuracy == .application ? .fallback : .exact }
+            let outcome = await returnToOrigin(anchor)
             router.completeReturn(outcome: outcome)
             busy = false; publish(); scheduleFeedbackClear()
         }
@@ -368,7 +380,7 @@ actor ObservationWorker {
     }
     func publish() {
         let next = router.snapshot
-        if let old = retainedAnchor, old.id != next.hold?.anchor.id { platform?.release(old) }
+        if let old = retainedAnchor, old.id != next.hold?.anchor.id { releaseOrigin(old) }
         if let anchor = next.hold?.anchor {
             badgeFadeGeneration += 1
             badgeFadeTimer?.invalidate(); badgeFadeTimer = nil
@@ -518,6 +530,11 @@ actor ObservationWorker {
     private func runSmoke() async {
         func fail(_ message: String) -> Never {
             FileHandle.standardError.write(Data("Char fixture smoke failed: \(message)\n".utf8)); exit(1)
+        }
+        if CommandLine.arguments.contains("--capability-smoke") {
+            do { try await runCapabilitySmoke() } catch { fail("capability integration: \(error)") }
+            NSApp.terminate(nil)
+            return
         }
         func iconPixels(_ image: NSImage?) -> Data? {
             guard let image else { return nil }
@@ -798,6 +815,7 @@ actor ObservationWorker {
                       statusBar?.representedSkinID == "char.default" else { fail("deleted skin did not restore software/menu icon") }
             } catch { fail("sample skin import: \(error)") }
         } else { fail("bundled sample missing") }
+        do { try await runCapabilitySmoke() } catch { fail("capability integration: \(error)") }
         print("Char fixture smoke passed: \(WorkEnd.allCases.count) work ends, Ctrl+B 回城, past/fallback, first anchor, ignore, return, orbit targets, plugin hot unplug/source removal, five placements and bundled skin; no real integrations")
         NSApp.terminate(nil)
     }

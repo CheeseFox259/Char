@@ -25,6 +25,7 @@ while IFS= read -r -d '' asset; do
     mkdir -p "$app/Contents/Resources/$(dirname "$relative")"
     cp "$asset" "$app/Contents/Resources/$relative"
 done < <(find "$repo_root/Resources" -type f ! -name Info.plist ! -name AGENTS.md -print0)
+bash "$repo_root/scripts/copy-native-integrations.sh" "$app/Contents/Resources/NativeIntegrations"
 # Public builds are ad hoc signed; no Developer ID/notarization is claimed.
 codesign --force --sign - "$app/Contents/MacOS/char-hook"
 codesign --force --sign - "$app"

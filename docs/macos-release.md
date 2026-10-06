@@ -1,8 +1,8 @@
-# macOS v0.1.2
+# macOS v0.2.0
 
 ## 下载与安装
 
-[GitHub Release](https://github.com/CheeseFox259/Char/releases/tag/v0.1.2) 提供 Universal ZIP、DMG 和 SHA256SUMS。两个可执行文件均包含 arm64 与 x86_64，要求 macOS 13 或更高版本。Intel 架构已编译并检查，运行验收在 Apple Silicon 上进行。附件由 GitHub Actions 构建，安装无需本地工具链。
+[GitHub Release](https://github.com/CheeseFox259/Char/releases/tag/v0.2.0) 提供 Universal ZIP、DMG 和 SHA256SUMS。两个可执行文件均包含 arm64 与 x86_64，要求 macOS 13 或更高版本。Intel 架构已编译并检查，运行验收在 Apple Silicon 上进行。附件由 GitHub Actions 构建，安装无需本地工具链。
 
 1. 下载 DMG，将 Char.app 拖到系统“应用程序”（`/Applications`）；或解压 ZIP 后复制到同一位置。`~/Applications` 是独立的用户应用目录，系统“应用程序”窗口不会直接列出其中的 App。
 2. 从这个固定位置启动，避免同时运行旧的 build/Char.app。
@@ -18,6 +18,13 @@ shasum -a 256 -c SHA256SUMS
 ```
 
 ## 本次变化
+
+- v3 能力插件支持监控、访问、准确起点与安装维护；导入、启停、同 ID 更新、删除即时生效，无需重启 Char。旧配置包与形象包兼容。
+- pi、Kimi CLI/App、DeepSeek 的本地集成支持自检、安装、更新与移除，使用稳定运行目录，保留私有备份。已有客户端可能需要重载。
+- 修复 pi 错误写入终端显示与过期 Hook 路径迁移，补充插件骨架、校验、回放及三份通用开发指令。
+- 新增首次/最近/关闭回城起点策略与应用级起点选项。
+
+### v0.1.2 已包含的变化
 
 - 设置预览局部更新，Ctrl+B 状态只在变化时发布；静止设置的七气泡演示 CPU 对照由 37.79% 降至 2.65%。不可见预览跳过绘制，减少动态效果与关闭设置时停止时钟。测试条件与范围见 [性能实测](performance-optimization-2026-10-06.md)。
 - 前台身份与显示器几何查询分开，来源捕获与回城状态检查减少重复几何读取；焦点跟随继续使用 150 ms 几何检查。
@@ -46,7 +53,7 @@ scripts/check.sh
 scripts/package-release.sh
 ```
 
-产物位于 `build/release/0.1.2/`。打包脚本分别编译两种架构，通过 lipo 合并 Char 与 char-hook，重新签名，制作 ZIP、只读 DMG 和校验和；不会复制开发 AGENTS.md 或安装用户观察 Hook。常规安装使用已发布附件，不需要执行重建命令。
+产物位于 `build/release/0.2.0/`。打包脚本分别编译两种架构，通过 lipo 合并 Char 与 char-hook，重新签名，制作 ZIP、只读 DMG 和校验和；不会复制开发 AGENTS.md 或安装用户观察 Hook。常规安装使用已发布附件，不需要执行重建命令。
 
 ## 验证边界
 

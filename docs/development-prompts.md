@@ -4,8 +4,8 @@
 
 | 开发类型 | 工作目录与完整指令 |
 | --- | --- |
-| 配置插件 | [Resources/Integrations/AGENTS.md](../Resources/Integrations/AGENTS.md) |
-| 原生提醒协议/准确回城适配器 | [integrations/AGENTS.md](../integrations/AGENTS.md) |
+| 集成能力包 | [Resources/Integrations/AGENTS.md](../Resources/Integrations/AGENTS.md) |
+| 能力适配器/客户端扩展 | [integrations/AGENTS.md](../integrations/AGENTS.md) |
 | 外观形象包 | [Resources/Skins/AGENTS.md](../Resources/Skins/AGENTS.md) |
 
 让支持 `AGENTS.md` 的代码 Agent 在对应目录开始任务，提交想要的目标即可。根目录工作协议与该目录指令共同生效。若从仓库根目录开始，请在任务中明确读取对应文件。

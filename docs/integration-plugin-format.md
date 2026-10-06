@@ -1,47 +1,51 @@
-# Integration configuration plugins, version 2
+# 集成插件格式 v3
 
-Char integrations configure independent **observation** (`workEnd`) and **return** (`returnAdapter`) capabilities. A record may provide either or both. No Agent/source category is needed. Every foreground application except Char can be captured as an application-level return origin, including Agent apps and Warp; importing a plugin is not required for this fallback. Plugins never execute scripts, load libraries, install native hooks, or contact a provider. Native pi, Kimi and DeepSeek bridges still require their separate explicit installations.
+一个 `.charintegration` 目录可同时提供监控、跳转、准确起点和安装维护。新客户端使用动态 `workEnd`，无需修改 Char 枚举或重编译。v1/v2 配置包继续可读；它们调用已有内置能力，不执行代码。v3 适配器在独立进程运行，**拥有当前用户权限，不是操作系统沙箱**。形象包仍是纯数据。
 
-## Package
+## 包和清单
 
-A directory such as `my-terminal.charintegration` contains `manifest.json` and optional PNG assets. The suffix is descriptive; contents are validated. No symbolic links are allowed, total size is at most 8 MiB, and an icon must decode as PNG at most 2048 × 2048 pixels.
+包内有 `manifest.json`、可选 PNG 图标，以及适配器代码/依赖资源。根目录和内容均禁止符号链接；总计不超过 8 MiB。入口与图标只能使用包内相对路径，禁止绝对路径、`.`/`..` 路径段。PNG 可解码且宽高不超过 2048。原生入口必须有执行权限。
 
-```json
-{
-  "schemaVersion": 2,
-  "id": "personal.pi",
-  "name": "My pi",
-  "workEnd": "pi",
-  "bundleIdentifier": "dev.warp.Warp-Stable",
-  "icon": "assets/pi.png"
-}
-```
-
-An exact-return configuration uses `"returnAdapter": "tabbit"` with `"bundleIdentifier": "com.tabbit-ai.Tabbit"`, or `"vscode"` with `"com.microsoft.VSCode"`. A combined record may also specify `workEnd`. `"application"` remains accepted for existing generic configuration packages but is not necessary for origin capture.
-
-| Field | Contract |
+| 字段 | 契约 |
 | --- | --- |
-| `schemaVersion` | Required integer `2`; legacy version `1` is decoded and migrated. |
-| `id` | Unique 1–128 ASCII letters, numbers, `.`, `_`, or `-`; begins with a letter or number. |
-| `name` | Nonblank display name, at most 100 characters. |
-| `bundleIdentifier` | Dotted application bundle ID. Used for observation navigation and optional precise return matching. |
-| `workEnd` | Optional supported observation protocol: `claudeCode`, `codexCLI`, `codexDesktop`, `deepseekDesktop`, `kimiCLI`, `kimiDesktop`, `pi`. |
-| `returnAdapter` | Optional `tabbit`, `vscode`, or `application`. Precise adapters depend on app permissions and existing bridges. |
-| `icon` | Optional relative PNG path inside the package; absolute paths and `.`/`..` components are rejected. |
+| `schemaVersion` | 适配器包为整数 `3`；`1`/`2` 保留兼容 |
+| `id` | 唯一 1–128 个 ASCII 字母、数字、点、下划线或短横线；首位字母/数字 |
+| `name` | 去空白后非空，最多 100 字符 |
+| `bundleIdentifier` | 目标应用真实点分 bundle ID；宿主用它决定应用身份 |
+| `version` | 可选包版本字符串，建议使用语义版本；升级始终重新导入完整包 |
+| `clientInterface` | 可选 `cli` / `desktop` / `application`；`cli` 显示终端角标 |
+| `workEnd` | 可选动态身份，与 `id` 同字符约束；新身份必须有 `monitor` 适配器 |
+| `icon` | 可选包内相对 PNG 路径 |
+| `adapter` | 可选进程描述符，见下表 |
+| `returnAdapter` | 旧配置兼容：`application` / `tabbit` / `vscode`；新的准确能力使用 `origin` |
 
-At least one capability must be present. Two enabled configurations cannot observe the same work end; only one enabled precise return adapter may own a bundle ID. Multiple CLI observers may share Warp, and generic application return does not reserve a bundle ID. This format configures the seven supported protocols; it does not introduce an arbitrary new Agent protocol.
+| adapter 字段 | 契约 |
+| --- | --- |
+| `protocolVersion` | 必填整数 `1` |
+| `runtime` | `node`、`python3`、`executable`；Node/Python 必须可从宿主 PATH 找到 |
+| `entrypoint` | 必填包内相对入口文件 |
+| `capabilities` | 非空且只包含 `monitor`、`visit`、`origin`、`lifecycle` |
+| `configuration` | 可选字符串字典，用于客户端配置根/运行方式等；不是凭证库 |
 
-## Migration, store and lifecycle
+至少有一种能力。一个工作端只能有一个启用插件；一个 bundle ID 只能有一个启用的准确起点提供者，包括旧的精准配置。多个 CLI 监控可以共享同一个终端。普通应用级回城无需插件，也不占有该应用。
 
-Version 1 `kind: agent`/`workEnd` and `kind: source`/`sourceAdapter` records decode into the unified capabilities. Legacy combinations remain validated. New writes encode version 2 and omit `kind` and `sourceAdapter`. Legacy installed package manifests remain readable without rewriting the package; registry mutations upgrade the registry atomically. Existing IDs, enabled states, copied assets and removal tombstones persist. Read-only reload does not rewrite user files.
+旧 `workEnd` 保留 `claudeCode`、`codexCLI`、`codexDesktop`、`deepseekDesktop`、`kimiCLI`、`kimiDesktop`、`pi`。旧 `tabbit` 和 `vscode` 必须对应各自真实 bundle ID。v3 不需要新增 `ReturnAdapter` 枚举值。
 
-`IntegrationPluginStore(directory:)` creates `registry.json` and `packages/`, initially with seven observers plus Tabbit, VS Code and WeChat configurations. Reopening does not resurrect removed built-ins; restoration is explicit and restores conflicting capabilities disabled. Import validates the full package, conflicts and duplicate IDs before copying assets; failed imports leave published entries and registry unchanged. Installed manifests are immutable: changed manifests must be removed and reimported. Removal commits first, then cleans copied assets; it does not uninstall native bridges or remove Agent data.
+## 导入、更新、删除
 
-Runtime reloads only fully valid catalogs and clears reminders for removed observers. Generic origins survive configuration changes while their original process is live. Exact anchors become invalid when the required precise adapter disappears; temporary adapter query failures preserve them. Failed precise capture falls back to an explicitly application-level anchor. PID-based returns remain navigation fallback and do not mark attention items viewed. The first anchor is retained across visits to other Agents.
+生产导入器验证整个包和冲突，复制到 UUID 安装目录，再原子提交注册表。失败不改变原目录。设置导入同 ID 的新包会更新，保留启停状态；运行中的旧适配器退出，准确锚点失效，观察代次重建。已安装包不支持直接修改文件，应重新导入完整包。
 
-## Behavior checks
+启停是用户意图；`ready` / `notInstalled` / `reloadRequired` / `unavailable` 是自检结果。`ready` 不证明已经运行的原生客户端加载了新 Hook。安装和更新通过显式操作执行；导入只自检，不自动改客户端配置。删除可选“仅删除插件”或“卸载集成并删除”；卸载失败保留插件供修复。Kimi CLI/Desktop 的共享 Hook 会在另一启用客户端仍需要时保留。
 
-`Tests/CharCoreChecks/PluginChecks.swift` covers version 1 registry/package migration, tombstones and disabled state, shared-Warp observers, combined capabilities, conflicts, atomic rejection, owned PNG copies and deletion, traversal and symlinks. `Tests/CharPlatformChecks` checks arbitrary and Agent origin capture, PID fallback, precise adapter removal, unavailable precise capture and Char exclusion. `AttentionChecks` verifies the first Agent origin survives another Agent visit and application navigation keeps reminders unviewed. Fixtures use temporary files and mock app controllers; no user profiles or apps are controlled.
+注册表写版本 3。v1 解码后保留原意义并归一化为 v2；读取不改用户文件，后续写入升级注册表。旧 ID、禁用状态和内置删除记录保留。恢复内置插件为显式操作，冲突能力恢复为禁用。
 
+应用级锚点不依赖插件。准确锚点绑定提供者、原进程及适配器实例，禁用/删除/更新提供者后失效；查询临时失败保留重试。默认保留首次起点，用户可改为最近起点或关闭记录，并可禁用应用级起点。
 
-Developer walkthrough and validation command: [plugin-development.md](plugin-development.md). Complete copyable prompts: [development-prompts.md](development-prompts.md).
+## 校验
+
+- `swift run char-package-check integration <目录>`：生产格式/复制检查，临时注册表，无客户端操作。
+- `swift run char-plugin-check inspect <目录>`：执行可信适配器，只握手与自检，不请求安装、监控或导航。
+- `swift run char-plugin-check replay <目录> <events.jsonl>`：临时回放进程走真实事件解码和路由器，不执行客户端适配器代码。
+- `bash scripts/check.sh`：宿主、旧协议、原生生命周期与公共规则检查。
+
+退出码 0 通过、1 检查失败、2 用法错误。实际用户目录仍会独立检查启用冲突。详见[协议](capability-adapter-protocol.md)与[开发指南](plugin-development.md)。

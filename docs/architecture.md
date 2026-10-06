@@ -9,6 +9,7 @@
 | CharCore | 事件、注意力、Hold、配置、几何、滚轮策略、配置代次 | [Sources/CharCore](../Sources/CharCore) |
 | CharObservations | 本地日志/Hook分类、增量读取、根会话识别、目录缓存 | [LocalObservationPoller](../Sources/CharObservations/LocalObservationPoller.swift) |
 | CharPlatform | 应用激活、Tabbit/VS Code返回、权限、皮肤校验与缓存 | [Platform](../Sources/CharPlatform/Platform.swift) |
+| CharPluginHost | 进程协议、能力授权、自检、稳定部署与启停 | [CapabilityHost](../Sources/CharPluginHost/CapabilityHost.swift) |
 | CharApp | 观察actor、定时调度、窗口、设置、图层动画、图标 | [Runtime](../Sources/CharApp/Runtime.swift) / [CompanionPanel](../Sources/CharApp/CompanionPanel.swift) |
 | char-hook / integrations | 客户端原生信号变换与私有元数据流 | [CharHook](../Sources/CharHook/main.swift) / [integrations](../integrations) |
 | char-package-check | 在临时环境调用真实导入/格式校验 | [CharPackageCheck](../Sources/CharPackageCheck/main.swift) |
@@ -22,8 +23,11 @@ flowchart LR
   E --> F[首次来源捕获与目标应用访问]
   F --> G[Hold 与 Ctrl+B]
   G --> H[原进程或准确标签返回]
-  I[配置插件注册表] --> B
-  I --> F
+  I[能力插件注册表] --> K[版本化进程适配器]
+  K -->|原生事件推送| C
+  K -->|对象捕获与聚焦| F
+  I --> B
+  K --> L[所属客户端安装维护]
   J[数据形象包] --> E
 ~~~
 
@@ -33,7 +37,7 @@ flowchart LR
 
 启动时将已有日志/Hook定位EOF。未闭合的最后一行留到下次，不把半个JSON当事件；文件长度/inode识别截短或替换。JournalDirectoryIndex缓存目录inode/mtime/ctime，变化才重新列举；已知日志仍每轮stat并读追加内容，配置根符号链接重新解析。Kimi通过SessionStart绑定工作端并观察主wire，不能把共有存储根等同桌面身份。
 
-客户端桥负责可靠信号，Char不会替客户端启动模型。不同工作端不保证能识别全部七种停顿原因，当前范围见[信号矩阵](signal-feasibility.md)。Kimi/DeepSeek/pi的Hook需显式安装，配置插件导入不会代替这一步。
+客户端桥负责可靠信号，Char不会替客户端启动模型。不同工作端不保证能识别全部七种停顿原因，当前范围见[信号矩阵](signal-feasibility.md)。Kimi/DeepSeek/pi的Hook需显式安装。能力包导入后只自检，设置中的安装维护动作使用稳定入口并备份用户配置；不自动重载工作客户端。监控适配器走本地pipe推送，事件与旧观察器共用批次和公共路由规则。
 
 配置变化递增观察代次，移除对应提醒；快速停用/启用后旧批次被拒绝，重新启用只接收新活动。运行时只接受完整有效目录，不把半写入配置发布为新状态。
 
@@ -43,15 +47,15 @@ flowchart LR
 
 同一工作端聚合多个注意力项，按原因优先级与时间选择下一项。恢复运行或关闭后的未查看项可留为已恢复，状态变淡；点击只激活所属应用不表示准确定位了原会话；成功的精确或应用级访问都会清除所点击的注意力项，失败保留供重试，用户也可右键忽略首项。破碎动画最多使用18个共享图像切片，420ms后清理，Reduce Motion使用淡出。
 
-首次访问前捕获前台来源，任何应用（包括另一个Agent，Char自身除外）都能成为应用级起点。连续访问其他Agent保留首次锚点。应用级锚点绑定原应用实例PID；Tabbit/VS Code只有获取可验证的opaque token才用准确锚点。页面正文不用于定位。
+首次访问前捕获前台来源，任何应用（包括另一个Agent，Char自身除外）都能成为应用级起点。默认连续访问其他Agent保留首次锚点，可选最近起点或不记录；应用级起点也可单独关闭。应用级锚点绑定原应用实例PID；Tabbit/VS Code只有获取可验证的opaque token才用准确锚点。页面正文不用于定位。
 
 Ctrl+B仅在Hold有效时注册，冲突状态在设置呈现；结束Hold即释放。回城成功后结束Hold，失败且来源仍存活可重试；确定来源关闭/原进程结束/依赖准确插件移除会失效。临时查询错误与确认关闭分开处理。手动回到来源也结束Hold，离开Agent时累计宽限、回到Agent暂停。
 
-**当前访问Agent均是应用级降级**，不能承诺Warp pane、Codex聊天、微信会话的精确定位。Tabbit/VS Code“准确回城能力”图标仅表示已配置对应适配器，不等于当前已授权。
+**内置访问Agent仍是应用级降级**，不能承诺Warp pane、Codex聊天、微信会话的精确定位。v3包可提供独立visit/origin，通过协议报告并确认准确对象；准确origin绑定提供者实例和原应用PID，无法查询保留重试，已移除/升级则失效。Tabbit/VS Code“准确回城能力”图标仅表示已配置对应适配器，不等于当前已授权。
 
 ## 插件与本地数据
 
-[集成包](integration-plugin-format.md)版本2统一提醒与回城能力，没有Agent/来源分区。七个workEnd及三个returnAdapter是编译期集合；新增协议需改源码。导入先验证、复制并再次验证，再原子写注册表；内置删除有tombstone，不随重启恢复。
+[集成包](integration-plugin-format.md)版本3统一监控、跳转、准确起点和生命周期，没有Agent/来源分区。workEnd为动态身份，新软件可用独立进程适配器接入而无需改源码；旧七个观察器和三个平台路径保留兼容。导入先验证、复制并再次验证，再原子写注册表；内置删除有tombstone，不随重启恢复。
 
 [形象包](pet-skin-format.md)版本1只提供七个动画PNG序列；完整校验后以同目录重命名安装。设置导入后立即选择，自定义删除回到内置方块。图片按帧身份缓存；不加载脚本。自定义位图没有默认方块的程序化眼睛跟随协议。
 
@@ -61,10 +65,12 @@ Ctrl+B仅在Hold有效时注册，冲突状态在设置呈现；结束Hold即释
 | 同目录 companion.json | 全局放置、归一化位置、大小、气泡距离 |
 | 同目录 integrations/registry.json、packages/ | 插件目录、启停、删除记录及资源 |
 | 同目录 skins/selection.json、*.charpet | 形象选择和安装包 |
+| 同目录 runtime/char-hook、runtime/native-integrations/ | 稳定事件入口和内置原生资源，应用升级部署 |
+| 同目录 integration-backups/ | 显式生命周期操作的私有配置备份 |
 | 同目录 harness-hooks.jsonl | 显式原生集成写入的元数据流 |
 | ~/.claude/projects、CODEX_HOME/sessions、KIMI_CODE_HOME/sessions | 原客户端持有的本地日志 |
 
-注意力项与Hold不跨Char重启恢复。构建/检查不会安装用户Hook。配置包删除不改变原客户端配置。无网络遥测/模型调用；本地观察可能接触含工作内容的日志，气泡不显示其原文。[ADR](adr/0004-local-only-session-data.md)规定本地处理。
+注意力项与Hold不跨Char重启恢复。构建/检查不会安装用户Hook。集成包删除可选择保留客户端集成或先卸载所属集成；不会删除原生会话。Char内置流程无网络遥测/模型调用；第三方适配器以用户权限运行，进程隔离不是沙箱，导入可信代码需明确确认。本地观察可能接触含工作内容的日志，气泡不显示其原文。[ADR](adr/0004-local-only-session-data.md)规定本地处理。
 
 ## 窗口、命中与动效
 
@@ -78,9 +84,13 @@ Ctrl+B仅在Hold有效时注册，冲突状态在设置呈现；结束Hold即释
 
 跨显示器默认100ms离开+220ms到达，用共享放置与归一化位置，150ms显示器检测配合workspace通知。离开为零端点速度的五次曲线，到达为零初速阻尼回弹；中断从当前缩放/透明度/边缘位移接续。正常模式优先读取辅助功能焦点窗口；无权限时读取前台应用最前面的可见普通窗口数字几何，以最大屏幕相交面积确定显示器，demo 不启动跨屏查询。自定义形象可替代动作时长。上述是代码参数；实际两屏总延迟还受事件/焦点查询影响，未把参数宣称为计时验收。
 
+## 能力插件成本
+
+监控与使用过的准确起点适配器按需保持进程；访问/生命周期独占适配器完成即退出。一个混合包共享一个进程。宿主不为每插件增加轮询定时器；原生事件推送，沿现有500ms调度取出，准确Hold只检查当前锚点。启停/更新/删除/退出清理进程及订阅；常驻Node/Python的独立RSS必须单独计入，不能套用旧版本Char单进程数据。新协议验证与测量见[能力插件验收](capability-plugins-verification-2026-10-06.md)。
+
 ## 性能证据与下一步
 
-v0.1.2设置预览与状态发布优化的同场景对照见[最新性能实测](performance-optimization-2026-10-06.md)。七气泡隔离演示中静止设置平均单核CPU由37.79%降至2.65%；该场景没有运行真实观察器，不能当作真实观察模式的占用或整体收益。实际Release安装后的数据见[v0.1.2发布验证](release-verification-0.1.2.md)。
+历史Release v0.1.2设置预览与状态发布优化的同场景对照见[最新性能实测](performance-optimization-2026-10-06.md)。七气泡隔离演示中静止设置平均单核CPU由37.79%降至2.65%；该场景没有运行真实观察器，不能当作真实观察模式的占用或整体收益。实际Release安装后的数据见[v0.1.2发布验证](release-verification-0.1.2.md)。
 
 完整过程、方法和排序方案见[性能分析](companion-performance-2026-10-04.md)。以下均是Char自身累计CPU时间差/墙钟，100%为单核；不含WindowServer/GPU。
 

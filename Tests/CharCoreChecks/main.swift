@@ -63,3 +63,6 @@ print("CharCore: observation generation checks passed")
 
 try CompanionPreferencesChecks().run()
 print("CharCore: shared-display placement and size migration checks passed")
+
+try originPolicyChecks()
+print("CharCore: original/latest/disabled, failed visit, generic origin preference and migration passed")

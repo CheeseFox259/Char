@@ -1,7 +1,32 @@
 import Foundation
 
-public enum WorkEnd: String, CaseIterable, Codable, Sendable {
-    case claudeCode, codexCLI, codexDesktop, deepseekDesktop, kimiCLI, kimiDesktop, pi
+/// String identity allows imported adapters to add clients without an enum edit.
+public struct WorkEnd: RawRepresentable, Hashable, Codable, CaseIterable, Comparable, Sendable {
+    public let rawValue: String
+    public init?(rawValue: String) {
+        guard rawValue.range(of: "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$", options: .regularExpression) != nil else { return nil }
+        self.rawValue = rawValue
+    }
+    public static let claudeCode = WorkEnd(rawValue: "claudeCode")!
+    public static let codexCLI = WorkEnd(rawValue: "codexCLI")!
+    public static let codexDesktop = WorkEnd(rawValue: "codexDesktop")!
+    public static let deepseekDesktop = WorkEnd(rawValue: "deepseekDesktop")!
+    public static let kimiCLI = WorkEnd(rawValue: "kimiCLI")!
+    public static let kimiDesktop = WorkEnd(rawValue: "kimiDesktop")!
+    public static let pi = WorkEnd(rawValue: "pi")!
+    public static let allCases: [WorkEnd] = [.claudeCode, .codexCLI, .codexDesktop, .deepseekDesktop, .kimiCLI, .kimiDesktop, .pi]
+    public static func < (lhs: WorkEnd, rhs: WorkEnd) -> Bool {
+        let l = allCases.firstIndex(of: lhs) ?? allCases.count
+        let r = allCases.firstIndex(of: rhs) ?? allCases.count
+        return l == r ? lhs.rawValue < rhs.rawValue : l < r
+    }
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.singleValueContainer()
+        let value = try c.decode(String.self)
+        guard let parsed = Self(rawValue: value) else { throw DecodingError.dataCorruptedError(in: c, debugDescription: "Invalid work-end ID") }
+        self = parsed
+    }
+    public func encode(to encoder: Encoder) throws { var c = encoder.singleValueContainer(); try c.encode(rawValue) }
 }
 
 public enum StopReason: String, CaseIterable, Codable, Sendable {

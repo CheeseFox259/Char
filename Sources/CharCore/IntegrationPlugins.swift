@@ -1,7 +1,7 @@
 import Foundation
 import ImageIO
 
-/// Configuration only: a plugin selects an adapter shipped with Char; it never executes code.
+/// Legacy configuration or a versioned process adapter with declared capabilities.
 public struct IntegrationPlugin: Codable, Identifiable, Equatable, Sendable {
     public enum ReturnAdapter: String, Codable, Sendable { case tabbit, vscode, application }
     public var schemaVersion: Int
@@ -11,23 +11,28 @@ public struct IntegrationPlugin: Codable, Identifiable, Equatable, Sendable {
     public var bundleIdentifier: String
     public var returnAdapter: ReturnAdapter?
     public var icon: String?
+    public var version: String?
+    public var clientInterface: ClientInterface?
+    public var adapter: AdapterDescriptor?
 
     public init(schemaVersion: Int = 2, id: String, name: String,
                 workEnd: WorkEnd? = nil, bundleIdentifier: String,
-                returnAdapter: ReturnAdapter? = nil, icon: String? = nil) {
+                returnAdapter: ReturnAdapter? = nil, icon: String? = nil,
+                version: String? = nil, clientInterface: ClientInterface? = nil, adapter: AdapterDescriptor? = nil) {
         self.schemaVersion = schemaVersion; self.id = id; self.name = name
         self.workEnd = workEnd; self.bundleIdentifier = bundleIdentifier
         self.returnAdapter = returnAdapter; self.icon = icon
+        self.version = version; self.clientInterface = clientInterface; self.adapter = adapter
     }
 
     private enum CodingKeys: String, CodingKey {
-        case schemaVersion, id, name, workEnd, bundleIdentifier, returnAdapter, icon
+        case schemaVersion, id, name, workEnd, bundleIdentifier, returnAdapter, icon, version, clientInterface, adapter
         case kind, sourceAdapter // Version 1 compatibility only; never encoded.
     }
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         let version = try c.decode(Int.self, forKey: .schemaVersion)
-        guard version == 1 || version == 2 else {
+        guard (1...3).contains(version) else {
             throw IntegrationPluginError.invalid("manifest version")
         }
         id = try c.decode(String.self, forKey: .id)
@@ -45,7 +50,11 @@ public struct IntegrationPlugin: Codable, Identifiable, Equatable, Sendable {
         } else {
             returnAdapter = try c.decodeIfPresent(ReturnAdapter.self, forKey: .returnAdapter)
         }
-        schemaVersion = 2
+        self.version = try c.decodeIfPresent(String.self, forKey: .version)
+        clientInterface = try c.decodeIfPresent(ClientInterface.self, forKey: .clientInterface)
+        adapter = try c.decodeIfPresent(AdapterDescriptor.self, forKey: .adapter)
+        guard version == 3 || adapter == nil else { throw IntegrationPluginError.invalid("adapter requires manifest v3") }
+        schemaVersion = version == 3 ? 3 : 2
     }
     public func encode(to encoder: Encoder) throws {
         var c = encoder.container(keyedBy: CodingKeys.self)
@@ -55,6 +64,9 @@ public struct IntegrationPlugin: Codable, Identifiable, Equatable, Sendable {
         try c.encode(bundleIdentifier, forKey: .bundleIdentifier)
         try c.encodeIfPresent(returnAdapter, forKey: .returnAdapter)
         try c.encodeIfPresent(icon, forKey: .icon)
+        try c.encodeIfPresent(version, forKey: .version)
+        try c.encodeIfPresent(clientInterface, forKey: .clientInterface)
+        try c.encodeIfPresent(adapter, forKey: .adapter)
     }
 
 }
@@ -65,6 +77,9 @@ public struct IntegrationPluginEntry: Identifiable, Equatable, Sendable {
     public let enabled: Bool
     public let packageURL: URL?
     public let isBuiltIn: Bool
+    public init(plugin: IntegrationPlugin, enabled: Bool, packageURL: URL?, isBuiltIn: Bool) {
+        self.plugin = plugin; self.enabled = enabled; self.packageURL = packageURL; self.isBuiltIn = isBuiltIn
+    }
 }
 
 public enum IntegrationPluginError: Error, Equatable, CustomStringConvertible {
@@ -111,21 +126,23 @@ public final class IntegrationPluginStore {
 
     public func reload() throws {
         let candidate = try JSONDecoder().decode(Registry.self, from: Data(contentsOf: registryURL))
-        guard candidate.schemaVersion == 1 || candidate.schemaVersion == 2 else { throw IntegrationPluginError.invalid("registry version") }
+        guard (1...3).contains(candidate.schemaVersion) else { throw IntegrationPluginError.invalid("registry version") }
         try validate(candidate)
         registry = candidate
         publish()
     }
 
-    @discardableResult public func importPackage(at url: URL) throws -> IntegrationPluginEntry {
+    @discardableResult public func importPackage(at url: URL, replacingExisting: Bool = false) throws -> IntegrationPluginEntry {
         try reload()
         let plugin = try loadPackage(url)
-        guard !registry.records.contains(where: { $0.plugin.id == plugin.id }) else {
+        let old = registry.records.first { $0.plugin.id == plugin.id }
+        guard replacingExisting || old == nil else {
             throw IntegrationPluginError.duplicateID(plugin.id)
         }
         var candidate = registry
+        candidate.records.removeAll { $0.plugin.id == plugin.id }
         let packageName = UUID().uuidString + ".charintegration"
-        candidate.records.append(Record(plugin: plugin, enabled: true, packageName: packageName, isBuiltIn: false))
+        candidate.records.append(Record(plugin: plugin, enabled: old?.enabled ?? true, packageName: packageName, isBuiltIn: false))
         candidate.tombstones.remove(plugin.id)
         // Check conflicts before copying anything into the installed catalog.
         try validateRecords(candidate)
@@ -134,6 +151,7 @@ public final class IntegrationPluginStore {
             try fm.copyItem(at: url, to: destination)
             _ = try loadPackage(destination)
             try commit(candidate)
+            if let previous = old?.packageName { try? fm.removeItem(at: packagesURL.appendingPathComponent(previous)) }
         } catch {
             try? fm.removeItem(at: destination)
             throw error
@@ -171,7 +189,7 @@ public final class IntegrationPluginStore {
             let enabled = !candidate.records.contains {
                 $0.enabled && (plugin.workEnd != nil && $0.plugin.workEnd == plugin.workEnd ||
                     plugin.returnAdapter != nil && plugin.returnAdapter != .application &&
-                    $0.plugin.returnAdapter != nil && $0.plugin.returnAdapter != .application &&
+                    ($0.plugin.returnAdapter != nil && $0.plugin.returnAdapter != .application || $0.plugin.adapter?.capabilities.contains(.origin) == true) &&
                     $0.plugin.bundleIdentifier == plugin.bundleIdentifier)
             }
             candidate.records.append(Record(plugin: plugin, enabled: enabled, isBuiltIn: true))
@@ -197,7 +215,7 @@ public final class IntegrationPluginStore {
     private func commit(_ candidate: Registry) throws {
         try validate(candidate)
         let encoder = JSONEncoder(); encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
-        var migrated = candidate; migrated.schemaVersion = 2
+        var migrated = candidate; migrated.schemaVersion = 3
         try encoder.encode(migrated).write(to: registryURL, options: .atomic)
         registry = migrated
         publish()
@@ -208,7 +226,7 @@ public final class IntegrationPluginStore {
         for record in candidate.records {
             try validateManifest(record.plugin)
             guard ids.insert(record.plugin.id).inserted else { throw IntegrationPluginError.duplicateID(record.plugin.id) }
-            if record.enabled, record.plugin.returnAdapter != nil && record.plugin.returnAdapter != .application {
+            if record.enabled, (record.plugin.returnAdapter != nil && record.plugin.returnAdapter != .application) || record.plugin.adapter?.capabilities.contains(.origin) == true {
                 guard enabledPreciseBundles.insert(record.plugin.bundleIdentifier).inserted else {
                     throw IntegrationPluginError.invalid("an enabled precise return adapter already owns this application")
                 }
@@ -236,7 +254,7 @@ public final class IntegrationPluginStore {
     private func validateManifest(_ plugin: IntegrationPlugin) throws {
         let idPattern = "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$"
         let bundlePattern = "^[A-Za-z0-9][A-Za-z0-9-]*(\\.[A-Za-z0-9][A-Za-z0-9-]*)+$"
-        guard plugin.schemaVersion == 2,
+        guard [2, 3].contains(plugin.schemaVersion),
               plugin.id.range(of: idPattern, options: .regularExpression) != nil,
               !plugin.name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, plugin.name.count <= 100,
               plugin.bundleIdentifier.range(of: bundlePattern, options: .regularExpression) != nil else {
@@ -248,8 +266,19 @@ public final class IntegrationPluginStore {
         if plugin.returnAdapter == .vscode && plugin.bundleIdentifier != "com.microsoft.VSCode" {
             throw IntegrationPluginError.invalid("VS Code adapter requires VS Code bundle identifier")
         }
-        guard plugin.workEnd != nil || plugin.returnAdapter != nil else {
+        guard plugin.workEnd != nil || plugin.returnAdapter != nil || plugin.adapter != nil else {
             throw IntegrationPluginError.invalid("at least one integration capability is required")
+        }
+        if let end = plugin.workEnd, !WorkEnd.allCases.contains(end), plugin.adapter?.capabilities.contains(.monitor) != true {
+            throw IntegrationPluginError.invalid("custom workEnd requires a v3 monitoring adapter")
+        }
+        if let adapter = plugin.adapter {
+            guard plugin.schemaVersion == 3, adapter.protocolVersion == 1, !adapter.capabilities.isEmpty,
+                  !adapter.entrypoint.isEmpty, !adapter.entrypoint.hasPrefix("/"),
+                  adapter.entrypoint.split(separator: "/").allSatisfy({ $0 != "." && $0 != ".." }),
+                  !adapter.capabilities.contains(.monitor) || plugin.workEnd != nil else {
+                throw IntegrationPluginError.invalid("adapter protocol, entrypoint or monitor identity")
+            }
         }
         if let icon = plugin.icon {
             guard !icon.isEmpty, !icon.hasPrefix("/"), icon.split(separator: "/").allSatisfy({ $0 != "." && $0 != ".." }),
@@ -274,6 +303,13 @@ public final class IntegrationPluginStore {
         let manifest = root.appendingPathComponent("manifest.json")
         let plugin = try JSONDecoder().decode(IntegrationPlugin.self, from: Data(contentsOf: manifest))
         try validateManifest(plugin)
+        if let adapter = plugin.adapter {
+            let executable = root.appendingPathComponent(adapter.entrypoint)
+            guard (try? executable.resourceValues(forKeys: [.isRegularFileKey]).isRegularFile) == true,
+                  adapter.runtime != .executable || fm.isExecutableFile(atPath: executable.path) else {
+                throw IntegrationPluginError.invalid("adapter entrypoint must be a regular readable file (executable for native runtime)")
+            }
+        }
         if let icon = plugin.icon {
             let asset = root.appendingPathComponent(icon).standardizedFileURL
             guard asset.path.hasPrefix(root.path + "/"),

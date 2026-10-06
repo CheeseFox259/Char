@@ -15,5 +15,6 @@ while IFS= read -r -d '' asset; do
     mkdir -p "$app_path/Contents/Resources/$(dirname "$relative")"
     cp "$asset" "$app_path/Contents/Resources/$relative"
 done < <(find "$repo_root/Resources" -type f ! -name Info.plist ! -name AGENTS.md -print0)
+bash "$repo_root/scripts/copy-native-integrations.sh" "$app_path/Contents/Resources/NativeIntegrations"
 codesign --force --sign - "$app_path"
 printf '%s\n' "$app_path"

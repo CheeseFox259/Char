@@ -70,7 +70,8 @@ public final class AttentionRouter {
     }
 
     public var snapshot: AttentionSnapshot {
-        let bubbles = WorkEnd.allCases.compactMap { end -> AttentionBubble? in
+        let ends = Set(sessions.keys.map(\.workEnd)).union(items.keys.map(\.workEnd)).sorted()
+        let bubbles = ends.compactMap { end -> AttentionBubble? in
             let queue = items.values.filter { $0.key.workEnd == end }.sorted(by: Self.precedes)
             let running = sessions.values.filter { $0.event.key.workEnd == end && $0.event.state == .running }.count
             return queue.isEmpty && running == 0 ? nil : AttentionBubble(workEnd: end, items: queue, runningCount: running)
@@ -80,6 +81,7 @@ public final class AttentionRouter {
 
     public func updateSettings(_ settings: CharSettings) {
         self.settings = settings.normalized()
+        if settings.originPolicy == .disabled || (!settings.applicationOrigins && hold?.anchor.accuracy == .application) { endHold() }
         if !self.settings.soundEnabled { pendingSound.removeAll(); soundDue = nil }
         expireHoldIfNeeded()
     }
@@ -193,8 +195,8 @@ public final class AttentionRouter {
         guard items[key] != nil else { return }
         navigationFeedback = outcome
         if outcome == .unavailable { return }
-        if hold == nil, let anchor = sourceAnchor,
-           anchor.accuracy == .exact || anchor.accuracy == .application {
+        if settings.originPolicy != .disabled, hold == nil || settings.originPolicy == .latest, let anchor = sourceAnchor,
+           anchor.accuracy == .exact || (anchor.accuracy == .application && settings.applicationOrigins) {
             hold = HoldSnapshot(anchor: anchor, elapsedGraceSeconds: 0)
         }
         // The click acknowledges this attention record even when only the owning

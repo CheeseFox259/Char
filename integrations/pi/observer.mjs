@@ -27,8 +27,10 @@ export function createCharExtension({ hookBinary, eventsFile }) {
           child.stdin.on('error', () => {});
         });
       } catch {
-        if (!warned) {
-          process.stderr.write('Char: Pi observation could not append a local event.\n');
+        // Pi owns terminal rendering. Raw stdout/stderr writes corrupt its TUI,
+        // and shutdown/reload must not leave a notification after it is torn down.
+        if (!warned && ctx.hasUI && event !== 'closed') {
+          ctx.ui.notify('Char: Pi observation unavailable. Check the configured char-hook path and event-file permissions.', 'warning');
           warned = true;
         }
       }

@@ -19,3 +19,16 @@ local contract checks and are not authorized. User-profile mount and actual Desk
 turn/approval/question acceptance remain USER_RUN_REQUIRED.
 
 No DSH core changes. No generated artifact or temporary home is canonical source.
+
+## 2026-10-06 installed-path repair
+
+User reports missing Desktop reminders. The approved Desktop mount still points
+to a removed local build. A fresh temporary event stream through the canonical
+observer reproduces hook startup failure; changing only `hookBinary` to the
+installed v0.1.2 Release makes running/turn-ended events write successfully.
+
+Write boundary: the single Char entry in the user's Desktop patch, with private
+backup and preservation of all other patch bytes. No DSH core, provider binding,
+session or plugin source changes. Validate native YAML, unique mount, canonical
+source path, real packaged writer and existing plugin suite. Live Host reload and
+natural-turn verification remain user-run; browser UI is N/A for this observer.
