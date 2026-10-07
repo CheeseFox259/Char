@@ -52,7 +52,7 @@ Files: `docs/pet-skin-format.md`, `docs/appearance-development.md`, `docs/appear
 - [x] Supply full generic v2 field/API reference and examples for independent edge art, tracking, bubble styling, theme, sound and scripts. The developer reads SDK docs rather than exploring host source.
 - [x] Keep a minimal basic-check gate; final report gives complete GUI acceptance steps. Do not install a user-developed package or make model requests during development.
 - [x] Build and run focused platform/script/runtime checks; inspect actual isolated native rendering and theme switching. Reuse v1 edge regression evidence.
-- [ ] Commit explicit implementation/docs files, push, produce Release artifacts and install downloaded Release. Required project gates and focused native checks passed locally.
+- [x] Commit explicit implementation/docs files, push, produce Release artifacts and install downloaded Release. Final v0.3.1 and installation evidence is recorded in docs/appearance-v2-verification-2026-10-07.md.
 
 ## Acceptance and performance
 

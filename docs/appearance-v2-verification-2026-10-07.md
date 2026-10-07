@@ -50,3 +50,10 @@ v0.3.0发布后的CI、下载SHA256、安装签名、版本/唯一进程和实�
 - 完整`bash scripts/check.sh`通过，平台增加CPU时长加权平均、RSS样本平均、缺失区间/暂停/PID复用基线及实际自身进程读数检查。
 - 实际原生`--smoke --appearance-v2-check`通过新增状态栏主题图像切换/恢复及性能面板宿主读数/暂停冻结/清空；查看真实NSHostingView截图，修正当前RSS格式化误用Double位模式初始化，界面显示正常数值。隔离样本不是正式App的性能基准。
 - 面板默认关闭；开启后1秒原生采集，统计仅本次运行并明确共享成本/脚本/常驻适配器口径。正式安装后的面板用户路径仍待用户验收。
+
+## 最终发布与安装：v0.3.1
+
+- PR [#23](https://github.com/CheeseFox259/Char/pull/23)已合并，main `902011b`；[Release CI 37584800947](https://github.com/CheeseFox259/Char/actions/runs/37584800947)通过完整检查与双架构ZIP/DMG验证。公开[Release v0.3.1](https://github.com/CheeseFox259/Char/releases/tag/v0.3.1)。
+- 实际下载ZIP SHA256：`1e8717651e04056a54488d727969e12e64b1d2bad9d21a1f5101e4b65aaaa5a9`，核对SHA256SUMS、严格签名、三个二进制arm64/x86_64及下载包原生smoke（主题图标/性能读数/冻结清空）均通过。
+- 仅从下载Release安装`/Applications/Char.app`，版本0.3.1/build8；当前形象自动生成安装图标变体并严格验签。重启该变体后图标marker保持`c26a9675…`，无重复重签，仅一个正式进程，构建目录无可发现的Char.app副本。原始下载与旧安装为ReleaseBackups ZIP，安装图标事务也保留独立原版备份。
+- 正式版形象显示已由用户在上一安装确认。新版本的系统辅助功能重建授权与性能面板实际使用验收步骤已交给用户；尚未收到完成结果，不声称已授权或现场验收通过。
