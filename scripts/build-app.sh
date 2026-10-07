@@ -9,6 +9,8 @@ mkdir -p "$app_path/Contents/MacOS" "$app_path/Contents/Resources"
 cp "$repo_root/Resources/Info.plist" "$app_path/Contents/Info.plist"
 cp "$bin_path/Char" "$app_path/Contents/MacOS/Char"
 cp "$bin_path/char-hook" "$app_path/Contents/MacOS/char-hook"
+cp "$bin_path/char-appearance-script" "$app_path/Contents/MacOS/char-appearance-script"
+codesign --force --sign - "$app_path/Contents/MacOS/char-appearance-script"
 # Copy local assets while preserving Info.plist at the bundle root.
 while IFS= read -r -d '' asset; do
     relative="${asset#"$repo_root/Resources/"}"

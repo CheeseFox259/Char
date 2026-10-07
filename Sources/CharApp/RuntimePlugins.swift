@@ -9,8 +9,9 @@ extension CompanionRuntime {
     var enabledWorkEnds: Set<WorkEnd> {
         Set(pluginEntries.filter(\.enabled).compactMap { $0.plugin.workEnd })
     }
-    var customPetAnchor: NSPoint {
-        let anchor = skinStore?.selectedSkin.anchor
+    var customPetAnchor: NSPoint { customPetAnchor(for: petPlacement) }
+    func customPetAnchor(for placement: PetPlacement) -> NSPoint {
+        let anchor = appearancePose(for: placement)?.anchor
         return NSPoint(x: anchor?.x ?? 0.5, y: 1 - (anchor?.y ?? 0.5))
     }
     var customPetSize: NSSize {
@@ -60,13 +61,13 @@ extension CompanionRuntime {
             return true
         }
     }
-    func customPetClipDuration(clip: String) -> TimeInterval? {
-        guard let animation = skinStore?.selectedSkin.clips[clip] else { return nil }
+    func customPetClipDuration(clip: String, placement: PetPlacement? = nil) -> TimeInterval? {
+        guard let animation = appearancePose(for: placement ?? petPlacement)?.clips[clip] else { return nil }
         return Double(animation.frames.count) / animation.fps
     }
-    func customPetImage(clip: String, elapsed: TimeInterval) -> NSImage? {
-        guard let clip = PetSkinClip(rawValue: clip), let skinStore else { return nil }
-        return skinStore.image(for: skinStore.selectedSkin.id, clip: clip, elapsed: elapsed)
+    func customPetImage(clip: String, elapsed: TimeInterval, placement: PetPlacement? = nil) -> NSImage? {
+        guard let skinStore else { return nil }
+        return skinStore.image(clip: clip,elapsed: elapsed,placement: (placement ?? petPlacement).rawValue)
     }
     func reloadPlugins() {
         do {
@@ -152,6 +153,13 @@ extension CompanionRuntime {
         picker.prompt = localized("导入", "Import")
         if picker.runModal() == .OK, let url = picker.url {
             do {
+                let manifest = try PetSkinStore.validatePackage(at: url)
+                if manifest.features?.script != nil {
+                    let alert = NSAlert(); alert.messageText = localized("启用形象脚本？", "Enable appearance script?")
+                    alert.informativeText = localized("脚本仅能调用 Char 的事件与动作接口。", "Scripts can use only Char events and actions.")
+                    alert.addButton(withTitle: localized("导入", "Import")); alert.addButton(withTitle: localized("取消", "Cancel"))
+                    guard alert.runModal() == .alertFirstButtonReturn else { return }
+                }
                 if let skin = try skinStore?.importPackage(at: url) { try skinStore?.select(id: skin.id) }
                 refreshSkins()
             } catch { setupMessage = localized("形象导入失败：\(error)", "Appearance import failed: \(error)") }
@@ -168,6 +176,10 @@ extension CompanionRuntime {
     func refreshSkins() {
         skins = skinStore?.skins ?? []
         selectedSkinID = skinStore?.selectedSkin.id ?? "char.default"
+        selectedThemeID = skinStore?.selectedTheme ?? ""
+        if panel != nil && loadedAppearanceID != selectedSkinID {
+            loadedAppearanceID = selectedSkinID; prepareAppearance()
+        } else if panel != nil { scheduleInstalledIcon() }
         NSApp.applicationIconImage = softwareIcon
         panel?.surface.refresh()
         refreshAppearanceStatusBar()

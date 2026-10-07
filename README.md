@@ -94,10 +94,13 @@ v0.2.0 支持 v3 能力插件，无需重启 Char 即可导入、启停、同 ID
 | --- | --- |
 | 更换客户端图标、名称或目标应用 | [集成配置包 `.charintegration`](docs/plugin-development.md) |
 | 接入新 Agent 协议或新的准确回城 | [能力适配器与本地协议](docs/capability-adapter-protocol.md) |
-| 制作角色、七种动作及软件图标 | [形象包 `.charpet`](docs/appearance-development.md) |
+| 制作角色、动作、跟随、主题/皮肤、音效及图标 | [形象包 `.charpet`](docs/appearance-development.md) |
 | 使用 AI 辅助开发 | [三份通用开发指令](docs/development-prompts.md) |
 
-v3集成包可运行独立适配器，接入新监控、跳转、准确起点和安装维护，无需重新编译 Char；旧v1/v2配置与形象包保持纯数据。适配器有当前用户权限，进程隔离不是沙箱。启停立即生效，重新启用只观察新活动；同ID导入更新保留启停状态，删除可选清理所属客户端集成。形象切换同步更新运行中的软件与状态栏图标，Finder 使用安装包内的默认图标。
+v3集成包可运行独立适配器，接入新监控、跳转、准确起点和安装维护，无需重新编译 Char；旧v1/v2集成配置保持兼容。适配器有当前用户权限，进程隔离不是沙箱。启停立即生效，重新启用只观察新活动；同ID导入更新保留启停状态，删除可选清理所属客户端集成。
+
+v2形象包支持独立四边造型、眼睛/头部跟随、热切主题、气泡皮肤、音效和受限事件脚本，详见[完整外观API](docs/appearance-v2-api.md)。原生渲染处理高频动画，脚本只调用Char动作。形象选择同步运行/状态栏及可写ad hoc安装图标，保留原Release备份；图标重签可能需要重新添加辅助功能授权。旧v1纯图片包仍可导入。
+
 
 ## 参与开发
 
@@ -127,7 +130,7 @@ swift run char-package-check skin Resources/Skins/example.charpet
 
 - 当前提供 macOS 构建；Windows 移植需要新的桌面壳和平台适配，见 [可行性评估](docs/windows-feasibility.md)。
 - Space 的整屏切换速度由 macOS 控制；Char 只管理桌宠与气泡自身的动画。
-- 提醒与回城起点不跨 Char 重启恢复。自定义位图形象尚无默认方块的程序化眼睛跟随能力。
+- 提醒与回城起点不跨 Char 重启恢复。形象脚本不提供本机命令、网络或文件接口；跟随需要作者提供独立图层。
 - USB 接收器滚轮已通过实体检查；有线模式的输入送达兼容问题保留在 [诊断记录](docs/wheel-diagnosis-2026-10-05.md)。
 
 ## 许可证

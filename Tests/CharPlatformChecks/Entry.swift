@@ -195,6 +195,7 @@ import ServiceManagement
         assert(try! controller.setEnabled(true) == .requiresApproval, "successful retry remains available")
         try! await pluginPlatformChecks()
         try! petSkinChecks()
+        try! petSkinV2Checks()
         try! homeShortcutChecks()
         try! await workEndDestinationChecks()
         print("CharPlatform: 8 contract groups passed without controlling user apps")

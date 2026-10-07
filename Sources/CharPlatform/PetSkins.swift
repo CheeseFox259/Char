@@ -33,10 +33,11 @@ public struct PetSkinManifest: Codable, Identifiable, Equatable {
     public let clips: [String: PetSkinAnimation]
     /// Optional independent square software icon. Old v1 packages derive it from edgePeek.
     public let appIcon: String?
+    public let features: PetSkinFeatures?
     public init(schemaVersion: Int = 1, id: String, name: String, canvasSize: PetSkinSize,
-                anchor: PetSkinAnchor, clips: [String: PetSkinAnimation], appIcon: String? = nil) {
+                anchor: PetSkinAnchor, clips: [String: PetSkinAnimation], appIcon: String? = nil, features: PetSkinFeatures? = nil) {
         self.schemaVersion = schemaVersion; self.id = id; self.name = name
-        self.canvasSize = canvasSize; self.anchor = anchor; self.clips = clips; self.appIcon = appIcon
+        self.canvasSize = canvasSize; self.anchor = anchor; self.clips = clips; self.appIcon = appIcon; self.features = features
     }
 }
 
@@ -52,7 +53,7 @@ public enum PetSkinError: Error, LocalizedError {
     }
 }
 
-/// Main-thread owned local store. Imported packages are data only; no executable content is loaded.
+/// Main-thread owned store. Assets are immutable; scripts are read only by the isolated helper.
 public final class PetSkinStore {
     public static let defaultID = "char.default"
     public static let defaultSkin = PetSkinManifest(id: defaultID, name: "Char", canvasSize: .init(width: 128, height: 128), anchor: .init(x: 0.5, y: 0.5), clips: [:])
@@ -61,7 +62,9 @@ public final class PetSkinStore {
     public private(set) var skins: [PetSkinManifest] = [defaultSkin]
     public private(set) var selectedSkin: PetSkinManifest = defaultSkin
     private var images: [String: NSImage] = [:]
-    private struct Selection: Codable { let selectedID: String }
+    public private(set) var behaviorEnabled = true
+    public private(set) var selectedTheme: String?
+    private struct Selection: Codable { let selectedID: String; var theme: String?; var behaviorEnabled: Bool? }
 
     public init(directory: URL) throws {
         self.directory = directory.standardizedFileURL
@@ -77,7 +80,7 @@ public final class PetSkinStore {
         skins = [Self.defaultSkin] + skins.dropFirst().sorted { $0.id < $1.id }
         if let data = try? Data(contentsOf: self.directory.appendingPathComponent("selection.json")),
            let saved = try? JSONDecoder().decode(Selection.self, from: data),
-           let selected = skins.first(where: { $0.id == saved.selectedID }) { selectedSkin = selected }
+           let selected = skins.first(where: { $0.id == saved.selectedID }) { selectedSkin = selected; behaviorEnabled = saved.behaviorEnabled ?? true; selectedTheme = saved.theme == "" ? nil : selected.features?.themes?[saved.theme ?? ""] != nil ? saved.theme : selected.features?.defaultTheme }
     }
 
     @discardableResult public func importPackage(at source: URL) throws -> PetSkinManifest {
@@ -100,9 +103,34 @@ public final class PetSkinStore {
 
     public func select(id: String) throws {
         guard let skin = skins.first(where: { $0.id == id }) else { throw PetSkinError.unknownSkin }
-        let data = try JSONEncoder().encode(Selection(selectedID: id))
+        let data = try JSONEncoder().encode(Selection(selectedID: id, theme: skin.features?.defaultTheme, behaviorEnabled: true))
         try data.write(to: directory.appendingPathComponent("selection.json"), options: .atomic)
-        selectedSkin = skin
+        selectedSkin = skin; behaviorEnabled = true; selectedTheme = skin.features?.defaultTheme
+    }
+
+    public func selectTheme(_ theme: String) throws {
+        guard theme.isEmpty || selectedSkin.features?.themes?[theme] != nil else { throw PetSkinError.invalid("unknown theme") }
+        try JSONEncoder().encode(Selection(selectedID: selectedSkin.id, theme: theme, behaviorEnabled: behaviorEnabled)).write(to: directory.appendingPathComponent("selection.json"), options: .atomic)
+        selectedTheme = theme.isEmpty ? nil : theme
+    }
+    public func setBehaviorEnabled(_ enabled: Bool) throws {
+        try JSONEncoder().encode(Selection(selectedID: selectedSkin.id,theme: selectedTheme ?? "",behaviorEnabled: enabled)).write(to: directory.appendingPathComponent("selection.json"),options: .atomic)
+        behaviorEnabled = enabled
+    }
+    public func resourceURL(_ path: String) -> URL? { packages[selectedSkin.id]?.appendingPathComponent(path) }
+    public func asset(_ path: String) -> NSImage? {
+        let key = selectedSkin.id + "/" + path
+        if let cached = images[key] { return cached }
+        guard let url = resourceURL(path), let image = NSImage(contentsOf: url) else { return nil }
+        images[key] = image; return image
+    }
+    public func image(clip: String, elapsed: TimeInterval, placement: String) -> NSImage? {
+        let pose = selectedSkin.pose(placement: placement, theme: selectedTheme)
+        guard let animation = pose.clips[clip], !animation.frames.isEmpty else { return nil }
+        let time = elapsed.isFinite ? max(0,elapsed) : 0, duration = Double(animation.frames.count)/animation.fps
+        let loop = clip == "idle" || selectedSkin.features?.loopingClips?.contains(clip) == true
+        let index = loop ? Int(time.truncatingRemainder(dividingBy: duration)*animation.fps) % animation.frames.count : Int(min(Double(animation.frames.count-1),floor(time*animation.fps)))
+        return asset(animation.frames[index])
     }
 
     public func delete(id: String) throws {
@@ -134,10 +162,11 @@ public final class PetSkinStore {
 
     public func icon(for id: String) -> NSImage? {
         guard let skin = skins.first(where: { $0.id == id }), let root = packages[id] else { return nil }
-        let key = id + "/@application-icon"
+        let theme = id == selectedSkin.id ? selectedTheme : skin.features?.defaultTheme
+        let key = id + "/@application-icon/" + (theme ?? "")
         if let cached = images[key] { return cached }
         let icon: NSImage?
-        if let path = skin.appIcon { icon = NSImage(contentsOf: root.appendingPathComponent(path)) }
+        if let path = skin.pose(placement: "right", theme: theme).appIcon { icon = NSImage(contentsOf: root.appendingPathComponent(path)) }
         else if let frame = image(for: id, clip: .edgePeek, elapsed: .greatestFiniteMagnitude) {
             icon = PetIconArtwork.rightEdgeIcon(pet: frame, anchor: NSPoint(x: skin.anchor.x, y: 1 - skin.anchor.y))
         } else { icon = nil }
@@ -153,25 +182,28 @@ public final class PetSkinStore {
         let root = root.standardizedFileURL.resolvingSymlinksInPath()
         guard let enumerator = fm.enumerator(at: root, includingPropertiesForKeys: Array(keys)) else { throw PetSkinError.invalid("unreadable package") }
         var totalBytes = 0, entries = 0
-        var packagePNGs = Set<String>()
+        var packagePNGs = Set<String>(), otherAssets = Set<String>()
         for case let url as URL in enumerator {
             entries += 1
             let values = try url.resourceValues(forKeys: keys)
-            guard entries <= 600, values.isSymbolicLink != true,
+            guard entries <= 2200, values.isSymbolicLink != true,
                   values.isDirectory == true || values.isRegularFile == true else { throw PetSkinError.invalid("links, special files or too many entries") }
             if values.isRegularFile == true {
                 let relative = String(url.standardizedFileURL.resolvingSymlinksInPath().path.dropFirst(root.path.count + 1))
-                guard relative == "manifest.json" || relative.hasSuffix(".png") else { throw PetSkinError.invalid("only manifest.json and PNG assets are allowed: \(relative)") }
+                if url.lastPathComponent == ".DS_Store", (values.fileSize ?? 0) <= 128*1024 { totalBytes += values.fileSize ?? 0; continue }
+                guard relative == "manifest.json" || ["png","js","wav","aiff","m4a"].contains(url.pathExtension) else { throw PetSkinError.invalid("unsupported appearance asset: \(relative)") }
                 if relative.hasSuffix(".png") { packagePNGs.insert(relative) }
+                else if relative != "manifest.json" { otherAssets.insert(relative) }
             }
             totalBytes += values.fileSize ?? 0
-            guard totalBytes <= 32 * 1024 * 1024 else { throw PetSkinError.invalid("package exceeds 32 MiB") }
+            guard totalBytes <= 64 * 1024 * 1024 else { throw PetSkinError.invalid("package exceeds 64 MiB") }
         }
         let manifestURL = root.appendingPathComponent("manifest.json")
         let manifestData = try Data(contentsOf: manifestURL)
-        guard manifestData.count <= 64 * 1024 else { throw PetSkinError.invalid("manifest exceeds 64 KiB") }
+        guard manifestData.count <= 128 * 1024 else { throw PetSkinError.invalid("manifest exceeds 128 KiB") }
+        try PetSkinJSONContract.validate(manifestData)
         let manifest = try JSONDecoder().decode(PetSkinManifest.self, from: manifestData)
-        guard manifest.schemaVersion == 1 else { throw PetSkinError.invalid("unsupported schema version") }
+        guard [1,2].contains(manifest.schemaVersion) else { throw PetSkinError.invalid("unsupported schema version") }
         guard manifest.id.range(of: "^[a-z][a-z0-9.-]{1,63}$", options: .regularExpression) != nil,
               !manifest.id.contains(".."), !manifest.name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
               manifest.name.count <= 80 else { throw PetSkinError.invalid("invalid identity") }
@@ -179,15 +211,31 @@ public final class PetSkinStore {
         guard (32...512).contains(size.width), (32...512).contains(size.height),
               manifest.anchor.x.isFinite, manifest.anchor.y.isFinite,
               (0...1).contains(manifest.anchor.x), (0...1).contains(manifest.anchor.y) else { throw PetSkinError.invalid("invalid canvas or anchor") }
-        guard Set(manifest.clips.keys) == Set(PetSkinClip.allCases.map(\.rawValue)) else { throw PetSkinError.invalid("exactly seven required clips must be present") }
+        guard Set(PetSkinClip.allCases.map(\.rawValue)).isSubset(of: Set(manifest.clips.keys)),
+              manifest.schemaVersion == 2 || (manifest.features == nil && otherAssets.isEmpty && Set(manifest.clips.keys) == Set(PetSkinClip.allCases.map(\.rawValue))) else { throw PetSkinError.invalid("seven base clips must be present; v1 allows no extra clips or features") }
+        if manifest.schemaVersion == 2, !manifest.clips.keys.allSatisfy({ $0.range(of: "^[a-zA-Z][a-zA-Z0-9]{0,39}$",options: .regularExpression) != nil }) { throw PetSkinError.invalid("invalid clip name") }
         var uniqueFrames = Set<String>(), frameCount = 0
         for (clip, animation) in manifest.clips {
             guard animation.fps.isFinite, (1...60).contains(animation.fps), (2...120).contains(animation.frames.count) else { throw PetSkinError.invalid("invalid \(clip) duration or frame rate") }
             frameCount += animation.frames.count
-            guard frameCount <= 480 else { throw PetSkinError.invalid("more than 480 frame references") }
+            guard frameCount <= (manifest.schemaVersion == 1 ? 480 : 2048) else { throw PetSkinError.invalid("too many frame references") }
             for frame in animation.frames {
                 guard safePNGPath(frame) else { throw PetSkinError.invalid("unsafe PNG path") }
                 uniqueFrames.insert(frame)
+            }
+        }
+        let extras = try manifest.features?.validate(base: manifest)
+        frameCount += extras?.references ?? 0
+        guard frameCount <= (manifest.schemaVersion == 1 ? 480 : 2048) else { throw PetSkinError.invalid("too many frame references") }
+        uniqueFrames.formUnion(extras?.frames ?? [])
+        guard otherAssets == (extras?.other ?? []) else { throw PetSkinError.invalid("unreferenced script or sound") }
+        for path in otherAssets {
+            guard safeAssetPath(path) else { throw PetSkinError.invalid("unsafe asset path") }
+            let data = try Data(contentsOf: root.appendingPathComponent(path))
+            if path.hasSuffix(".js") {
+                guard data.count <= 128*1024, String(data: data, encoding: .utf8) != nil else { throw PetSkinError.invalid("script must be UTF-8 and at most 128 KiB") }
+            } else {
+                guard data.count <= 8*1024*1024, let sound = NSSound(contentsOf: root.appendingPathComponent(path), byReference: true), sound.duration > 0, sound.duration <= 30 else { throw PetSkinError.invalid("sound must decode and be at most 30s/8 MiB") }
             }
         }
         var referencedPNGs = uniqueFrames
@@ -201,6 +249,16 @@ public final class PetSkinStore {
             if !uniqueFrames.contains(path) { pixels += iconSize.width * iconSize.height }
             referencedPNGs.insert(path)
         }
+        for path in extras?.images ?? [] {
+            guard safePNGPath(path) else { throw PetSkinError.invalid("unsafe image path") }
+            let dimensions = try pngSize(at: root.appendingPathComponent(path))
+            if manifest.features?.themes?.values.contains(where: { $0.appIcon == path }) == true {
+                guard dimensions.width == dimensions.height && [128,256,512,1024].contains(dimensions.width) else { throw PetSkinError.invalid("theme appIcon must be square 128/256/512/1024") }
+            }
+            if !referencedPNGs.contains(path) { pixels += dimensions.width*dimensions.height }
+            referencedPNGs.insert(path)
+        }
+        guard manifest.schemaVersion != 1 || (entries <= 600 && totalBytes <= 32*1024*1024 && manifestData.count <= 64*1024) else { throw PetSkinError.invalid("v1 package exceeds budget") }
         guard referencedPNGs == packagePNGs else { throw PetSkinError.invalid("missing or unreferenced PNG assets") }
         guard pixels <= 16_777_216 else { throw PetSkinError.invalid("more than 16 megapixels across images") }
         for frame in uniqueFrames {
@@ -211,6 +269,10 @@ public final class PetSkinStore {
         return manifest
     }
 
+    private static func safeAssetPath(_ path: String) -> Bool {
+        let components = path.split(separator: "/", omittingEmptySubsequences: false)
+        return !path.hasPrefix("/") && !path.contains("\\") && components.allSatisfy { !$0.isEmpty && $0 != "." && $0 != ".." }
+    }
     private static func safePNGPath(_ path: String) -> Bool {
         let components = path.split(separator: "/", omittingEmptySubsequences: false)
         return !path.hasPrefix("/") && !path.contains("\\") && path.hasSuffix(".png") &&

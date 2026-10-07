@@ -176,15 +176,26 @@ struct AppearanceSettingsView: View {
             }
             HStack {
                 Text(runtime.localized("气泡距离", "Bubble distance"))
-                Slider(value: Binding(get: { runtime.bubbleDistance }, set: { runtime.setBubbleDistance($0) }), in: 8...72, step: 2)
+                Slider(value: Binding(get: { runtime.effectiveBubbleDistance }, set: { runtime.setBubbleDistance($0) }), in: 8...72, step: 2)
                     .accessibilityLabel(runtime.localized("气泡与桌宠的距离", "Distance between pet and bubbles"))
-                Text("\(Int(runtime.bubbleDistance)) pt").monospacedDigit().frame(width: 46)
-                Button(runtime.localized("重置", "Reset")) { runtime.setBubbleDistance(20) }
+                    .disabled(runtime.appearanceBehavior?.bubbleDistance != nil)
+                Text("\(Int(runtime.effectiveBubbleDistance)) pt").monospacedDigit().frame(width: 46)
+                Button(runtime.localized("重置", "Reset")) { runtime.setBubbleDistance(20) }.disabled(runtime.appearanceBehavior?.bubbleDistance != nil)
             }
             LabeledContent(runtime.localized("可见气泡", "Visible bubbles"), value: "\(runtime.bubbleCapacity)")
             Picker(runtime.localized("桌宠形象", "Pet appearance"), selection: Binding(get: { runtime.selectedSkinID }, set: { runtime.selectSkin($0) })) {
                 ForEach(runtime.skins, id: \.id) { skin in Text(skin.name).tag(skin.id) }
             }
+            if let themes = runtime.appearanceFeatures?.themes, !themes.isEmpty {
+                Picker(runtime.localized("主题", "Theme"),selection: Binding(get: { runtime.selectedThemeID },set: { runtime.setAppearanceTheme($0) })) {
+                    Text(runtime.localized("基础", "Base")).tag("")
+                    ForEach(themes.keys.sorted(),id: \.self) { id in Text(themes[id]!.name).tag(id) }
+                }
+            }
+            if runtime.appearanceFeatures?.behavior != nil {
+                Toggle(runtime.localized("使用形象行为偏好", "Use appearance behavior preferences"),isOn: Binding(get: { runtime.useAppearanceBehavior },set: { runtime.setAppearanceBehavior($0) }))
+            }
+            if !runtime.installedIconStatus.isEmpty { Text(runtime.installedIconStatus).font(.caption).foregroundStyle(.secondary) }
             HStack(spacing: 20) {
                 SelectedPetPreview(runtime: runtime, reduceMotion: reduceMotion)
                     .frame(width: 76, height: 76)

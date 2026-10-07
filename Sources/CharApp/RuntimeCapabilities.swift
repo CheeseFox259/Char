@@ -82,7 +82,7 @@ extension CompanionRuntime {
         }
     }
     func captureOrigin() async -> ReturnAnchor? {
-        guard settings.originPolicy != .disabled else { return nil }
+        guard effectiveOriginPolicy != .disabled else { return nil }
         if let source = WorkspaceRuntime().foregroundApplication(), let anchor = await captureCapabilityOrigin(from: source) { return anchor }
         let anchor = platform?.captureSource()
         return anchor?.accuracy == .application && !settings.applicationOrigins ? nil : anchor

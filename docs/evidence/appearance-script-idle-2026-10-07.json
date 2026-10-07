@@ -1,0 +1,93 @@
+{
+  "build": "debug arm64",
+  "scope": "idle JavaScriptCore helper after init; no frame events",
+  "duration_seconds": 20.250682084006257,
+  "single_core_percent": 0.0,
+  "rss_mib_min": 9.265625,
+  "rss_mib_max": 9.28125,
+  "samples": [
+    {
+      "cpu_seconds": 0.0,
+      "rss_kib": 9504
+    },
+    {
+      "cpu_seconds": 0.0,
+      "rss_kib": 9504
+    },
+    {
+      "cpu_seconds": 0.0,
+      "rss_kib": 9504
+    },
+    {
+      "cpu_seconds": 0.0,
+      "rss_kib": 9504
+    },
+    {
+      "cpu_seconds": 0.0,
+      "rss_kib": 9504
+    },
+    {
+      "cpu_seconds": 0.0,
+      "rss_kib": 9504
+    },
+    {
+      "cpu_seconds": 0.0,
+      "rss_kib": 9504
+    },
+    {
+      "cpu_seconds": 0.0,
+      "rss_kib": 9504
+    },
+    {
+      "cpu_seconds": 0.0,
+      "rss_kib": 9504
+    },
+    {
+      "cpu_seconds": 0.0,
+      "rss_kib": 9504
+    },
+    {
+      "cpu_seconds": 0.0,
+      "rss_kib": 9488
+    },
+    {
+      "cpu_seconds": 0.0,
+      "rss_kib": 9488
+    },
+    {
+      "cpu_seconds": 0.0,
+      "rss_kib": 9488
+    },
+    {
+      "cpu_seconds": 0.0,
+      "rss_kib": 9488
+    },
+    {
+      "cpu_seconds": 0.0,
+      "rss_kib": 9488
+    },
+    {
+      "cpu_seconds": 0.0,
+      "rss_kib": 9488
+    },
+    {
+      "cpu_seconds": 0.0,
+      "rss_kib": 9488
+    },
+    {
+      "cpu_seconds": 0.0,
+      "rss_kib": 9488
+    },
+    {
+      "cpu_seconds": 0.0,
+      "rss_kib": 9488
+    },
+    {
+      "cpu_seconds": 0.0,
+      "rss_kib": 9488
+    }
+  ],
+  "os": "macOS-26.5.1-arm64-arm-64bit-Mach-O",
+  "hardware": "Mac16,12",
+  "cpu_time_resolution": "ps time counter; no observable increment over sampled interval, not an absolute zero cost claim"
+}
