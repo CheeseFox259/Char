@@ -11,7 +11,7 @@
   ],
   "plate_pixels": 604379,
   "opaque_pixels": 631973,
-  "eye_boxes": [
+  "iris_boxes": [
     [
       611,
       527,
@@ -24,17 +24,5 @@
       497,
       617
     ]
-  ],
-  "palette_samples": {
-    "hair": [
-      17,
-      9,
-      7
-    ],
-    "face": [
-      255,
-      241,
-      221
-    ]
-  }
+  ]
 }

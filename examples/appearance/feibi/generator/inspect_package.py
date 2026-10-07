@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
 """Independent format, transparency and budget audit of a built .charpet package.
 
-The production validator (char-package-check skin) is the authority; this script
-records the evidence the acceptance sheet asks for: per-file PNG bit depth and
-colour type, real transparency, non-empty frames, frame order and anchor, the
-shared-rest-frame reuse, unique-frame pixel budget and the RGBA decode estimate.
-It also measures the idle loop seam against the clip's own frame-to-frame motion.
+`char-package-check skin` is the authority; this records the evidence the
+acceptance pass asks for: per-file PNG bit depth and colour type, real
+transparency, non-empty frames, blank frames only at migration ends, frame order
+and anchor, shared-frame reuse, unique-pixel budget, the RGBA decode estimate,
+the idle loop seam and silhouette-motion continuity.
 
 Usage: inspect_package.py <package-dir> [report.json]
 """
@@ -15,6 +15,7 @@ import os
 import re
 import struct
 import sys
+import wave
 
 import numpy as np
 from PIL import Image
@@ -34,24 +35,30 @@ def png_header(path):
     if head[:8] != b"\x89PNG\r\n\x1a\n":
         return None
     width, height, depth, colour = struct.unpack(">IIBB", head[16:26])
-    interlace = head[28]
     return {"width": width, "height": height, "bit_depth": depth, "colour_type": colour,
-            "interlace": interlace, "animated": b"acTL" in head}
+            "interlace": head[28], "animated": b"acTL" in head}
 
 
 def main():
     package = os.path.abspath(sys.argv[1])
     report_path = sys.argv[2] if len(sys.argv) > 2 else None
-    manifest_path = os.path.join(package, "manifest.json")
     problems = []
 
+    manifest_path = os.path.join(package, "manifest.json")
     manifest_bytes = os.path.getsize(manifest_path)
-    if manifest_bytes > MAX_MANIFEST_BYTES:
-        problems.append(f"manifest {manifest_bytes} B exceeds 64 KiB")
     manifest = json.load(open(manifest_path))
-
-    if manifest.get("schemaVersion") != 1:
-        problems.append("schemaVersion must be 1")
+    schema = manifest.get("schemaVersion")
+    if schema not in (1, 2):
+        problems.append("this audit targets schemaVersion 1/2 base-animation and WAV packages")
+    manifest_limit = 128 * 1024 if schema == 2 else MAX_MANIFEST_BYTES
+    package_limit = 64 * 1024 * 1024 if schema == 2 else MAX_PACKAGE_BYTES
+    entry_limit = 2200 if schema == 2 else MAX_ENTRIES
+    reference_limit = 2048 if schema == 2 else 480
+    if manifest_bytes > manifest_limit:
+        problems.append(f"manifest {manifest_bytes} B exceeds {manifest_limit} B")
+    features = manifest.get("features", {})
+    if set(features) - {"sounds"}:
+        problems.append("use the production validator for features other than sounds")
     if not ID_PATTERN.match(manifest.get("id", "")) or ".." in manifest.get("id", ""):
         problems.append(f"illegal id {manifest.get('id')!r}")
     if not manifest.get("name", "").strip() or len(manifest["name"]) > 80:
@@ -78,22 +85,17 @@ def main():
         if not 2 <= len(frames) <= 120:
             problems.append(f"{name}: {len(frames)} frames out of range")
         for path in frames:
-            if path.startswith("/") or "\\" in path or ".." in path.split("/"):
+            if path.startswith("/") or "\\" in path or ".." in path.split("/") or not path.endswith(".png"):
                 problems.append(f"{name}: unsafe frame path {path}")
-            if not path.endswith(".png"):
-                problems.append(f"{name}: non-png frame {path}")
             referenced.add(path)
-        per_clip[name] = {"fps": spec["fps"], "frames": len(frames),
-                          "unique": len(set(frames)),
+        per_clip[name] = {"fps": spec["fps"], "frames": len(frames), "unique": len(set(frames)),
                           "duration_s": round(len(frames) / spec["fps"], 3)}
-    total_refs = sum(len(clips[n]["frames"]) for n in CLIPS)
-    if total_refs > 480:
-        problems.append(f"{total_refs} references exceed 480")
+    total_refs = sum(len(clips[name]["frames"]) for name in CLIPS)
+    if total_refs > reference_limit:
+        problems.append(f"{total_refs} references exceed {reference_limit}")
 
-    on_disk = set()
-    entries = 0
-    package_bytes = 0
-    for root, dirs, files in os.walk(package):
+    on_disk, entries, package_bytes = set(), 0, 0
+    for root, _, files in os.walk(package):
         for name in files:
             entries += 1
             full = os.path.join(root, name)
@@ -101,55 +103,29 @@ def main():
                 problems.append(f"symlink in package: {full}")
             package_bytes += os.path.getsize(full)
             on_disk.add(os.path.relpath(full, package))
-    if entries > MAX_ENTRIES:
-        problems.append(f"{entries} directory entries exceed 600")
-    if package_bytes > MAX_PACKAGE_BYTES:
-        problems.append(f"package {package_bytes} B exceeds 32 MiB")
+    if entries > entry_limit:
+        problems.append(f"{entries} directory entries exceed {entry_limit}")
+    if package_bytes > package_limit:
+        problems.append(f"package {package_bytes} B exceeds {package_limit} B")
 
     icon_rel = manifest.get("appIcon")
-    referenced_with_icon = set(referenced) | ({icon_rel} if icon_rel else set())
-    unreferenced = on_disk - referenced_with_icon - {"manifest.json"}
-    missing = referenced_with_icon - on_disk
-    if unreferenced:
-        problems.append(f"unreferenced files: {sorted(unreferenced)}")
-    if missing:
-        problems.append(f"missing files: {sorted(missing)}")
+    image_paths = set(referenced) | ({icon_rel} if icon_rel else set())
+    sounds = features.get("sounds", {})
+    sound_paths = {sound["file"] for sound in sounds.values()}
+    expected = image_paths | sound_paths
+    if on_disk - expected - {"manifest.json"}:
+        problems.append(f"unreferenced files: {sorted(on_disk - expected - {'manifest.json'})}")
+    if expected - on_disk:
+        problems.append(f"missing files: {sorted(expected - on_disk)}")
 
-    header_report, alpha_report = {}, {}
-    coverage = {}
-    for name in CLIPS:
-        frames = clips[name]["frames"]
-        cov = []
-        for index, rel in enumerate(frames):
-            full = os.path.join(package, rel)
-            data = np.asarray(Image.open(full).convert("RGBA"))
-            alpha = data[..., 3]
-            cov.append(float((alpha > 0).mean()))
-        # A blank frame is only acceptable in a run that touches the clip head or
-        # tail: those are the intended fade-in / fade-out ends of a migration.
-        blank = [i for i, c in enumerate(cov) if c == 0.0]
-        allowed = set()
-        count = len(cov)
-        k = 0
-        while k < count and cov[k] == 0.0:
-            allowed.add(k)
-            k += 1
-        k = count - 1
-        while k >= 0 and cov[k] == 0.0:
-            allowed.add(k)
-            k -= 1
-        for index in blank:
-            if index not in allowed:
-                problems.append(f"{name} frame {index} ({frames[index]}) is blank inside the clip")
-        coverage[name] = {"min": round(min(cov), 4), "max": round(max(cov), 4),
-                          "blank_frames": blank}
-    for rel in sorted(referenced_with_icon):
+    headers, alpha_report, coverage = {}, {}, {}
+    for rel in sorted(image_paths):
         full = os.path.join(package, rel)
         head = png_header(full)
         if head is None:
             problems.append(f"{rel}: not a PNG")
             continue
-        header_report[rel] = head
+        headers[rel] = head
         if head["bit_depth"] != 8 or head["colour_type"] != 6:
             problems.append(f"{rel}: bit depth {head['bit_depth']} colour type {head['colour_type']}")
         if head["interlace"] != 0:
@@ -160,33 +136,53 @@ def main():
             problems.append(f"{rel}: {head['width']}x{head['height']} != canvas")
         if rel == icon_rel and (head["width"] != head["height"] or head["width"] not in (128, 256, 512, 1024)):
             problems.append(f"icon: {head['width']}x{head['height']} not an allowed square")
-        size = os.path.getsize(full)
-        if size > MAX_FRAME_BYTES:
-            problems.append(f"{rel}: {size} B exceeds 4 MiB")
-        data = np.asarray(Image.open(full).convert("RGBA"))
-        alpha = data[..., 3]
+        if os.path.getsize(full) > MAX_FRAME_BYTES:
+            problems.append(f"{rel}: exceeds 4 MiB")
+        alpha = np.asarray(Image.open(full).convert("RGBA"))[..., 3]
         alpha_report[rel] = {"opaque_fraction": round(float((alpha >= 250).mean()), 4),
                              "transparent_fraction": round(float((alpha == 0).mean()), 4),
                              "max_alpha": int(alpha.max())}
-        if rel != icon_rel:
-            ys, xs = np.where(alpha > 0)
-            if len(xs) and (xs.min() == 0 or ys.min() == 0):
-                alpha_report[rel]["touches_canvas_edge"] = True
 
-    unique_frames = sorted(referenced)
-    frame_pixels = len(unique_frames) * canvas["width"] * canvas["height"]
-    icon_head = header_report.get(icon_rel, {"width": 0, "height": 0})
-    icon_pixels = icon_head["width"] * icon_head["height"]
-    total_pixels = frame_pixels + icon_pixels
-    if total_pixels > MAX_TOTAL_PIXELS:
-        problems.append(f"{total_pixels} unique pixels exceed {MAX_TOTAL_PIXELS}")
-    decode_bytes = (len(unique_frames) * canvas["width"] * canvas["height"]
-                    + icon_head["width"] * icon_head["height"]) * 4
+    sound_report = {}
+    for name, sound in sounds.items():
+        rel = sound["file"]
+        if rel.startswith("/") or "\\" in rel or any(part in ("", ".", "..") for part in rel.split("/")):
+            problems.append(f"unsafe sound path: {rel}")
+            continue
+        full = os.path.join(package, rel)
+        try:
+            with wave.open(full, "rb") as audio:
+                duration = audio.getnframes() / audio.getframerate()
+            if not 0 < duration <= 30 or os.path.getsize(full) > 8 * 1024 * 1024:
+                problems.append(f"{rel}: sound exceeds duration/size budget")
+            if not 0 <= sound.get("volume", 1) <= 1 or not 0.1 <= sound.get("cooldown", 0.3) <= 60:
+                problems.append(f"{rel}: invalid volume/cooldown")
+            sound_report[name] = {"path": rel, "duration_s": round(duration, 3), "bytes": os.path.getsize(full)}
+        except (OSError, wave.Error) as error:
+            problems.append(f"{rel}: invalid WAV: {error}")
 
-    # idle seam: distance from the last frame to the first, against the clip's own
-    # frame-to-frame motion, so a wrapped jump would stand out.
-    idle = clips["idle"]["frames"]
-    rest_frame = idle[0]
+    for name in CLIPS:
+        cover = []
+        for rel in clips[name]["frames"]:
+            cover.append(float((np.asarray(Image.open(os.path.join(package, rel)).convert("RGBA"))[..., 3] > 0).mean()))
+        # Blank frames are only acceptable in a run that touches the clip head or
+        # tail: those are the intended fade ends of a migration.
+        allowed, count = set(), len(cover)
+        k = 0
+        while k < count and cover[k] == 0.0:
+            allowed.add(k)
+            k += 1
+        k = count - 1
+        while k >= 0 and cover[k] == 0.0:
+            allowed.add(k)
+            k -= 1
+        for index, value in enumerate(cover):
+            if value == 0.0 and index not in allowed:
+                problems.append(f"{name} frame {index} ({clips[name]['frames'][index]}) is blank inside the clip")
+        coverage[name] = {"min": round(min(cover), 4), "max": round(max(cover), 4),
+                          "blank_frames": [i for i, value in enumerate(cover) if value == 0.0]}
+
+    rest_frame = clips["idle"]["frames"][0]
     continuity = {}
     for name in CLIPS:
         if name == "idle":
@@ -195,81 +191,64 @@ def main():
         continuity[name] = {
             "starts_at_rest": frames[0] == rest_frame,
             "ends_at_rest": frames[-1] == rest_frame,
-            "blank_head": not (alpha_report.get(frames[0], {}).get("max_alpha", 0) > 0),
-            "blank_tail": not (alpha_report.get(frames[-1], {}).get("max_alpha", 0) > 0),
+            "blank_head": alpha_report.get(frames[0], {}).get("max_alpha", 0) == 0,
+            "blank_tail": alpha_report.get(frames[-1], {}).get("max_alpha", 0) == 0,
         }
 
-    # Per-frame silhouette motion, measured from pixels: coverage, vertical
-    # centroid and silhouette height. The second difference against the first
-    # difference shows whether easing is continuous or has a visible snap.
     def motion(name):
-        rows = []
-        cache = {}
+        rows, cache = [], {}
         for rel in clips[name]["frames"]:
             if rel not in cache:
                 alpha = np.asarray(Image.open(os.path.join(package, rel)).convert("RGBA"))[..., 3]
-                ys, xs = np.where(alpha > 0)
-                if len(ys) == 0:
-                    cache[rel] = (0.0, 0.0, 0.0)
-                else:
-                    cache[rel] = (float(len(ys)) / alpha.size, float(ys.mean()),
-                                  float(ys.max() - ys.min()))
+                ys, _ = np.where(alpha > 0)
+                cache[rel] = (0.0, 0.0, 0.0) if len(ys) == 0 else (float(len(ys)) / alpha.size,
+                                                                    float(ys.mean()), float(ys.max() - ys.min()))
             rows.append(cache[rel])
         return rows
 
     motion_report = {}
     for name in CLIPS:
         rows = motion(name)
-        # Blank fade ends have no silhouette; stepping through them would only
-        # measure the sentinel, so continuity is measured over the visible run.
-        solid = [r for r in rows if r[2] > 0]
+        solid = [row for row in rows if row[2] > 0]
         steps = [abs(solid[i + 1][j] - solid[i][j]) for i in range(len(solid) - 1) for j in (1, 2)]
         accel = [abs(steps[i + 1] - steps[i]) for i in range(len(steps) - 1)]
-        motion_report[name] = {
-            "centroid_y": [round(r[1], 2) for r in rows],
-            "silhouette_height": [round(r[2], 1) for r in rows],
-            "max_step": round(max(steps), 3) if steps else 0.0,
-            "max_acceleration": round(max(accel), 3) if accel else 0.0,
-            "measured_over_frames": len(solid),
-        }
+        motion_report[name] = {"centroid_y": [round(row[1], 2) for row in rows],
+                               "silhouette_height": [round(row[2], 1) for row in rows],
+                               "max_step": round(max(steps), 3) if steps else 0.0,
+                               "max_acceleration": round(max(accel), 3) if accel else 0.0,
+                               "measured_over_frames": len(solid)}
 
-    idle_arrays = [np.asarray(Image.open(os.path.join(package, p)).convert("RGBA")).astype(np.int16)
-                   for p in idle]
+    idle_arrays = [np.asarray(Image.open(os.path.join(package, path)).convert("RGBA")).astype(np.int16)
+                   for path in clips["idle"]["frames"]]
     diffs = [float(np.abs(idle_arrays[i + 1] - idle_arrays[i]).mean()) for i in range(len(idle_arrays) - 1)]
     seam = float(np.abs(idle_arrays[0] - idle_arrays[-1]).mean())
-    worst_step = max(diffs)
+    worst = max(diffs)
+
+    unique = sorted(referenced)
+    frame_pixels = len(unique) * canvas["width"] * canvas["height"]
+    icon_head = headers.get(icon_rel, {"width": 0, "height": 0})
+    total_pixels = frame_pixels + icon_head["width"] * icon_head["height"]
+    if total_pixels > MAX_TOTAL_PIXELS:
+        problems.append(f"{total_pixels} unique pixels exceed {MAX_TOTAL_PIXELS}")
 
     result = {
-        "package": package,
-        "id": manifest["id"],
-        "name": manifest["name"],
-        "canvas": canvas,
-        "anchor": anchor,
+        "package": package, "id": manifest["id"], "name": manifest["name"],
+        "canvas": canvas, "anchor": anchor,
         "app_icon": {"path": icon_rel, "size": [icon_head.get("width"), icon_head.get("height")],
-                     "bytes": os.path.getsize(os.path.join(package, icon_rel)) if icon_rel else 0},
-        "clips": per_clip,
-        "frame_references": total_refs,
-        "unique_frames": len(unique_frames),
-        "shared_rest_frame": sorted({p for p in referenced if sum(p in clips[n]["frames"] for n in CLIPS) > 1}),
-        "directory_entries": entries,
-        "package_bytes": package_bytes,
-        "unique_frame_pixels": frame_pixels,
-        "icon_pixels": icon_pixels,
-        "total_unique_pixels": total_pixels,
-        "pixel_budget": MAX_TOTAL_PIXELS,
-        "rgba_decode_estimate_mib": round(decode_bytes / 1048576, 2),
+                     "bytes": os.path.getsize(os.path.join(package, icon_rel))},
+        "clips": per_clip, "sounds": sound_report, "frame_references": total_refs, "unique_frames": len(unique),
+        "shared_frames": sorted({path for path in referenced
+                                 if sum(path in clips[name]["frames"] for name in CLIPS) > 1}),
+        "directory_entries": entries, "package_bytes": package_bytes,
+        "unique_frame_pixels": frame_pixels, "icon_pixels": icon_head["width"] * icon_head["height"],
+        "total_unique_pixels": total_pixels, "pixel_budget": MAX_TOTAL_PIXELS,
+        "rgba_decode_estimate_mib": round((total_pixels * 4) / 1048576, 2),
         "idle_seam_mean_abs_diff": round(seam, 3),
         "idle_mean_consecutive_diff": round(float(np.mean(diffs)), 3),
-        "idle_max_consecutive_diff": round(worst_step, 3),
-        "idle_seam_vs_worst_step": round(seam / worst_step, 3),
-        "rest_pose_continuity": continuity,
-        "silhouette_motion": motion_report,
-        "alpha_coverage": coverage,
-        "alpha_summary": {
-            "min_transparent_fraction": round(min(v["transparent_fraction"] for v in alpha_report.values()), 4),
-            "max_transparent_fraction": round(max(v["transparent_fraction"] for v in alpha_report.values()), 4),
-        },
-        "problems": problems,
+        "idle_max_consecutive_diff": round(worst, 3),
+        "idle_seam_vs_worst_step": round(seam / worst, 3),
+        "rest_pose_continuity": continuity, "silhouette_motion": motion_report,
+        "alpha_coverage": coverage, "problems": problems,
         "verdict": "PASS" if not problems else "FAIL",
     }
     text = json.dumps(result, indent=2, ensure_ascii=False)

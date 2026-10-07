@@ -2,6 +2,10 @@
 
 首个稳定版本：本地 Agent 注意力桌宠、图标气泡与 Ctrl+B 回城。
 
+## 同版本资源更新（2026-10-07）
+
+菲比示例替换为用户已确认正常的新版美术，形象包升为 v2 并增加点击音效（55% 音量、4 秒冷却）。音效来自 [Genius-Society/phoebe_chubby](https://github.com/Genius-Society/phoebe_chubby)，MP3 转为 WAV，保留 CC BY-NC-SA 4.0 来源与许可说明。App、DMG、示例 ZIP 和校验和同时重新打包，版本号仍为 1.0.0；复用首次发行的通用可执行文件，源代码标签不移动，资源更新见 main 的后续提交。本次按用户要求未执行新的测试。已有菲比私有副本需删除后重新导入才能获得音效。
+
 - 支持 Claude Code、Codex CLI/Desktop、Kimi CLI/App、DeepSeek Harness Desktop 与 pi；提供 MiniMax CLI/Desktop 能力插件示例。
 - 插件支持不重启导入、启停、同 ID 更新与所属集成卸载；新增客户端无需修改 Char 源码。
 - 桌面和四边放置、焦点跨屏跟随、弹性动效、眼睛跟随、悬停律动、折叠轮换与点击破碎；支持减少动态效果。

@@ -165,7 +165,16 @@
       ]
     }
   },
+  "features": {
+    "sounds": {
+      "click": {
+        "cooldown": 4,
+        "file": "audio/phoebe_chubby_4.wav",
+        "volume": 0.55
+      }
+    }
+  },
   "id": "feibi.pet",
   "name": "菲比",
-  "schemaVersion": 1
+  "schemaVersion": 2
 }

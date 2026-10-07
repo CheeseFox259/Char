@@ -5,6 +5,7 @@ build/
 
 # Local development history and generated caches
 .local-archive/
+Resources/Skins/*-work/
 __pycache__/
 *.pyc
 examples/appearance/feibi/preview/
