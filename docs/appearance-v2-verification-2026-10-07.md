@@ -35,3 +35,11 @@
 v0.2.2来自PR #21，GitHub CI通过Universal ZIP/DMG签名与SHA256，实际下载ZIP校验后安装到`/Applications/Char.app`；本机仅此安装，旧v0.2.1为数据目录中的ZIP归档。
 
 v0.3.0发布后的CI、下载SHA256、安装签名、版本/唯一进程和实际设置检查记录在此文末。运行图标同步会生成本机ad hoc变体，保留原Release；不将变体的校验和声称为原下载包。签名变化可能需要重新添加Char辅助功能授权，当前Developer ID安装不自动改签。
+
+## v0.3.0 发布与本机安装证据
+
+- PR #22 已合并，main `91ad194`。GitHub CI [37580937681](https://github.com/CheeseFox259/Char/actions/runs/37580937681)通过完整项目检查及Universal ZIP/DMG验证，Release已公开。
+- 实际下载ZIP SHA256：`8cf697996c5cdc79b7c545637c1e2131fc317ddaa3f83ab8c3a933113fad00e6`；严格签名与Char/char-hook/char-appearance-script双架构核对通过。下载包的原生`--smoke --appearance-v2-check`通过。
+- 从实际下载包安装到`/Applications/Char.app`，plist版本0.3.0/build7；仅一个安装实例、一个正式进程。当前v1形象自动同步安装图标，`CharAppearanceIcon`为`c26a9675…`，严格签名通过。原始Release及旧安装保存在数据目录ReleaseBackups的ZIP中，构建目录不再留可发现的Char.app副本。
+- 用户两次报告解锁后，界面工具仍返回Char连接超时/Finder窗口不可得；不能声称正式设置、AX权限或Finder缓存画面检查通过。已请用户在Char设置反馈权限与同步状态。实际隔离原生绘制证据有效。
+- 最终源码检查发现状态栏缓存仅按形象ID更新，遗漏主题ID；增加真实状态栏图像切换/恢复检查，补丁v0.3.1统一图标切换行为。

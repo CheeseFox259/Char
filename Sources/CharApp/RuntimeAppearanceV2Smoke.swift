@@ -15,9 +15,12 @@ extension CompanionRuntime {
         pet.gaze = NSPoint(x: 1,y: 0); pet.refreshPetArtwork()
         try require(left != pet.artworkPixelData,"native eye/head tracking did not change raster")
         let day = pet.artworkPixelData
+        let dayIcon = appearanceMenuBarIcon?.tiffRepresentation
         setAppearanceTheme("night"); pet.refreshPetArtwork()
         try require(day != pet.artworkPixelData,"theme change retained old raster")
+        try require(dayIcon != nil && dayIcon != appearanceMenuBarIcon?.tiffRepresentation,"theme change retained old menu bar icon")
         setAppearanceTheme("day")
+        try require(dayIcon == appearanceMenuBarIcon?.tiffRepresentation,"theme change did not restore menu bar icon")
         for placement in PetPlacement.allCases {
             pet.placement = placement; pet.feedbackElapsed = nil; pet.clip = "idle"; pet.refreshPetArtwork()
             try require(pet.artworkPixelData != nil,"missing independent edge raster")

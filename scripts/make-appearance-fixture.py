@@ -28,7 +28,7 @@ features = {
  'variants':{'top':{'rotation':0,'anchor':{'x':0.5,'y':0.3},'clips':{'idle':clip('alternate.png')}},'left':{'mirrorX':True}},
  'tracking':{'eyes':[{'image':'eyes.png','rect':{'x':0.25,'y':0.35,'width':0.5,'height':0.2},'travelX':0.06,'travelY':0.04}], 'head':{'rect':{'x':0.4,'y':0.15,'width':0.2,'height':0.2},'poses':{'center':'head.png','e':'cli.png'}}},
  'bubbles':{'shell':'shell.png','cliBadge':'cli.png','statusColors':{'running':'#7354AA','ended':'#2A8760'},'fontName':'Menlo','fontSize':11,'hoverColor':'#778899','hoverGlow':0.12,'hoverAmplitude':0.12,'hoverDuration':1.4,'shatterDivisions':4,'shatterDuration':0.55,'shatterTravel':22,'orbitDuration':0.4,'orbitCurve':'smooth'},
- 'themes':{'day':{'name':'Day'},'night':{'name':'Night','clips':{'idle':clip('alternate.png')},'appIcon':'icon.png','bubbles':{'shell':'shell.png','orbitDuration':0.35,'orbitCurve':'spring'}}},'defaultTheme':'day',
+ 'themes':{'day':{'name':'Day'},'night':{'name':'Night','clips':{'idle':clip('alternate.png')},'appIcon':'alternate.png','bubbles':{'shell':'shell.png','orbitDuration':0.35,'orbitCurve':'spring'}}},'defaultTheme':'day',
  'sounds':{'click':{'file':'tone.wav','volume':0.3,'cooldown':0.5}},'bindings':{'hoverEnter':[{'type':'playClip','value':'celebrate'}]},
  'behavior':{'click':'settings','bubbleClick':'visit','followFocus':True,'returnPolicy':'user','collision':'clamp','bubbleDistance':24,'edgeSnapDistance':50,'bubbleCapacity':4,'bubbleArcDegrees':120,'bubbleStartDegrees':70,'bubbleClockwise':True},
  'hitRegions':[region], 'script':'behavior.js','loopingClips':['idle']}

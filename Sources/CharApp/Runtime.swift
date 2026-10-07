@@ -107,6 +107,7 @@ actor ObservationWorker {
     private var polling = false
     private var displayTimer: Timer?
     private var statusBar: StatusBarController?
+    var appearanceMenuBarIcon: NSImage? { statusBar?.iconImage }
     func refreshAppearanceStatusBar() { statusBar?.refresh() }
     private var retainedAnchor: ReturnAnchor?
     private(set) var sourceBadgeAnchor: ReturnAnchor?
