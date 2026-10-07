@@ -1024,7 +1024,9 @@ import CharPlatform
         if let image = custom {
             let size = runtime.customPetSize
             NSGraphicsContext.saveGraphicsState()
-            if imageClip == "edgeHide" || imageClip == "edgePeek" {
+            // Orientation belongs to the placement, including settled idle and
+            // feedback frames, so an authored peek never snaps back upright.
+            if placement != .desktop {
                 let orientation = NSAffineTransform()
                 orientation.translateX(by: anchor.x, yBy: anchor.y)
                 orientation.rotate(byDegrees: CGFloat(CompanionPlayback.edgeRotation(placement: placement)))
