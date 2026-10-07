@@ -55,3 +55,5 @@
 
 - [版本变化](release-notes-0.2.0.md)
 - [能力插件实现与验证](capability-plugins-verification-2026-10-06.md)
+
+- [设置性能面板](performance-dashboard.md)：实时CPU/RSS、平均/峰值及归属口径。

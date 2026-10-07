@@ -108,6 +108,7 @@ actor ObservationWorker {
     private var displayTimer: Timer?
     private var statusBar: StatusBarController?
     var appearanceMenuBarIcon: NSImage? { statusBar?.iconImage }
+    let performanceMonitor = PerformanceMonitor()
     func refreshAppearanceStatusBar() { statusBar?.refresh() }
     private var retainedAnchor: ReturnAnchor?
     private(set) var sourceBadgeAnchor: ReturnAnchor?
@@ -163,6 +164,7 @@ actor ObservationWorker {
     }
 
     func start() {
+        performanceMonitor.targets = { [weak self] in self?.performanceTargets() ?? [] }
         initializeCapabilityHost()
         panel = CompanionPanel(runtime: self)
         refreshSkins()

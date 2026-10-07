@@ -14,6 +14,7 @@ struct SettingsView: View {
             }
             Section(l("桌宠与动效", "Appearance")) { AppearanceSettingsView(runtime: runtime) }
             Section(l("插件", "Plugins")) { PluginSettingsView(runtime: runtime) }
+            Section(l("性能", "Performance")) { PerformanceSettingsView(runtime: runtime,monitor: runtime.performanceMonitor) }
             Section(l("时间", "Timing")) {
                 HStack {
                     Text(l("过滤阈值（秒）", "Filter threshold (seconds)")); Spacer()

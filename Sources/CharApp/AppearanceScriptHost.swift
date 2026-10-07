@@ -27,6 +27,7 @@ final class AppearanceScriptHost: @unchecked Sendable {
         output.fileHandleForWriting.closeFile()
     }
     func stop() { if process.isRunning { process.terminate() } }
+    var processID: Int32? { process.isRunning ? process.processIdentifier : nil }
     deinit { stop() }
     func event(_ data: [String: String]) async throws -> [PetSkinAction] {
         guard reserve() else { stop(); throw PetSkinError.invalid("appearance script event queue full") }
