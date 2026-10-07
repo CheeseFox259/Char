@@ -82,7 +82,7 @@ CLI 支持 **Warp** 和 **Warp + tmux**。其他终端也可通过自定义插�
 
 形象包可自定义角色和表情、闲置与四边动作、眼睛跟随、软件图标、主题、气泡皮肤、音效和交互。选择形象后，桌宠、状态栏与软件图标一起变化。
 
-在 **设置 → 桌宠与动效 → 导入形象…** 选择 `.charpet` 包即可使用。[菲比示例](examples/appearance/feibi/README.md)提供七组动画、探头图标，以及点击和提醒语音；声音遵守静音开关和播放冷却。
+在 **设置 → 桌宠与动效 → 导入形象…** 选择 `.charpet` 包即可使用。[菲比示例](examples/appearance/feibi/README.md)提供日光/月夜主题、原生眼睛跟随与九方向转头、四边探头、完整动作与事件表情、透明气泡皮肤、探头图标，以及点击和提醒语音；声音遵守静音开关和播放冷却。新版分层示例需要配套宿主，当前 Release 用户请按[本地验证步骤](examples/appearance/feibi/USER-ACCEPTANCE.md)试用。
 
 想制作自己的角色？将参考图和要求交给开发助手，让它读取 [examples/appearance/AGENTS.md](examples/appearance/AGENTS.md)。也可以查看 [制作指南](docs/appearance-development.md)和[可自定义范围](docs/appearance-customization.md)。
 

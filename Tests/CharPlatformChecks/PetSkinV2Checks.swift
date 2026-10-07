@@ -45,6 +45,14 @@ import CharPlatform
     try rejects { var f = $0["features"] as! [String:Any]; f["bubbles"] = ["hoverAmplitude":0.8]; $0["features"] = f }
     try rejects { var f = $0["features"] as! [String:Any]; f["defaultTheme"] = "missing"; $0["features"] = f }
     try rejects { var f = $0["features"] as! [String:Any]; f["variants"] = ["top":["anchor":["x":2,"y":0.5]]]; $0["features"] = f }
+    try rejects { var clips = $0["clips"] as! [String:Any]; var idle = clips["idle"] as! [String:Any]; idle["trackingFrames"] = [["opacity":0]]; clips["idle"] = idle; $0["clips"] = clips }
+    try rejects { var clips = $0["clips"] as! [String:Any]; var idle = clips["idle"] as! [String:Any]; idle["trackingFrames"] = [["state":"absent"],["state":"absent"]]; clips["idle"] = idle; $0["clips"] = clips }
+    try rejects { var clips = $0["clips"] as! [String:Any]; var idle = clips["idle"] as! [String:Any]; idle["trackingFrames"] = [["transform":[1,0,0,1]],["opacity":2]]; clips["idle"] = idle; $0["clips"] = clips }
+    let timeline = PetSkinAnimation(frames:["a","b","c"],fps:30)
+    assert(timeline.frameIndex(elapsed:0,looping:false) == 0)
+    assert(timeline.frameIndex(elapsed:1.0/30,looping:false) == 1)
+    assert(timeline.frameIndex(elapsed:1,looping:false) == 2)
+    assert(timeline.frameIndex(elapsed:0.1,looping:true) == 0)
     try store.delete(id: manifest.id)
     assert(store.selectedSkin.id == PetSkinStore.defaultID && store.resourceURL("behavior.js") == nil)
     // Real icon staging/signing/restoration, only on a disposable bundle.
@@ -55,11 +63,27 @@ import CharPlatform
     try PropertyListSerialization.data(fromPropertyList: plist,format: .xml,options: 0).write(to: app.appendingPathComponent("Contents/Info.plist"))
     let sign = Process(); sign.executableURL = URL(fileURLWithPath: "/usr/bin/codesign"); sign.arguments = ["--force","--sign","-",app.path]; try sign.run(); sign.waitUntilExit(); assert(sign.terminationStatus == 0)
     let archive = root.appendingPathComponent("backups")
+    let originalCode = try Data(contentsOf: macOS.appendingPathComponent("Char"))
     try InstalledAppearanceIcon.synchronize(app: app,png: Data(contentsOf: package.appendingPathComponent("icon.png")),archiveDirectory: archive)
     let changed = try PropertyListSerialization.propertyList(from: Data(contentsOf: app.appendingPathComponent("Contents/Info.plist")),format: nil) as! [String:Any]
     assert((changed["CFBundleIconFile"] as! String).hasPrefix("CharAppearance-"))
     try InstalledAppearanceIcon.synchronize(app: app,png: nil,archiveDirectory: archive)
     let reset = try PropertyListSerialization.propertyList(from: Data(contentsOf: app.appendingPathComponent("Contents/Info.plist")),format: nil) as! [String:Any]
     assert(reset["CFBundleIconFile"] as? String == "original" && reset["CharAppearanceIcon"] as? String == "default")
+    let archives = try fm.contentsOfDirectory(atPath:archive.path)
+    assert(archives.count == 1,"re-signing must reuse one pristine archive")
+    // Restoration must restore code from the matching build, never a same-version predecessor.
+    let restoredCode = try Data(contentsOf: macOS.appendingPathComponent("Char"))
+    assert(originalCode.count == restoredCode.count)
+    try fm.removeItem(at:macOS.appendingPathComponent("Char"))
+    try fm.copyItem(at:URL(fileURLWithPath:"/bin/cat"),to:macOS.appendingPathComponent("Char"))
+    try PropertyListSerialization.data(fromPropertyList:plist,format:.xml,options:0).write(to:app.appendingPathComponent("Contents/Info.plist"))
+    let signNew = Process(); signNew.executableURL = URL(fileURLWithPath:"/usr/bin/codesign"); signNew.arguments = ["--force","--sign","-",app.path]; try signNew.run(); signNew.waitUntilExit()
+    try InstalledAppearanceIcon.synchronize(app:app,png:Data(contentsOf:package.appendingPathComponent("icon.png")),archiveDirectory:archive)
+    try InstalledAppearanceIcon.synchronize(app:app,png:nil,archiveDirectory:archive)
+    let newCode = try Data(contentsOf:macOS.appendingPathComponent("Char"))
+    assert(newCode.count != restoredCode.count,"same-version new build restored previous executable")
+    let refreshedArchives = try fm.contentsOfDirectory(atPath:archive.path)
+    assert(refreshedArchives.count == 2,"different build must create its own archive")
     print("Appearance v2: variant/theme/cache/behavior/action/budget and signed icon restoration passed")
 }

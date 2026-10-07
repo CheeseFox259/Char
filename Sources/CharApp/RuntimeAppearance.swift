@@ -135,7 +135,7 @@ extension CompanionRuntime {
         var rect = NSRect(origin: .zero,size: softwareIcon.size)
         let data = softwareIcon.cgImage(forProposedRect: &rect,context: nil,hints: nil).flatMap { NSBitmapImageRep(cgImage: $0).representation(using: .png,properties: [:]) }
         guard isDefault || data != nil else { return }
-        let app = Bundle.main.bundleURL, archive = CharSettingsStore.defaultFileURL.deletingLastPathComponent().appendingPathComponent("ReleaseBackups/AppearanceIcons")
+        let app = Bundle.main.bundleURL, archive = store.fileURL.deletingLastPathComponent().appendingPathComponent("ReleaseBackups/AppearanceIcons")
         appearanceIconTask = Task {
             do {
                 try await Task.sleep(nanoseconds: 150_000_000)
@@ -153,16 +153,43 @@ extension CompanionRuntime {
         let x = gaze.x*cos(angle)+gaze.y*sin(angle), y = -gaze.x*sin(angle)+gaze.y*cos(angle)
         return NSPoint(x: pose?.mirrorX == true ? -x:x,y: y)
     }
-    func drawAppearanceTracking(in rect: NSRect, gaze: NSPoint, placement: PetPlacement) {
+    func trackingFrameIndex(clip: String, elapsed: Double, placement: PetPlacement) -> Int {
+        appearancePose(for: placement)?.clips[clip]?.frameIndex(elapsed: elapsed,
+            looping: clip == "idle" || appearanceFeatures?.loopingClips?.contains(clip) == true) ?? 0
+    }
+    func drawAppearanceTracking(in rect: NSRect, gaze: NSPoint, placement: PetPlacement, clip: String, elapsed: Double) {
         guard let tracking = appearancePose(for: placement)?.tracking else { return }
-        let g = authoredGaze(gaze,placement: placement)
+        let index = trackingFrameIndex(clip: clip,elapsed: elapsed,placement: placement)
+        let frameData = appearancePose(for: placement)?.clips[clip]?.trackingFrames?[index]
+        let opacity = frameData?.opacity ?? 1
+        guard opacity > 0 else { return }
+        let state = frameData?.state.flatMap { tracking.states?[$0] }
+        let head = frameData?.state == nil ? tracking.head : state?.head
+        let eyes = frameData?.state == nil ? tracking.eyes : state?.eyes
+        var g = authoredGaze(gaze,placement: placement)
+        NSGraphicsContext.saveGraphicsState()
+        defer { NSGraphicsContext.restoreGraphicsState() }
+        if let context = NSGraphicsContext.current?.cgContext {
+            context.setAlpha(opacity)
+            if let t = frameData?.transform {
+                let affine = CGAffineTransform(a: t[0],b: t[1],c: t[2],d: t[3],tx: t[4],ty: t[5])
+                guard abs(affine.a*affine.d-affine.b*affine.c) > 0.000001 else { return }
+                // Convert the author's normalized top-left map into the view's y-up coordinates.
+                context.translateBy(x: rect.minX,y: rect.maxY); context.scaleBy(x: rect.width,y: -rect.height)
+                context.concatenate(affine)
+                context.scaleBy(x: 1/rect.width,y: -1/rect.height); context.translateBy(x: -rect.minX,y: -rect.maxY)
+                let inv = affine.inverted()
+                g = NSPoint(x: inv.a*g.x-inv.c*g.y,y: -inv.b*g.x+inv.d*g.y)
+                g.x = min(1,max(-1,g.x)); g.y = min(1,max(-1,g.y))
+            }
+        }
         func frame(_ r: PetSkinRegion) -> NSRect { NSRect(x: rect.minX+r.x*rect.width,y: rect.minY+(1-r.y-r.height)*rect.height,width: r.width*rect.width,height: r.height*rect.height) }
-        if let head = tracking.head {
+        if let head {
             let horizontal = g.x > 0.25 ? "e":g.x < -0.25 ? "w":"", vertical = g.y > 0.25 ? "n":g.y < -0.25 ? "s":""
             let direction = vertical+horizontal
             appearanceAsset(head.poses[direction.isEmpty ? "center":direction] ?? head.poses["center"])?.draw(in: frame(head.rect))
         }
-        for eye in tracking.eyes ?? [] {
+        for eye in eyes ?? [] {
             var target = frame(eye.rect)
             target.origin.x += g.x*(eye.travelX ?? 0.025)*rect.width
             target.origin.y += g.y*(eye.travelY ?? 0.025)*rect.height

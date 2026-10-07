@@ -56,6 +56,30 @@ public struct PetSkinHead: Codable, Equatable {
 public struct PetSkinTracking: Codable, Equatable {
     public var eyes: [PetSkinTrackingLayer]?
     public var head: PetSkinHead?
+    public var states: [String: PetSkinTrackingState]?
+}
+public struct PetSkinTrackingState: Codable, Equatable {
+    public var eyes: [PetSkinTrackingLayer]?
+    public var head: PetSkinHead?
+}
+public struct PetSkinTrackingFrame: Codable, Equatable {
+    /// Forward affine map [a,b,c,d,tx,ty], normalized top-left canvas coordinates.
+    public var transform: [Double]?
+    public var opacity: Double?
+    public var state: String?
+}
+public extension PetSkinAnimation {
+    func validateTrackingFrames() throws {
+        guard let trackingFrames else { return }
+        guard trackingFrames.count == frames.count else { throw PetSkinError.invalid("trackingFrames must match frames") }
+        for frame in trackingFrames {
+            if let t = frame.transform {
+                guard t.count == 6, t.allSatisfy({ $0.isFinite && abs($0) <= 4 }) else { throw PetSkinError.invalid("invalid tracking affine transform") }
+            }
+            if let opacity = frame.opacity, !opacity.isFinite || !(0...1).contains(opacity) { throw PetSkinError.invalid("invalid tracking opacity") }
+            if let state = frame.state, state.range(of: "^[a-zA-Z][a-zA-Z0-9]{0,39}$",options: .regularExpression) == nil { throw PetSkinError.invalid("invalid tracking state") }
+        }
+    }
 }
 public struct PetBubbleStyle: Codable, Equatable {
     public var shell: String?
@@ -146,16 +170,25 @@ extension PetSkinFeatures {
             for (name, clip) in values ?? [:] {
                 try require(name.range(of: "^[a-zA-Z][a-zA-Z0-9]{0,39}$", options: .regularExpression) != nil, "invalid clip name")
                 try require(clip.fps.isFinite && (1...60).contains(clip.fps) && (2...120).contains(clip.frames.count), "invalid v2 clip")
+                try clip.validateTrackingFrames()
                 frames.formUnion(clip.frames); references += clip.frames.count
             }
         }
-        func tracking(_ value: PetSkinTracking?) throws {
-            try require((value?.eyes?.count ?? 0) <= 8, "too many tracking layers")
-            for eye in value?.eyes ?? [] { images.insert(eye.image); try region(eye.rect); try range(eye.travelX, 0...0.15); try range(eye.travelY, 0...0.15) }
-            if let head = value?.head {
+        func trackingLayers(_ eyes: [PetSkinTrackingLayer]?, _ head: PetSkinHead?) throws {
+            try require((eyes?.count ?? 0) <= 8, "too many tracking layers")
+            for eye in eyes ?? [] { images.insert(eye.image); try region(eye.rect); try range(eye.travelX, 0...0.15); try range(eye.travelY, 0...0.15) }
+            if let head {
                 try region(head.rect)
                 try require(head.poses["center"] != nil && Set(head.poses.keys).isSubset(of: ["center","n","ne","e","se","s","sw","w","nw"]), "head requires center and only eight directions")
                 images.formUnion(head.poses.values)
+            }
+        }
+        func tracking(_ value: PetSkinTracking?) throws {
+            try trackingLayers(value?.eyes,value?.head)
+            try require((value?.states?.count ?? 0) <= 16,"too many tracking states")
+            for (id,state) in value?.states ?? [:] {
+                try require(id.range(of: "^[a-zA-Z][a-zA-Z0-9]{0,39}$",options: .regularExpression) != nil,"invalid tracking state name")
+                try trackingLayers(state.eyes,state.head)
             }
         }
         func bubbles(_ b: PetBubbleStyle?) throws {
@@ -184,6 +217,16 @@ extension PetSkinFeatures {
             if let icon = t.appIcon { images.insert(icon) }
         }
         try require(defaultTheme == nil || themes?[defaultTheme!] != nil, "unknown default theme")
+        for theme in [String?](arrayLiteral: nil) + (themes?.keys.map { Optional($0) } ?? []) {
+            for placement in ["desktop","left","right","top","bottom"] {
+                let pose = base.pose(placement: placement,theme: theme)
+                for animation in pose.clips.values {
+                    for frame in animation.trackingFrames ?? [] {
+                        if let state = frame.state { try require(pose.tracking?.states?[state] != nil,"unknown tracking state in resolved pose") }
+                    }
+                }
+            }
+        }
         try require((sounds?.count ?? 0) <= 24, "too many sounds")
         for (_,s) in sounds ?? [:] {
             try require(PetSkinSound.supportedExtensions.contains(URL(fileURLWithPath: s.file).pathExtension.lowercased()), "unsupported sound format")

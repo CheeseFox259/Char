@@ -1023,7 +1023,9 @@ import CharPlatform
     func refreshPetArtwork() {
         guard case .pet = kind, bounds.width > 0 else { return }
         let imageClip = feedbackElapsed == nil ? clip : feedbackClip
-        let trackingKey = runtime.appearancePose(for: placement)?.tracking == nil ? "" : "\(Int(gaze.x*20))/\(Int(gaze.y*20))"
+        let animation = runtime.appearancePose(for: placement)?.clips[imageClip]
+        let frameKey = animation?.trackingFrames == nil ? "" : "\(imageClip)/\(runtime.trackingFrameIndex(clip: imageClip,elapsed: feedbackElapsed ?? clipElapsed,placement: placement))"
+        let trackingKey = runtime.appearancePose(for: placement)?.tracking == nil ? "" : "\(Int(gaze.x*20))/\(Int(gaze.y*20))/\(frameKey)"
         let badge = runtime.sourceBadgeAnchor
         let overlayKey = "\(badge?.id ?? "")/\(badge?.bundleIdentifier ?? "")/\(String(describing: badge?.accuracy))/\(Int(runtime.sourceBadgeOpacity*30))/\(String(describing: runtime.snapshot.navigationFeedback))"
         if let custom = runtime.customPetImage(clip: imageClip, elapsed: feedbackElapsed ?? clipElapsed,placement: placement) {
@@ -1088,7 +1090,7 @@ import CharPlatform
             }
             let imageRect = NSRect(x: anchor.x - runtime.customPetAnchor(for: placement).x * size.width, y: anchor.y - runtime.customPetAnchor(for: placement).y * size.height,width: size.width,height: size.height)
             image.draw(in: imageRect)
-            runtime.drawAppearanceTracking(in: imageRect,gaze: gaze,placement: placement)
+            runtime.drawAppearanceTracking(in: imageRect,gaze: gaze,placement: placement,clip: imageClip,elapsed: feedbackElapsed ?? clipElapsed)
             NSGraphicsContext.restoreGraphicsState()
         } else {
             // A face inset toward the desktop keeps both eyes visible in the peek pose.

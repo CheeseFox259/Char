@@ -128,7 +128,9 @@ actor ObservationWorker {
     override init() {
         smoke = CommandLine.arguments.contains("--smoke") || CommandLine.arguments.contains("--capability-smoke")
         demo = smoke || CommandLine.arguments.contains("--demo")
+        let preview = Bundle.main.object(forInfoDictionaryKey: "CharAppearancePreview") as? Bool == true
         let directory = demo ? FileManager.default.temporaryDirectory.appendingPathComponent("Char-fixture-\(UUID().uuidString)")
+            : preview ? Bundle.main.bundleURL.deletingLastPathComponent().appendingPathComponent("Profile")
             : CharSettingsStore.defaultFileURL.deletingLastPathComponent()
         store = CharSettingsStore(fileURL: directory.appendingPathComponent("settings.json"))
         companionPreferencesURL = directory.appendingPathComponent("companion.json")
@@ -576,6 +578,10 @@ actor ObservationWorker {
             do { try await runCapabilitySmoke() } catch { fail("capability integration: \(error)") }
             NSApp.terminate(nil)
             return
+        }
+        if CommandLine.arguments.contains("--feibi-check") {
+            do { try await runFeibiCheck() } catch { fail("Phoebe: \(error)") }
+            NSApp.terminate(nil); return
         }
         if CommandLine.arguments.contains("--appearance-v2-check") {
             do { try await runAppearanceV2Check() } catch { fail("appearance v2: \(error)") }

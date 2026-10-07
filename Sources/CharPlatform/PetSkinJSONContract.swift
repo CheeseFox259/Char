@@ -15,13 +15,22 @@ enum PetSkinJSONContract {
             return object
         }
         func region(_ value: Any?) throws { _ = try keys(value,["x","y","width","height","shape"],"region") }
-        func tracking(_ value: Any?) throws {
-            let t = try keys(value,["eyes","head"],"tracking")
+        func trackingLayers(_ t: [String:Any]) throws {
             for eye in t["eyes"] as? [Any] ?? [] { let e = try keys(eye,["image","rect","travelX","travelY"],"eye"); try region(e["rect"]) }
             let h = try keys(t["head"],["rect","poses"],"head"); try region(h["rect"])
         }
+        func tracking(_ value: Any?) throws {
+            let t = try keys(value,["eyes","head","states"],"tracking")
+            try trackingLayers(t)
+            for state in (t["states"] as? [String:Any] ?? [:]).values {
+                try trackingLayers(keys(state,["eyes","head"],"tracking state"))
+            }
+        }
         func clips(_ value: Any?) throws {
-            for clip in (value as? [String:Any] ?? [:]).values { _ = try keys(clip,["frames","fps"],"clip") }
+            for clip in (value as? [String:Any] ?? [:]).values {
+                let c = try keys(clip,["frames","fps","trackingFrames"],"clip")
+                for frame in c["trackingFrames"] as? [Any] ?? [] { _ = try keys(frame,["transform","opacity","state"],"tracking frame") }
+            }
         }
         func variants(_ value: Any?) throws {
             for variant in (value as? [String:Any] ?? [:]).values {

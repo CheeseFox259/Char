@@ -19,7 +19,7 @@ public enum InstalledAppearanceIcon {
         try fm.createDirectory(at: archiveDirectory, withIntermediateDirectories: true)
         // Same-version Release refreshes must never restore an older executable.
         let executable = app.appendingPathComponent("Contents/MacOS/Char")
-        let codeIdentity = SHA256.hash(data: try Data(contentsOf: executable,options: .mappedIfSafe))
+        let codeIdentity = SHA256.hash(data: try buildIdentity(executable))
             .map { String(format: "%02x", $0) }.joined()
         let archive = archiveDirectory.appendingPathComponent("Char-\(version)-\(codeIdentity.prefix(16))-pristine.zip")
         if !fm.fileExists(atPath: archive.path) {
@@ -33,7 +33,8 @@ public enum InstalledAppearanceIcon {
         let staged = transaction.appendingPathComponent("Char.app")
         _ = try command("/usr/bin/codesign", ["--verify","--deep","--strict",staged.path])
         var plist = try PropertyListSerialization.propertyList(from: Data(contentsOf: staged.appendingPathComponent("Contents/Info.plist")), format: nil) as! [String:Any]
-        guard plist["CFBundleIdentifier"] as? String == "com.cheesefox.char", plist["CFBundleShortVersionString"] as? String == version else { throw PetSkinError.invalid("pristine backup identity mismatch") }
+        guard plist["CFBundleIdentifier"] as? String == "com.cheesefox.char", plist["CFBundleShortVersionString"] as? String == version,
+              try buildIdentity(staged.appendingPathComponent("Contents/MacOS/Char")) == buildIdentity(executable) else { throw PetSkinError.invalid("pristine backup identity mismatch") }
         if let png {
             guard let source = NSBitmapImageRep(data: png), source.pixelsWide > 0 else { throw PetSkinError.invalid("icon is not a PNG") }
             let iconset = transaction.appendingPathComponent("Appearance.iconset")
@@ -63,6 +64,54 @@ public enum InstalledAppearanceIcon {
         catch { try fm.moveItem(at: rollback,to: app); throw error }
         // A changed resource name also invalidates LaunchServices' cached icon identity.
         _ = try? command("/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister", ["-f",app.path])
+    }
+    /// LC_UUID survives resource changes and ad hoc re-signing. Include every
+    /// architecture so refreshing a universal build cannot restore older code.
+    static func buildIdentity(_ executable: URL) throws -> Data {
+        let bytes = [UInt8](try Data(contentsOf: executable, options: .mappedIfSafe))
+        func integer(_ at: Int, _ count: Int, _ big: Bool) throws -> UInt64 {
+            guard at >= 0, at <= bytes.count - count else { throw PetSkinError.invalid("truncated Mach-O") }
+            let slice = bytes[at..<at+count]
+            return (big ? Array(slice) : Array(slice.reversed())).reduce(0) { ($0 << 8) | UInt64($1) }
+        }
+        var identities: [String] = []
+        func thin(_ offset: Int, _ length: Int) throws {
+            guard length >= 28, offset >= 0, offset <= bytes.count - length else { throw PetSkinError.invalid("invalid Mach-O slice") }
+            let magic = try integer(offset, 4, true)
+            let big = magic == 0xfeedface || magic == 0xfeedfacf
+            guard [0xfeedface,0xfeedfacf,0xcefaedfe,0xcffaedfe].contains(magic) else { throw PetSkinError.invalid("not a Mach-O executable") }
+            let header = (magic == 0xfeedfacf || magic == 0xcffaedfe) ? 32 : 28
+            let cpu = try integer(offset+4,4,big), subtype = try integer(offset+8,4,big)
+            let commands = try integer(offset+16,4,big), commandBytes = try integer(offset+20,4,big)
+            guard commandBytes <= length-header, commands <= commandBytes/8 else { throw PetSkinError.invalid("invalid Mach-O commands") }
+            var cursor = offset+header
+            for _ in 0..<commands {
+                let command = try integer(cursor,4,big), size = try integer(cursor+4,4,big)
+                guard size >= 8, size <= offset+header+Int(commandBytes)-cursor else { throw PetSkinError.invalid("invalid Mach-O command") }
+                if command == 0x1b {
+                    guard size == 24 else { throw PetSkinError.invalid("invalid Mach-O UUID") }
+                    let uuid = bytes[cursor+8..<cursor+24].map { String(format:"%02x",$0) }.joined()
+                    identities.append("\(cpu):\(subtype):\(uuid)")
+                    return
+                }
+                cursor += Int(size)
+            }
+            throw PetSkinError.invalid("Mach-O build UUID missing")
+        }
+        let magic = try integer(0,4,true)
+        if [0xcafebabe,0xcafebabf,0xbebafeca,0xbfbafeca].contains(magic) {
+            let big = magic == 0xcafebabe || magic == 0xcafebabf
+            let wide = magic == 0xcafebabf || magic == 0xbfbafeca
+            let count = try integer(4,4,big), stride = wide ? 32 : 20
+            guard count > 0, count <= (bytes.count-8)/stride else { throw PetSkinError.invalid("invalid fat Mach-O") }
+            for index in 0..<Int(count) {
+                let at = 8+index*stride
+                let offset = try integer(at+8,wide ? 8 : 4,big), length = try integer(at+(wide ? 16 : 12),wide ? 8 : 4,big)
+                guard offset <= UInt64(bytes.count), length <= UInt64(bytes.count)-offset else { throw PetSkinError.invalid("invalid Mach-O slice") }
+                try thin(Int(offset),Int(length))
+            }
+        } else { try thin(0,bytes.count) }
+        return Data(identities.sorted().joined(separator:"\n").utf8)
     }
     private static func command(_ path: String, _ args: [String]) throws -> String {
         let process = Process(); process.executableURL = URL(fileURLWithPath: path); process.arguments = args

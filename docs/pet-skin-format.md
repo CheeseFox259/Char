@@ -68,3 +68,5 @@ Developer walkthrough: [appearance-development.md](appearance-development.md). C
 Selecting, importing or restoring an appearance updates the running application icon, menu-bar icon and Settings preview immediately; restart restores the selected artwork. Deleting the selected appearance restores the default. Icons are static cached artwork, not an extra animation loop. An authored appIcon is used as-is; automatic icon derivation rotates the final edgePeek frame from the bottom authoring direction to the right edge and composes it in the default icon tile.
 
 The project logo and pristine installation use the built-in right-edge icon. Char automatically synchronizes a selected appearance's icon into a writable ad hoc installation using a staged, re-signed, strictly verified bundle and a pristine Release backup. Default selection restores the original artwork. This can change Accessibility trust; Developer ID signatures are not silently replaced. Details, failure handling and user checks are in the [外观 API](appearance-api.md#安装图标与预算).
+
+分层形象可用动作的 `trackingFrames` 与 `tracking.states` 同步身体、头部、瞳孔、表情与透明度，详细契约和示例见[外观 API](appearance-api.md#分层动画的同帧同步)。

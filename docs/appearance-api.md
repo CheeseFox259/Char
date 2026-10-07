@@ -143,3 +143,30 @@ swift run --package-path /absolute/Char char-package-check skin /absolute/work/s
 ## 用户性能面板（0.3.1起）
 
 设置 → 性能可查看宿主总量、当前形象脚本和常驻集成适配器的CPU/RSS当前、平均、采样峰值。形象的原生渲染是宿主共享成本，纯清单包不显示虚构独占用量。无需作者实现统计协议。开发交付中的性能验收按需使用此面板；不要求每次美术调整重新做全量基准。完整口径见[性能面板](performance-dashboard.md)。
+
+## 分层动画的同帧同步
+
+需要身体与头部/瞳孔一起变形、淡出或切换表情时，在动作对象中添加可选 `trackingFrames`，数量必须与 `frames` 完全一致。身体 PNG 已包含该帧身体动作；跟随层使用同一索引，不再维护另一套动画时钟。省略字段的当前格式包继续使用固定跟随层。
+
+```json
+{"fps":30,"frames":["body/a.png","body/b.png"],"trackingFrames":[
+  {"transform":[1,0,0,1,0,0],"opacity":1},
+  {"transform":[1.04,0,0,0.96,-0.02,0.03],"opacity":0.8,"state":"blink"}
+]}
+```
+
+- `transform` 是正向仿射 `[a,b,c,d,tx,ty]`；完整画布左上角归一化坐标：`x'=a*x+c*y+tx`、`y'=b*x+d*y+ty`。六个数都有限、绝对值≤4，省略为单位变换；退化矩阵隐藏跟随层。先应用此变换，再应用放置旋转/镜像/锚点及宿主整体转场。
+- `opacity` 为0…1，默认1。PNG透明末帧须同时声明跟随透明度0，否则跟随层仍会留下头部。身体PNG本身的透明度由作者制作。
+- `state` 选取当前解析姿态中 `tracking.states` 的命名组合。省略state使用默认head/eyes；声明state时整个组合替换，省略head或eyes代表该状态关闭对应层，并非继承。状态名以英文字母开头，后续字母/数字，≤40字符，最多16组。每个解析后的主题/边缘都必须提供所引用状态。
+
+```json
+{"tracking":{"head":{"rect":{"x":0,"y":0,"width":1,"height":1},"poses":{"center":"head/open.png"}},
+ "eyes":[{"image":"eyes/iris.png","rect":{"x":0,"y":0,"width":1,"height":1},"travelX":0.006,"travelY":0.004}],
+ "states":{"blink":{"head":{"rect":{"x":0,"y":0,"width":1,"height":1},"poses":{"center":"head/closed.png"}},"eyes":[]}}}}
+```
+
+眨眼状态应使用没有虹膜/高光的闭眼头部，关闭eyes，防止双影。方向头部与瞳孔使用同一作者坐标；转头保持克制，眼白、眼睑和瞳孔接缝在九方向均要检查。跟随变换应与生成身体帧时使用的正向矩阵一致。PNG重复引用也会按trackingFrames索引刷新，不能依赖文件名变化驱动表情。
+
+身体与跟随层共用循环/非循环结尾规则；Reduce Motion冻结同一帧并保留静态方向跟随。检查探出末帧→idle首帧、反馈恢复idle、depart/edgeHide末帧、arrive/edgePeek首帧。不要逐帧调用脚本。
+
+安装图标备份以版本与所有架构Mach-O构建UUID标识宿主，不依赖重新签名会改变的文件哈希。恢复前验证备份签名、版本与构建身份，避免恢复同版本的旧程序。

@@ -23,6 +23,7 @@ with wave.open(str(root/'tone.wav'),'wb') as audio:
 (root/'behavior.js').write_text('let visits = 0; function onEvent(event) { visits++; return event.name === "attention" ? [{type:"playClip",value:"celebrate"}] : []; }\n')
 clip = lambda file: {'frames':[file,file],'fps':12}
 clips = {name:clip('body.png') for name in ['idle','press','return','depart','arrive','edgePeek','edgeHide','celebrate']}
+clips['press']['trackingFrames'] = [{'transform':[1,0,0,1,0,0],'opacity':1},{'transform':[1.03,0,0,0.97,-0.015,0.015],'opacity':0.8,'state':'blink'}]
 region = {'x':0.2,'y':0.2,'width':0.6,'height':0.6,'shape':'rect'}
 features = {
  'variants':{'top':{'rotation':0,'anchor':{'x':0.5,'y':0.3},'clips':{'idle':clip('alternate.png')}},'left':{'mirrorX':True}},
@@ -32,6 +33,7 @@ features = {
  'sounds':{'click':{'file':'tone.wav','volume':0.3,'cooldown':0.5}},'bindings':{'hoverEnter':[{'type':'playClip','value':'celebrate'}]},
  'behavior':{'click':'settings','bubbleClick':'visit','followFocus':True,'returnPolicy':'user','collision':'clamp','bubbleDistance':24,'edgeSnapDistance':50,'bubbleCapacity':4,'bubbleArcDegrees':120,'bubbleStartDegrees':70,'bubbleClockwise':True},
  'hitRegions':[region], 'script':'behavior.js','loopingClips':['idle']}
+features['tracking']['states']={'blink':{'head':{'rect':{'x':0.4,'y':0.15,'width':0.2,'height':0.2},'poses':{'center':'head.png'}},'eyes':[]}}
 manifest={'schemaVersion':2,'id':'char.sdk-capabilities','name':'SDK capabilities','canvasSize':{'width':128,'height':128},'anchor':{'x':0.5,'y':0.5},'clips':clips,'appIcon':'icon.png','features':features}
 (root/'manifest.json').write_text(json.dumps(manifest,indent=2)+'\n')
 print(root)

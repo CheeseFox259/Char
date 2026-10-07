@@ -14,7 +14,7 @@
 - MiniMax Desktop：[完整插件包](integrations/minimax-code/packages/minimax-code-desktop.charintegration)。
 - 菲比：[完整形象包](appearance/feibi/packages/feibi.charpet)。
 
-从 Char 设置导入整个包目录。客户端插件的安装、重载和逐端验收见 [MiniMax 操作步骤](integrations/minimax-code/USER-ACCEPTANCE.md)；形象的使用见 [菲比操作步骤](appearance/feibi/USER-ACCEPTANCE.md)。日常试用无需构建源码。
+从 Char 设置导入整个包目录。客户端插件的安装、重载和逐端验收见 [MiniMax 操作步骤](integrations/minimax-code/USER-ACCEPTANCE.md)；形象的使用见 [菲比操作步骤](appearance/feibi/USER-ACCEPTANCE.md)。MiniMax日常试用无需构建源码；新版菲比使用分层同步接口，需要按其步骤打开配套本地验证版，当前Release暂不支持该新版包。
 
 ## 开发自己的作品
 

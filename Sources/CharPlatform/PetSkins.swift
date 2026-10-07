@@ -20,7 +20,17 @@ public struct PetSkinAnchor: Codable, Equatable {
 public struct PetSkinAnimation: Codable, Equatable {
     public let frames: [String]
     public let fps: Double
-    public init(frames: [String], fps: Double) { self.frames = frames; self.fps = fps }
+    public let trackingFrames: [PetSkinTrackingFrame]?
+    public init(frames: [String], fps: Double, trackingFrames: [PetSkinTrackingFrame]? = nil) {
+        self.frames = frames; self.fps = fps; self.trackingFrames = trackingFrames
+    }
+    public func frameIndex(elapsed: Double, looping: Bool) -> Int {
+        guard !frames.isEmpty else { return 0 }
+        let time = elapsed.isFinite ? max(0,elapsed) : 0
+        let duration = Double(frames.count)/fps
+        return looping ? min(frames.count-1,Int(time.truncatingRemainder(dividingBy: duration)*fps))
+            : Int(min(Double(frames.count-1),floor(time*fps)))
+    }
 }
 
 public struct PetSkinManifest: Codable, Identifiable, Equatable {
@@ -153,9 +163,8 @@ public final class PetSkinStore {
     public func image(clip: String, elapsed: TimeInterval, placement: String) -> NSImage? {
         let pose = selectedSkin.pose(placement: placement, theme: selectedTheme)
         guard let animation = pose.clips[clip], !animation.frames.isEmpty else { return nil }
-        let time = elapsed.isFinite ? max(0,elapsed) : 0, duration = Double(animation.frames.count)/animation.fps
         let loop = clip == "idle" || selectedSkin.features?.loopingClips?.contains(clip) == true
-        let index = loop ? Int(time.truncatingRemainder(dividingBy: duration)*animation.fps) % animation.frames.count : Int(min(Double(animation.frames.count-1),floor(time*animation.fps)))
+        let index = animation.frameIndex(elapsed: elapsed,looping: loop)
         return asset(animation.frames[index])
     }
 
@@ -245,6 +254,7 @@ public final class PetSkinStore {
         for (clip, animation) in manifest.clips {
             guard animation.fps.isFinite, (1...60).contains(animation.fps), (2...120).contains(animation.frames.count) else { throw PetSkinError.invalid("invalid \(clip) duration or frame rate") }
             frameCount += animation.frames.count
+            try animation.validateTrackingFrames()
             guard frameCount <= 2048 else { throw PetSkinError.invalid("too many frame references") }
             for frame in animation.frames {
                 guard safePNGPath(frame) else { throw PetSkinError.invalid("unsafe PNG path") }
@@ -252,6 +262,9 @@ public final class PetSkinStore {
             }
         }
         let extras = try manifest.features?.validate(base: manifest)
+        if manifest.features == nil, manifest.clips.values.contains(where: { $0.trackingFrames?.contains(where: { $0.state != nil }) == true }) {
+            throw PetSkinError.invalid("tracking state requires declared tracking states")
+        }
         frameCount += extras?.references ?? 0
         guard frameCount <= 2048 else { throw PetSkinError.invalid("too many frame references") }
         uniqueFrames.formUnion(extras?.frames ?? [])
