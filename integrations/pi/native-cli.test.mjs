@@ -1,4 +1,4 @@
-// Explicit local acceptance: real Pi CLI -> extension -> real char-hook -> normalized event stream.
+// Explicit local acceptance: real Pi CLI -> extension -> in-runtime writer -> normalized event stream.
 import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
 import { mkdtemp, mkdir, readFile, writeFile, rm } from 'node:fs/promises';

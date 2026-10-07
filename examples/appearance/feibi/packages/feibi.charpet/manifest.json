@@ -1,0 +1,171 @@
+{
+  "anchor": {
+    "x": 0.5,
+    "y": 0.5
+  },
+  "appIcon": "icon.png",
+  "canvasSize": {
+    "height": 128,
+    "width": 128
+  },
+  "clips": {
+    "arrive": {
+      "fps": 24,
+      "frames": [
+        "frames/depart-011.png",
+        "frames/arrive-001.png",
+        "frames/arrive-002.png",
+        "frames/arrive-003.png",
+        "frames/arrive-004.png",
+        "frames/arrive-005.png",
+        "frames/arrive-006.png",
+        "frames/arrive-007.png",
+        "frames/arrive-008.png",
+        "frames/arrive-009.png",
+        "frames/arrive-010.png",
+        "frames/idle-000.png"
+      ]
+    },
+    "depart": {
+      "fps": 24,
+      "frames": [
+        "frames/idle-000.png",
+        "frames/depart-001.png",
+        "frames/depart-002.png",
+        "frames/depart-003.png",
+        "frames/depart-004.png",
+        "frames/depart-005.png",
+        "frames/depart-006.png",
+        "frames/depart-007.png",
+        "frames/depart-008.png",
+        "frames/depart-009.png",
+        "frames/depart-010.png",
+        "frames/depart-011.png"
+      ]
+    },
+    "edgeHide": {
+      "fps": 24,
+      "frames": [
+        "frames/idle-000.png",
+        "frames/edgeHide-001.png",
+        "frames/edgeHide-002.png",
+        "frames/edgeHide-003.png",
+        "frames/edgeHide-004.png",
+        "frames/edgeHide-005.png",
+        "frames/edgeHide-006.png",
+        "frames/edgeHide-007.png",
+        "frames/edgeHide-008.png",
+        "frames/depart-011.png",
+        "frames/depart-011.png",
+        "frames/depart-011.png"
+      ]
+    },
+    "edgePeek": {
+      "fps": 24,
+      "frames": [
+        "frames/depart-011.png",
+        "frames/depart-011.png",
+        "frames/edgePeek-002.png",
+        "frames/edgePeek-003.png",
+        "frames/edgePeek-004.png",
+        "frames/edgePeek-005.png",
+        "frames/edgePeek-006.png",
+        "frames/edgePeek-007.png",
+        "frames/edgePeek-008.png",
+        "frames/edgePeek-009.png",
+        "frames/edgePeek-010.png",
+        "frames/edgePeek-011.png",
+        "frames/idle-000.png",
+        "frames/idle-000.png"
+      ]
+    },
+    "idle": {
+      "fps": 24,
+      "frames": [
+        "frames/idle-000.png",
+        "frames/idle-001.png",
+        "frames/idle-002.png",
+        "frames/idle-003.png",
+        "frames/idle-004.png",
+        "frames/idle-005.png",
+        "frames/idle-006.png",
+        "frames/idle-007.png",
+        "frames/idle-008.png",
+        "frames/idle-009.png",
+        "frames/idle-010.png",
+        "frames/idle-011.png",
+        "frames/idle-012.png",
+        "frames/idle-013.png",
+        "frames/idle-014.png",
+        "frames/idle-015.png",
+        "frames/idle-016.png",
+        "frames/idle-017.png",
+        "frames/idle-018.png",
+        "frames/idle-019.png",
+        "frames/idle-020.png",
+        "frames/idle-021.png",
+        "frames/idle-022.png",
+        "frames/idle-023.png",
+        "frames/idle-024.png",
+        "frames/idle-025.png",
+        "frames/idle-026.png",
+        "frames/idle-027.png",
+        "frames/idle-028.png",
+        "frames/idle-029.png",
+        "frames/idle-030.png",
+        "frames/idle-031.png",
+        "frames/idle-032.png",
+        "frames/idle-033.png",
+        "frames/idle-034.png",
+        "frames/idle-035.png",
+        "frames/idle-036.png",
+        "frames/idle-037.png",
+        "frames/idle-038.png",
+        "frames/idle-039.png",
+        "frames/idle-040.png",
+        "frames/idle-041.png",
+        "frames/idle-042.png",
+        "frames/idle-043.png",
+        "frames/idle-044.png",
+        "frames/idle-045.png",
+        "frames/idle-046.png",
+        "frames/idle-047.png"
+      ]
+    },
+    "press": {
+      "fps": 24,
+      "frames": [
+        "frames/idle-000.png",
+        "frames/press-001.png",
+        "frames/press-002.png",
+        "frames/press-003.png",
+        "frames/press-004.png",
+        "frames/press-005.png",
+        "frames/press-006.png",
+        "frames/press-007.png",
+        "frames/press-008.png",
+        "frames/idle-000.png"
+      ]
+    },
+    "return": {
+      "fps": 24,
+      "frames": [
+        "frames/idle-000.png",
+        "frames/return-001.png",
+        "frames/return-002.png",
+        "frames/return-003.png",
+        "frames/return-004.png",
+        "frames/return-005.png",
+        "frames/return-006.png",
+        "frames/return-007.png",
+        "frames/return-008.png",
+        "frames/return-009.png",
+        "frames/return-010.png",
+        "frames/idle-000.png"
+      ]
+    }
+  },
+  "id": "feibi.pet",
+  "name": "菲比",
+  "schemaVersion": 1
+}

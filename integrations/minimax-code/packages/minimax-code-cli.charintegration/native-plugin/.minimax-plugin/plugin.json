@@ -1,0 +1,18 @@
+{
+  "schemaVersion": 1,
+  "name": "char-observer",
+  "displayName": "Char Observer",
+  "version": "1.0.0",
+  "description": "Appends MiniMax Code Hook lifecycle boundaries to Char's private observation spool. Records no prompt, message or tool content.",
+  "author": "Char",
+  "icon": "icon.png",
+  "category": "Code",
+  "exampleQueries": [],
+  "apps": [],
+  "mcpServers": [],
+  "skills": [],
+  "hooks": [
+    "hooks/hooks.json"
+  ],
+  "hostBindings": []
+}

@@ -1,6 +1,6 @@
 # Pi observation in Warp
 
-> v0.2.0 提供统一安装维护：设置 → 插件 → 工具菜单可自检、安装、更新和移除所属集成，使用当前用户 Char 稳定运行目录。以下保留手动安装步骤。详见[能力插件开发指南](../../docs/plugin-development.md)。
+> v1.0.0 提供统一安装维护：设置 → 插件 → 工具菜单可自检、安装、更新和移除所属集成，使用当前用户 Char 稳定运行目录。以下保留手动安装步骤。详见[能力插件开发指南](../../docs/plugin-development.md)。
 
 Char supports Pi running directly in Warp and inside Warp + tmux through an explicitly installed passive Pi extension. Char does not start Pi or take over its terminal. Navigation uses the agreed Warp application fallback, so visiting a bubble does not mark a session as exactly viewed.
 
@@ -43,7 +43,7 @@ Initially tested against `@earendil-works/pi-coding-agent` **1.0.0** on 2026-10-
 
 Pi 1.0.0's final assistant outcome exposes a generic error, without an authoritative error category for rate limit or context exhaustion. Char does not infer these categories from error text. Automatic compaction is continuing work, not context exhaustion. Pi does not expose a built-in root-versus-spawned-child marker to this observer; user forks must not be mislabeled as child agents merely because their session header has `parentSession`. Custom extensions that spawn other Pi processes need a separate authoritative child-scope contract before those processes can be excluded reliably.
 
-The native session ID comes from `ctx.sessionManager.getSessionId()`. The Pi PID and optional `TMUX_PANE` are target metadata; no tmux pane is required. The extension forwards no prompts, messages, UI titles, tool arguments, error text, or credentials. The child hook receives only `PATH` and the explicit event destination. `char-hook --pi` validates the metadata envelope and appends the normal `ObservationEvent` format to the existing private shared stream under its existing file lock. Char baselines that stream on startup, so old stops are not replayed.
+The native session ID comes from `ctx.sessionManager.getSessionId()`. The Pi PID and optional `TMUX_PANE` are target metadata; no tmux pane is required. The extension forwards no prompts, messages, UI titles, tool arguments, error text, or credentials. The observer now writes the normal `ObservationEvent` directly inside Pi's existing runtime. It creates no subprocess, daemon, write queue or retained file descriptor. Each small metadata record uses one `O_APPEND` write with private permissions; a 16 KiB metadata limit reports a renderer-owned warning rather than growing an unbounded buffer. The selected local event directory must remain writable. Synchronous local writes trade tiny measured I/O time for bounded memory and immediate ordered delivery; a stalled filesystem can still delay the callback. Char baselines that stream on startup, so old stops are not replayed.
 
 ## Why an extension is required
 
@@ -58,8 +58,14 @@ CHAR_PI_PACKAGE=/opt/homebrew/lib/node_modules/@earendil-works/pi-coding-agent \
 node integrations/pi/native-cli.test.mjs /opt/homebrew/bin/pi .build/debug/char-hook
 ```
 
-- The first check uses isolated event fixtures and an executable capture stub: direct Warp, optional tmux, question/resume, recovered transient failure, final failure/interruption, shutdown, privacy, and explicit installer idempotence. A real missing-executable failure must produce one Pi UI notification, no raw terminal text, and no fabricated event; print and shutdown failures stay silent.
+- The first check uses isolated event fixtures and the installed observer and temporary local stream: direct Warp, optional tmux, question/resume, recovered transient failure, final failure/interruption, shutdown, privacy, and explicit installer idempotence. A real filesystem write failure must produce one Pi UI notification, no raw terminal text, and no fabricated event; print and shutdown failures stay silent.
 - With `CHAR_PI_PACKAGE`, the second also loads the actual installed extension loader and dispatches through its native `ExtensionRunner`, using an in-memory session. This is native API compatibility evidence, not a real terminal session.
-- The third launches the actual installed Pi CLI four times with a private agent directory, temporary HOME/project, disabled discovery/tools/context files, and `--offline`. A local HTTP stub returns completed and controlled-failure responses for both direct metadata and `TMUX_PANE` metadata. It verifies real native callbacks, actual `char-hook` normalized stream, distinct native session IDs, closure, and exclusion of private body text. All fixtures are removed afterward; no user credentials, profile, or running sessions are changed. The tmux case verifies event metadata, not an interactive Warp/tmux window.
+- The third launches the actual installed Pi CLI four times with a private agent directory, temporary HOME/project, disabled discovery/tools/context files, and `--offline`. A local HTTP stub returns completed and controlled-failure responses for both direct metadata and `TMUX_PANE` metadata. It verifies real native callbacks, actual normalized stream, distinct native session IDs, closure, and exclusion of private body text. All fixtures are removed afterward; no user credentials, profile, or running sessions are changed. The tmux case verifies event metadata, not an interactive Warp/tmux window.
 
 The native CLI acceptance passed locally on 2026-10-04. It proves real CLI lifecycle capture, but does not prove a Warp window interaction or a live model-driven permission dialog. Existing Claude and Codex observation does not require `tmuxPaneID`: direct Warp sessions use the same app fallback, with tmux serving only as optional metadata.
+
+## v1.0.0 update
+
+Use **Settings → Plugins → pi → Update integration**, then `/reload` or restart Pi. Existing sessions retain their already-loaded observer until reload. The wrapper keeps `hookBinary` for installation compatibility, but the new observer no longer executes it. Missing old development binaries therefore cannot break the new writer. No user session or model request is started by the update.
+
+Shared journal reading, decoder reuse and change-only presentation apply to all built-in integrations. See [performance](../../docs/performance.md). The optional `node integrations/native/benchmark.mjs /absolute/char-hook` measures old/new local append cost without touching any client.

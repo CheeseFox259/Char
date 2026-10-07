@@ -19,10 +19,14 @@ const text = path => readFile(path, 'utf8').catch(error => { if (error.code === 
 async function runPython(args) {
   const child = spawn('python3', args, { env, stdio: ['ignore', 'pipe', 'pipe'] });
   children.add(child); child.on('close', () => children.delete(child));
-  let output = ''; child.stdout.on('data', chunk => { output += chunk; });
+  let output = ''; let oversized = false;
+  child.stdout.on('data', chunk => {
+    if (Buffer.byteLength(output) + chunk.length > 64 * 1024) { oversized = true; child.kill(); }
+    else output += chunk;
+  });
   child.stderr.resume();
   const code = await new Promise((resolve, reject) => { child.on('error', reject); child.on('close', resolve); });
-  if (code !== 0) throw new Error('Native integration command failed; check Python 3.11+ and client configuration.');
+  if (code !== 0 || oversized) throw new Error('Native integration command failed; check Python 3.11+ and client configuration.');
   return output;
 }
 function deepEntry(source) {
@@ -41,7 +45,8 @@ async function inspect() {
     const index = await text(join(piDir, 'index.js'));
     const source = await text(join(piDir, 'observer.mjs'));
     const matches = marker.name === 'char-pi-observer' && index.includes(JSON.stringify(binary))
-      && index.includes(JSON.stringify(events)) && source === await text(join(native, 'pi/observer.mjs'));
+      && index.includes(JSON.stringify(events)) && source === await text(join(native, 'pi/observer.mjs'))
+      && await text(join(piDir, 'event-writer.mjs')) === await text(join(native, 'native/event-writer.mjs'));
     return { status: matches ? 'ready' : 'notInstalled', detail: matches ? 'Configuration matches; reload existing Pi sessions.' : 'Install or update the Char Pi extension.' };
   }
   if (family === 'kimi') return JSON.parse(await runPython([join(native, 'kimi/install.py'), '--action', 'inspect', '--settings', kimiConfig, '--hook-binary', binary, '--events-file', events]));
@@ -65,11 +70,11 @@ async function mutate(method, params) {
   const uninstall = method === 'uninstall';
   if (uninstall && params.retainSharedIntegration) return { status: 'ready', detail: 'Shared integration retained for another enabled Kimi client.' };
   if (family === 'pi') {
-    await backup(['index.js', 'observer.mjs', 'package.json'].map(name => join(piDir, name)));
+    await backup(['index.js', 'observer.mjs', 'event-writer.mjs', 'package.json'].map(name => join(piDir, name)));
     if (uninstall) {
       const marker = JSON.parse(await text(join(piDir, 'package.json')) || '{}');
       if (marker.name === 'char-pi-observer') {
-        for (const name of ['index.js', 'observer.mjs', 'package.json']) await unlink(join(piDir, name)).catch(error => { if (error.code !== 'ENOENT') throw error; });
+        for (const name of ['index.js', 'observer.mjs', 'event-writer.mjs', 'package.json']) await unlink(join(piDir, name)).catch(error => { if (error.code !== 'ENOENT') throw error; });
       }
     } else await runPython([join(native, 'pi/install.py'), '--extension-dir', piDir, '--hook-binary', binary, '--events-file', events]);
   } else if (family === 'kimi') {
@@ -95,7 +100,7 @@ async function mutate(method, params) {
   return { status: uninstall ? 'notInstalled' : 'reloadRequired', detail: uninstall ? 'Owned integration removed; reload the client.' : 'Integration updated; reload or restart the client.' };
 }
 let pending = Promise.resolve();
-createInterface({ input: process.stdin }).on('close', shutdown).on('line', line => {
+createInterface({ input: process.stdin }).on('close', () => { pending.finally(() => { for (const child of children) child.kill(); }); }).on('line', line => {
   pending = pending.then(async () => {
     let request;
     try {

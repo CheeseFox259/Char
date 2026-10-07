@@ -1,4 +1,4 @@
-import { spawn } from 'node:child_process';
+import { observation, appendObservation } from './event-writer.mjs';
 import { isAbsolute } from 'node:path';
 
 export const inject = ['agents'];
@@ -35,12 +35,12 @@ export function apply(ctx, config) {
 }
 
 export function observe(ctx, config) {
-  if (!config || !isAbsolute(config.hookBinary ?? '') || !isAbsolute(config.eventsFile ?? '')) {
-    throw new Error('Char observer requires absolute hookBinary and eventsFile paths');
+  if (!config || !isAbsolute(config.eventsFile ?? '')) {
+    throw new Error('Char observer requires an absolute eventsFile path');
   }
   const knownRoots = new WeakSet();
   const pendingQuestions = new WeakMap();
-  let writes = Promise.resolve();
+  let warned = false;
   const root = (session) => {
     if (session.header?.origin === 'subagent') return false;
     if (ctx.agents.roots().some(agent => agent.session === session)) {
@@ -51,18 +51,12 @@ export function observe(ctx, config) {
   };
   const report = (session, kind, time = Date.now()) => {
     if (!kind || typeof session.id !== 'string' || !Number.isFinite(time)) return;
-    const payload = { client_type: 'deepseek_desktop', root_session: true,
-      session_id: session.id, kind, time };
-    writes = writes.then(() => new Promise(resolve => {
-      const child = spawn(config.hookBinary, ['--deepseek'], {
-        env: { ...process.env, CHAR_HOOK_EVENTS: config.eventsFile },
-        stdio: ['pipe', 'ignore', 'ignore'], timeout: 5000
-      });
-      child.on('error', () => { ctx.logger.warn('Char observation hook could not start'); resolve(); });
-      child.on('exit', code => { if (code) ctx.logger.warn('Char observation hook failed'); resolve(); });
-      child.stdin.on('error', () => {});
-      child.stdin.end(JSON.stringify(payload));
-    }));
+    try {
+      appendObservation(config.eventsFile, observation('deepseekDesktop', session.id,
+        { bundleIdentifier: 'com.deepseek.dsh' }, time, kind));
+    } catch {
+      if (!warned) { ctx.logger.warn('Char observation could not append local metadata'); warned = true; }
+    }
   };
   ctx.on('session/event', (session, event) => {
     if (!root(session)) return;
@@ -100,5 +94,4 @@ export function observe(ctx, config) {
       throw error;
     }
   });
-  ctx.effect(() => async () => { await writes; });
 }

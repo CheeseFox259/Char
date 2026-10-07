@@ -1,0 +1,27 @@
+{
+  "schemaVersion": 3,
+  "id": "minimax.code.desktop",
+  "name": "MiniMax Code",
+  "bundleIdentifier": "com.minimax.agent.cn",
+  "version": "1.1.0",
+  "clientInterface": "desktop",
+  "workEnd": "minimaxcode.desktop",
+  "icon": "icon.png",
+  "adapter": {
+    "protocolVersion": 1,
+    "runtime": "executable",
+    "entrypoint": "adapter/minimax-monitor",
+    "capabilities": [
+      "monitor",
+      "visit",
+      "lifecycle"
+    ],
+    "configuration": {
+      "surface": "desktop",
+      "bundleIdentifier": "com.minimax.agent.cn",
+      "pluginPackageName": "char-observer",
+      "cliBinary": "mcode",
+      "nativePluginVersion": "1.0.0"
+    }
+  }
+}

@@ -25,6 +25,13 @@ private func skinRequire(_ condition: @autoclosure () -> Bool, _ message: String
     let authoredIcon = NSImage(contentsOf: sample.appendingPathComponent(manifest.appIcon!))!.tiffRepresentation
     try skinRequire(store.icon(for: manifest.id)?.tiffRepresentation == authoredIcon, "selected appearance did not load authored icon")
     try skinRequire(store.icon(for: manifest.id) === store.icon(for: manifest.id), "icon cache regenerated stable artwork")
+    let budgetStore = try PetSkinStore(directory: temp.appendingPathComponent("budget-store"),imageCacheBudget: 16 * 1024)
+    try budgetStore.importPackage(at: sample); try budgetStore.select(id: manifest.id)
+    for elapsed in stride(from: 0.0,to: 10.0,by: 0.1) { _ = budgetStore.image(clip: "idle",elapsed: elapsed,placement: "desktop") }
+    try skinRequire(budgetStore.cachedImageBytes <= 16 * 1024,"frame cache exceeded its decoded-byte budget")
+    try skinRequire(budgetStore.image(clip: "idle",elapsed: 0,placement: "desktop")?.tiffRepresentation != nil,"eviction prevented frame reload")
+    try budgetStore.select(id: PetSkinStore.defaultID)
+    try skinRequire(budgetStore.cachedImageBytes == 0,"inactive skin cache retained after selection")
     // Old schema-v1 packages remain valid and derive a peeking icon.
     let legacy = temp.appendingPathComponent("legacy.charpet")
     try fm.copyItem(at: sample, to: legacy)

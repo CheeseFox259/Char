@@ -15,6 +15,11 @@ public struct CodexSession: Equatable {
 
 public enum ObservationClassifier {
     private static let dateFormatter = ISO8601DateFormatter()
+    private static let fractionalFormatter: ISO8601DateFormatter = {
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        return formatter
+    }()
 
     private static func object(_ data: Data) -> [String: Any]? {
         (try? JSONSerialization.jsonObject(with: data)) as? [String: Any]
@@ -22,10 +27,7 @@ public enum ObservationClassifier {
 
     private static func date(_ value: Any?) -> Date? {
         guard let value = value as? String else { return nil }
-        dateFormatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        if let date = dateFormatter.date(from: value) { return date }
-        dateFormatter.formatOptions = [.withInternetDateTime]
-        return dateFormatter.date(from: value)
+        return fractionalFormatter.date(from: value) ?? dateFormatter.date(from: value)
     }
 
     public static func claude(_ data: Data, sourcePath: String) -> ObservationEvent? {
@@ -33,8 +35,7 @@ public enum ObservationClassifier {
               record["isSidechain"] as? Bool != true,
               !sourcePath.contains("/subagents/"),
               (record["entrypoint"] as? String).map({ $0 == "cli" }) ?? true,
-              let id = (record["sessionId"] ?? record["session_id"]) as? String,
-              let timestamp = date(record["timestamp"]) else { return nil }
+              let id = (record["sessionId"] ?? record["session_id"]) as? String else { return nil }
         let type = record["type"] as? String
         let state: SessionState
         switch type {
@@ -47,6 +48,7 @@ public enum ObservationClassifier {
             state = .stopped(.turnEnded)
         default: return nil
         }
+        guard let timestamp = date(record["timestamp"]) else { return nil }
         return ObservationEvent(key: SessionKey(workEnd: .claudeCode, nativeID: id), target: target(.claudeCode, record, sourcePath), timestamp: timestamp, state: state)
     }
 
@@ -76,8 +78,7 @@ public enum ObservationClassifier {
         guard let record = object(data) else { return (session, nil, pendingQuestionCallIDs) }
         if record["type"] as? String == "session_meta" { return (metadata(data) ?? session, nil, pendingQuestionCallIDs) }
         guard let session, session.isLocalRoot,
-              let payload = record["payload"] as? [String: Any],
-              let timestamp = date(record["timestamp"]) else { return (session, nil, pendingQuestionCallIDs) }
+              let payload = record["payload"] as? [String: Any] else { return (session, nil, pendingQuestionCallIDs) }
         let state: SessionState
         var pending = pendingQuestionCallIDs
         switch (record["type"] as? String, payload["type"] as? String) {
@@ -96,6 +97,7 @@ public enum ObservationClassifier {
             state = .running
         default: return (session, nil, pending)
         }
+        guard let timestamp = date(record["timestamp"]) else { return (session, nil, pendingQuestionCallIDs) }
         let event = ObservationEvent(key: SessionKey(workEnd: session.workEnd, nativeID: session.id),
                                      target: target(session.workEnd, payload, sourcePath), timestamp: timestamp, state: state)
         return (session, event, pending)

@@ -24,6 +24,10 @@ jobs:
           swift --version
           node --version
           python3 --version
+      - name: Build reproducible adapter examples
+        run: |
+          bash integrations/minimax-code/native-adapter/build.sh
+          node integrations/minimax-code/build-packages.mjs
       - name: Project checks
         run: bash scripts/check.sh
       - name: Build universal release
@@ -40,6 +44,10 @@ jobs:
             [[ " $archs " == *" arm64 "* ]]
             [[ " $archs " == *" x86_64 "* ]]
           done
+          ditto -x -k "Char-$CHAR_VERSION-examples.zip" verify-examples
+          test -f verify-examples/Examples/minimax-code-cli.charintegration/manifest.json
+          test -f verify-examples/Examples/minimax-code-desktop.charintegration/manifest.json
+          test -f verify-examples/Examples/feibi.charpet/manifest.json
           hdiutil verify "Char-$CHAR_VERSION-macos-universal.dmg"
       - name: Upload draft release
         env:
@@ -49,6 +57,7 @@ jobs:
           gh release create "$GITHUB_REF_NAME" \
             "build/release/$CHAR_VERSION/Char-$CHAR_VERSION-macos-universal.zip" \
             "build/release/$CHAR_VERSION/Char-$CHAR_VERSION-macos-universal.dmg" \
+            "build/release/$CHAR_VERSION/Char-$CHAR_VERSION-examples.zip" \
             "build/release/$CHAR_VERSION/SHA256SUMS" \
             --repo "$GITHUB_REPOSITORY" --verify-tag --draft \
             --title "Char $GITHUB_REF_NAME — macOS" \

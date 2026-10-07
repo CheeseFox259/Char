@@ -200,3 +200,25 @@ try testIncrementalNestedJournalDiscovery()
 print("CharObservations: partial record, truncation and inode replacement passed")
 
 try pluginObservationChecks()
+
+// A captured backlog spans bounded reads; attention advances only after its final state.
+try inTemporaryDirectory { root in
+    let file = root.appendingPathComponent("large.jsonl")
+    let poller = LocalObservationPoller(claudeProjectsRoot: root,codexSessionsRoot: root.appendingPathComponent("missing"))
+    poller.start()
+    let started = Date(timeIntervalSince1970: 1791000000)
+    let router = AttentionRouter(startedAt: started,settings: CharSettings(filterSeconds: 0,soundEnabled: false))
+    let stop = #"{"type":"assistant","sessionId":"bounded","timestamp":"2026-10-03T12:00:02Z","message":{"stop_reason":"end_turn"}}"#
+    let prefix = #"{"type":"user","sessionId":"bounded","timestamp":"2026-10-03T12:00:03Z","padding":""#
+    // Put the first byte of a multibyte character at the final byte of the first window.
+    let padding = String(repeating: " ",count: 512*1024-stop.utf8.count-1-prefix.utf8.count-1)
+    try append(stop+"\n"+prefix+padding+"你好\"}\n",to: file)
+    let first = poller.poll(); router.ingest(first)
+    try check(first.count == 1 && poller.hasPendingData,"reader did not bound its first batch")
+    let second = poller.poll(); router.ingest(second)
+    try check(second.count == 1 && second[0].state == .running && !poller.hasPendingData,"split UTF-8 record was lost")
+    router.advance(to: started.addingTimeInterval(1000))
+    try check(router.snapshot.bubbles.first?.runningCount == 1 && router.snapshot.bubbles.first?.items.isEmpty == true,"catch-up emitted obsolete stop")
+    try check(poller.poll().isEmpty,"bounded read replayed consumed records")
+}
+print("CharObservations: bounded backlog, split UTF-8 and final-state settlement passed")

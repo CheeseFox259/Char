@@ -98,7 +98,7 @@ extension CompanionRuntime {
             let configuration = observationGeneration
             Task { await worker?.configure(configuration) }
             configureCapabilityHost()
-            publish()
+            publish(forceRefresh: true)
         } catch { setupMessage = localized("插件未重新加载：\(error)", "Could not reload plugins: \(error)") }
     }
     func setPlugin(_ id: String, enabled: Bool) {

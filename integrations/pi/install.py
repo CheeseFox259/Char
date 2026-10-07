@@ -25,12 +25,14 @@ def main():
             parser.error('--extension-dir must be empty or contain a Char Pi installation')
     args.extension_dir.mkdir(parents=True, exist_ok=True, mode=0o700)
     shutil.copyfile(Path(__file__).with_name('observer.mjs'), args.extension_dir / 'observer.mjs')
+    # Source tree and installed app both keep the canonical writer in native/.
+    shutil.copyfile(Path(__file__).parent.parent / 'native/event-writer.mjs', args.extension_dir / 'event-writer.mjs')
     (args.extension_dir / 'index.js').write_text(
         'import { createCharExtension } from "./observer.mjs";\nexport default createCharExtension(' +
         json.dumps({'hookBinary': str(args.hook_binary.resolve()),
                     'eventsFile': str(args.events_file.resolve())}, ensure_ascii=False) + ');\n')
     (args.extension_dir / 'package.json').write_text('{"name":"char-pi-observer","type":"module"}\n')
-    for name in ('index.js', 'observer.mjs', 'package.json'):
+    for name in ('index.js', 'observer.mjs', 'event-writer.mjs', 'package.json'):
         (args.extension_dir / name).chmod(0o600)
 
 

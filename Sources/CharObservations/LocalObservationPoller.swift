@@ -5,9 +5,23 @@ import CharCore
 /// Reads local session journals without replaying events present when `start()` is called.
 /// Apply every event returned by one `poll()` before advancing the attention clock.
 public final class LocalObservationPoller {
+    // Decode the shared stream once, dispatching by its envelope rather than
+    // reading/parsing the same file again in the Kimi observer.
+    private enum HookRecord: Decodable {
+        case observation(ObservationEvent), kimi(KimiHookRecord)
+        private enum CodingKeys: String, CodingKey { case schema }
+        init(from decoder: Decoder) throws {
+            let header = try decoder.container(keyedBy: CodingKeys.self)
+            if try header.decodeIfPresent(String.self, forKey: .schema) == "char.kimi-hook.v1" {
+                self = .kimi(try KimiHookRecord(from: decoder))
+            } else { self = .observation(try ObservationEvent(from: decoder)) }
+        }
+    }
     private struct Cursor {
-        var offset: UInt64
-        var identity: NSNumber?
+        var reader: JournalReadCursor
+        init(offset: UInt64, identity: NSNumber?, codexSession: CodexSession?) {
+            reader = JournalReadCursor(offset: offset,identity: identity); self.codexSession = codexSession
+        }
         var codexSession: CodexSession?
         var pendingQuestionCallIDs: Set<String> = []
     }
@@ -18,7 +32,9 @@ public final class LocalObservationPoller {
     private let hookEventsFile: URL?
     private var cursors: [String: Cursor] = [:]
     private var lastEvents: [SessionKey: ObservationEvent] = [:]
+    private let decoder = JSONDecoder()
     private var started = false
+    public private(set) var hasPendingData = false
     private var enabledWorkEnds = Set(WorkEnd.allCases)
     private var enabledAfter: [WorkEnd: Date] = [:]
 
@@ -68,32 +84,21 @@ public final class LocalObservationPoller {
 
     public func poll() -> [ObservationEvent] {
         if !started { start(); return [] }
+        hasPendingData = false
         var events: [ObservationEvent] = []
+        var kimiRecords: [KimiHookRecord] = []
         for (url, source) in files() {
             guard let metadata = fileMetadata(url) else { continue }
             let size = metadata.size
             let identity = metadata.identity
             var cursor = cursors[url.path] ?? Cursor(offset: 0, identity: identity, codexSession: nil)
-            if size < cursor.offset || (cursor.identity != nil && identity != cursor.identity) {
+            if size < cursor.reader.offset || (cursor.reader.identity != nil && identity != cursor.reader.identity) {
                 cursor = Cursor(offset: 0, identity: identity, codexSession: nil)
             }
-            guard size > cursor.offset,
-                  let handle = try? FileHandle(forReadingFrom: url) else {
-                cursors[url.path] = cursor
-                continue
-            }
-            defer { try? handle.close() }
             do {
-                try handle.seek(toOffset: cursor.offset)
-                let data = try handle.readToEnd() ?? Data()
-                guard let lastNewline = data.lastIndex(of: 10) else {
-                    cursors[url.path] = cursor
-                    continue
-                }
-                let complete = data.prefix(through: lastNewline)
-                cursor.offset += UInt64(complete.count)
-                for line in complete.split(separator: 10) {
-                    let lineData = Data(line)
+                let records = try cursor.reader.read(url,size: size,identity: identity)
+                hasPendingData = hasPendingData || cursor.reader.offset < size
+                for lineData in records {
                     switch source {
                     case .claude:
                         if let event = ObservationClassifier.claude(lineData, sourcePath: url.path) { events.append(event) }
@@ -105,13 +110,21 @@ public final class LocalObservationPoller {
                         cursor.pendingQuestionCallIDs = result.pendingQuestionCallIDs
                         if let event = result.event { events.append(event) }
                     case .hook:
-                        if let event = try? JSONDecoder().decode(ObservationEvent.self, from: lineData) { events.append(event) }
+                        if let record = try? decoder.decode(HookRecord.self, from: lineData) {
+                            switch record {
+                            case .observation(let event): events.append(event)
+                            case .kimi(let record): kimiRecords.append(record)
+                            }
+                        }
                     }
                 }
             } catch { /* Retry unread bytes on the next poll. */ }
             cursors[url.path] = cursor
         }
-        if !enabledWorkEnds.isDisjoint(with: [.kimiCLI, .kimiDesktop]) { events.append(contentsOf: kimiPoller?.poll() ?? []) }
+        if !enabledWorkEnds.isDisjoint(with: [.kimiCLI, .kimiDesktop]) {
+            events.append(contentsOf: kimiPoller?.poll(hookRecords: kimiRecords) ?? [])
+            hasPendingData = hasPendingData || kimiPoller?.hasPendingData == true
+        }
         // A sleep/wake read is one batch. Ordering by recorded time keeps state transitions stable.
         let ordered = events.enumerated().sorted { left, right in
             left.element.timestamp == right.element.timestamp ? left.offset < right.offset : left.element.timestamp < right.element.timestamp
@@ -148,7 +161,7 @@ public final class LocalObservationPoller {
             if source == .codex && enabledWorkEnds.isDisjoint(with: [.codexCLI, .codexDesktop]) { continue }
             result.append(contentsOf: index.files().map { ($0, source) })
         }
-        if !enabledWorkEnds.isEmpty, let hookEventsFile, FileManager.default.fileExists(atPath: hookEventsFile.path) { result.append((hookEventsFile, .hook)) }
+        if !enabledWorkEnds.isEmpty, let hookEventsFile { result.append((hookEventsFile, .hook)) }
         return result.sorted { $0.0.path < $1.0.path }
     }
 }

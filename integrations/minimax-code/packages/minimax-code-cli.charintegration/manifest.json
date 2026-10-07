@@ -1,0 +1,27 @@
+{
+  "schemaVersion": 3,
+  "id": "minimax.code.cli",
+  "name": "MiniMax Code CLI",
+  "bundleIdentifier": "dev.warp.Warp-Stable",
+  "version": "1.1.0",
+  "clientInterface": "cli",
+  "workEnd": "minimaxcode.cli",
+  "icon": "icon.png",
+  "adapter": {
+    "protocolVersion": 1,
+    "runtime": "executable",
+    "entrypoint": "adapter/minimax-monitor",
+    "capabilities": [
+      "monitor",
+      "visit",
+      "lifecycle"
+    ],
+    "configuration": {
+      "surface": "cli",
+      "bundleIdentifier": "dev.warp.Warp-Stable",
+      "pluginPackageName": "char-observer",
+      "cliBinary": "mcode",
+      "nativePluginVersion": "1.0.0"
+    }
+  }
+}

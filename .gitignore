@@ -2,3 +2,12 @@
 .swiftpm/
 build/
 .DS_Store
+
+# Local development history and generated caches
+.local-archive/
+__pycache__/
+*.pyc
+examples/appearance/feibi/preview/
+examples/appearance/feibi/reports/
+integrations/minimax-code/reports/
+integrations/minimax-code/performance-sample.json

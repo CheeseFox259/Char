@@ -10,6 +10,7 @@
 | 字段、运行时、配置类型、更新规则 | [集成格式](integration-plugin-format.md) |
 | 请求参数、事件、超时、起点 token | 本文第4节及[完整协议](capability-adapter-protocol.md) |
 | 图标身份与资源取得 | [图标获取](plugin-icon-sourcing.md) |
+| 怎样控制常驻开销、CPU/内存/延迟预算 | [性能要求](plugin-performance.md) |
 | 怎样证明实现可交付 | [基本验收](plugin-basic-acceptance.md)的适用能力分支 |
 | 怎样交给用户实际验收 | [用户验收交付](plugin-user-acceptance.md)，填写工作区 USER-ACCEPTANCE.md |
 
@@ -209,6 +210,8 @@ replay显示的是整段处理后的最终快照；末尾closed清除根会话�
 仅做外部插件可用上述 SDK 工具和本插件测试；不必修改主仓库 scripts/check.sh。若本次改变 Char 宿主或内置集成，额外运行 `bash "$CHAR_SDK_ROOT/scripts/check.sh"`。App 的隔离验证需已有可运行实例，外部作者无需为了写插件构建整个 App。
 
 ## 6. 性能与交付等级
+
+性能设计与验收采用[集成插件性能要求](plugin-performance.md)：设计前明确进程/运行时成本，常驻路径最小化，按需helper遵守同一请求预算；包版本与Hook版本独立。默认目标、超目标的一次替代对照和GUI验收均在该契约中。
 
 按[基本验收的性能分支](plugin-basic-acceptance.md#6-性能分开测量并保留原始样本)先确认基准脚本的路径/返回值/清理，再做一次轻量采样，分别记录 Hook、单包/双包适配器与延迟的原始样本及边界。运行机制不变时复用结果。两个启用 monitor 包是两个进程，共享源码不会自动合并；原生推送优先，日志增量且有界自动续读。事件正确性通过后再优化，不丢事件、不拖延响应换低占用。
 

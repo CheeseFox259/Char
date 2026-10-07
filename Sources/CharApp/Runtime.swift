@@ -25,8 +25,11 @@ actor ObservationWorker {
     }
     func start() { poller.start() }
     private var configuration = ObservationGeneration()
-    struct Batch { let events: [ObservationEvent]; let configuration: ObservationGeneration }
-    func poll() -> Batch { Batch(events: poller.poll(), configuration: configuration) }
+    struct Batch { let events: [ObservationEvent]; let configuration: ObservationGeneration; let hasPendingData: Bool }
+    func poll() -> Batch {
+        let events = poller.poll()
+        return Batch(events: events,configuration: configuration,hasPendingData: poller.hasPendingData)
+    }
     func configure(_ next: ObservationGeneration) {
         guard next.isNewer(than: configuration) else { return }
         let restarted = next.enabled.filter { next.generations[$0, default: 0] != configuration.generations[$0, default: 0] }
@@ -165,6 +168,7 @@ actor ObservationWorker {
 
     func start() {
         performanceMonitor.targets = { [weak self] in self?.performanceTargets() ?? [] }
+        prepareDocumentationDemo()
         initializeCapabilityHost()
         panel = CompanionPanel(runtime: self)
         refreshSkins()
@@ -172,7 +176,10 @@ actor ObservationWorker {
         panel.orderFrontRegardless()
         statusBar = StatusBarController(runtime: self)
         installDesktopTracking()
-        if demo { injectFixtures() }
+        if demo {
+            if CommandLine.arguments.contains("--documentation-demo") { injectDocumentationFixtures() }
+            else { injectFixtures() }
+        }
         else {
             refreshStatus()
             if settings.launchAtLogin {
@@ -232,6 +239,11 @@ actor ObservationWorker {
         let pluginEvents = capabilityHost?.drainEvents().filter { enabledWorkEnds.contains($0.key.workEnd) && $0.timestamp >= (observationGeneration.activatedAt[$0.key.workEnd] ?? .distantPast) } ?? []
         router.ingest((events + pluginEvents).sorted { $0.timestamp < $1.timestamp }) // A complete sleep/wake batch precedes any focus or time advancement.
         refreshCapabilityHealth()
+        if batch?.hasPendingData == true {
+            // Preserve complete wake-batch semantics without holding the UI executor.
+            Task { @MainActor [weak self] in await Task.yield(); await self?.tick() }
+            return
+        }
         if let platform {
             var focus = platform.focusContext(for: router.snapshot.hold?.anchor)
             if let anchor = router.snapshot.hold?.anchor {
@@ -307,7 +319,7 @@ actor ObservationWorker {
         if !settings.soundEnabled { appearanceSoundCache.values.forEach { $0.stop() } }
         router.updateSettings(effectiveSettings)
         do { try store.save(settings) } catch { setupMessage = error.localizedDescription }
-        publish()
+        publish(forceRefresh: true)
     }
     func setLogin(_ enabled: Bool) {
         guard !demo else { return }
@@ -396,8 +408,9 @@ actor ObservationWorker {
     private func fixtureAnchor() -> ReturnAnchor {
         ReturnAnchor(id: "fixture-wechat", bundleIdentifier: MacOSPlatform.wechatBundleID, token: "fixture-only", accuracy: .application)
     }
-    func publish() {
+    func publish(forceRefresh: Bool = false) {
         let next = router.snapshot
+        let changed = snapshot != next
         if let old = retainedAnchor, old.id != next.hold?.anchor.id { releaseOrigin(old) }
         if let anchor = next.hold?.anchor {
             badgeFadeGeneration += 1
@@ -417,8 +430,7 @@ actor ObservationWorker {
         }
         homeShortcut.updateHold(next.hold != nil)
         refreshHomeShortcutStatus()
-        panel?.surface.refresh()
-        statusBar?.refresh()
+        if changed || forceRefresh { panel?.surface.refresh(); statusBar?.refresh() }
         for effect in router.drainEffects() {
             if effect == .playSound {
                 if demo { demoSoundCount += 1 }
@@ -658,7 +670,9 @@ actor ObservationWorker {
             }
             var statusPublications = 0
             let subscription = $homeShortcutStatus.dropFirst().sink { _ in statusPublications += 1 }
+            let refreshes = panel.surface.refreshCount
             for _ in 0..<5 { publish() }
+            guard panel.surface.refreshCount == refreshes else { fail("unchanged snapshots refreshed the companion") }
             guard statusPublications == 0 else { fail("unchanged shortcut status invalidated settings") }
             setLanguage(.chinese)
             guard statusPublications == 1, homeShortcutStatus == "Ctrl+B 未启用" else { fail("shortcut translation did not publish") }

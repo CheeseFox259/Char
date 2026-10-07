@@ -191,7 +191,9 @@ import CharPlatform
         pet.spaceTuck = 0; pet.edgeRetraction = 0; visualOpacity = 1
     }
     required init?(coder: NSCoder) { nil }
+    private(set) var refreshCount = 0
     func refresh() {
+        refreshCount += 1
         if movement == nil { placement = runtime.petPlacement }
         layoutVisibleBubbles()
         setAccessibilityLabel(runtime.localized("Agent 气泡，滚动或使用上一组和下一组操作", "Agent orbit, scroll or use next and previous actions to cycle bubbles"))

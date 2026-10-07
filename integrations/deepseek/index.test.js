@@ -50,13 +50,12 @@ test('root-only native subscriptions, actual question, pending timeout and priva
     ctx.handlers.get('session/event')(root,{type:'user/message',time:103,data:{source:{kind:'user-question-reply',callId:'q'}}});
     ctx.handlers.get('session/event')(root,{type:'turn/end',time:104,data:{reason:{kind:'completed'}}});
     ctx.handlers.get('session/disposed')(root);
-    await ctx.effects[0]();
     const text = readFileSync(output,'utf8');
     const events = text.trim().split('\n').map(JSON.parse);
     assert.equal(events.length,5);
-    assert.equal(events.filter(e=>e.kind==='turnEnded').length,1);
-    assert.ok(events.every(e=>e.session_id==='root' && e.client_type==='deepseek_desktop'));
+    assert.equal(events.filter(e=>e.state.stopped?._0==='turnEnded').length,1);
+    assert.ok(events.every(e=>e.key.nativeID==='root' && e.key.workEnd==='deepseekDesktop'));
     assert.ok(!text.includes('secret') && !text.includes('child') && !text.includes('timeout'));
-    assert.ok(events.some(e=>e.kind==='question') && events.some(e=>e.kind==='closed'));
+    assert.ok(events.some(e=>e.state.stopped?._0==='question') && events.some(e=>e.state.closed));
   } finally { rmSync(dir,{recursive:true,force:true}); }
 });

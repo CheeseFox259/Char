@@ -45,20 +45,21 @@ try {
   await emit('session_shutdown', { reason: 'quit' });
   const content = await readFile(stream, 'utf8');
   const records = content.trim().split('\n').map(JSON.parse);
-  assert.deepEqual(records.map(r => r.event), ['running', 'question', 'running', 'settled', 'running', 'settled', 'running', 'settled', 'closed']);
-  assert.equal(records[3].reason, 'turnEnded');
-  assert.equal(records[5].reason, 'failure');
-  assert.equal(records[7].reason, 'unclassified');
-  assert.equal(records[0].tmux_pane, undefined);
-  assert.equal(records[4].tmux_pane, '%2');
+  assert.deepEqual(records.map(r => Object.keys(r.state)[0] === 'stopped' ? 'settled' : Object.keys(r.state)[0]), ['running', 'settled', 'running', 'settled', 'running', 'settled', 'running', 'settled', 'closed']);
+  assert.equal(records[1].state.stopped._0, 'question');
+  assert.equal(records[3].state.stopped._0, 'turnEnded');
+  assert.equal(records[5].state.stopped._0, 'failure');
+  assert.equal(records[7].state.stopped._0, 'unclassified');
+  assert.equal(records[0].target.tmuxPaneID, undefined);
+  assert.equal(records[4].target.tmuxPaneID, '%2');
   assert(!content.includes('PRIVATE'), 'private event bodies persisted');
-  assert(records.every(r => r.session_id === 'native-session' && r.process_id === process.pid));
+  assert(records.every(r => r.key.nativeID === 'native-session' && r.target.processID === process.pid));
 
   // A removed development bundle must not write outside Pi's TUI renderer.
-  // Exercise the real execFile failure, including shutdown and print mode.
+  // Exercise the real filesystem failure, including shutdown and print mode.
   const failures = new Map();
   const notices = [];
-  createCharExtension({ hookBinary: join(root, 'removed-build', 'char-hook'), eventsFile: stream })({
+  createCharExtension({ hookBinary: join(root, 'removed-build', 'char-hook'), eventsFile: '/dev/null/events' })({
     on: (name, handler) => failures.set(name, handler),
   });
   const uiContext = { ...ctx, hasUI: true, ui: { notify: (...args) => notices.push(args) } };
@@ -71,13 +72,13 @@ try {
     await failures.get('agent_settled')({}, uiContext);
     await failures.get('session_shutdown')({}, uiContext);
     const headless = new Map();
-    createCharExtension({ hookBinary: join(root, 'missing-hook'), eventsFile: stream })({
+    createCharExtension({ hookBinary: join(root, 'missing-hook'), eventsFile: '/dev/null/events' })({
       on: (name, handler) => headless.set(name, handler),
     });
     await headless.get('agent_start')({}, { ...uiContext, hasUI: false });
     await headless.get('session_shutdown')({}, { ...uiContext, hasUI: false });
     const shutdownOnly = new Map();
-    createCharExtension({ hookBinary: join(root, 'missing-hook'), eventsFile: stream })({
+    createCharExtension({ hookBinary: join(root, 'missing-hook'), eventsFile: '/dev/null/events' })({
       on: (name, handler) => shutdownOnly.set(name, handler),
     });
     await shutdownOnly.get('session_shutdown')({}, uiContext);
@@ -85,10 +86,10 @@ try {
     process.stderr.write = stderrWrite;
     process.stdout.write = stdoutWrite;
   }
-  assert.equal(terminalOutput, '', 'missing hook leaked text into the Pi terminal');
+  assert.equal(terminalOutput, '', 'failed append leaked text into the Pi terminal');
   assert.equal(notices.length, 1, 'write failure must use one Pi-rendered notification');
   assert.equal(notices[0][1], 'warning');
-  assert.equal(await readFile(stream, 'utf8'), content, 'failed hook changed the observation stream');
+  assert.equal(await readFile(stream, 'utf8'), content, 'failed append changed the observation stream');
 
   // Optional installed-Pi compatibility check: real loader and dispatch, with an in-memory session.
   if (process.env.CHAR_PI_PACKAGE) {
@@ -108,9 +109,9 @@ try {
     await runner.emit({ type: 'session_shutdown', reason: 'quit' });
     assert.equal(errors.length, 0, JSON.stringify(errors));
     const native = (await readFile(stream, 'utf8')).trim().split('\n').slice(records.length).map(JSON.parse);
-    assert.deepEqual(native.map(r => r.event), ['running', 'settled', 'closed']);
-    assert(native.every(r => r.session_id === manager.getSessionId()));
-    assert.equal(native[1].reason, 'turnEnded');
+    assert.deepEqual(native.map(r => Object.keys(r.state)[0] === 'stopped' ? 'settled' : Object.keys(r.state)[0]), ['running', 'settled', 'closed']);
+    assert(native.every(r => r.key.nativeID === manager.getSessionId()));
+    assert.equal(native[1].state.stopped._0, 'turnEnded');
     console.log('Pi native loader/runner contract passed');
   }
   console.log('Pi extension: direct Warp, tmux metadata, retry settlement, UI pause/resume, shutdown, privacy, explicit installer and TUI-safe failure passed');

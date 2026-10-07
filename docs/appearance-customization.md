@@ -1,6 +1,6 @@
 # 桌宠形象的自定义范围
 
-Char 0.3.0的schemaVersion 2支持以下范围；旧v1继续兼容七种PNG动作及图标。字段、限制、实际默认值见[完整API](appearance-v2-api.md)。
+Char 1.0.0的schemaVersion 2支持以下范围；旧v1继续兼容七种PNG动作及图标。字段、限制、实际默认值见[完整API](appearance-v2-api.md)。
 
 | 能力 | 包可自定义 | 宿主保留的合同 |
 | --- | --- | --- |

@@ -21,12 +21,7 @@ for executable in Char char-hook char-appearance-script; do
     lipo -create "$arm_bin" "$intel_bin" -output "$app/Contents/MacOS/$executable"
     chmod +x "$app/Contents/MacOS/$executable"
 done
-while IFS= read -r -d '' asset; do
-    relative="${asset#"$repo_root/Resources/"}"
-    mkdir -p "$app/Contents/Resources/$(dirname "$relative")"
-    cp "$asset" "$app/Contents/Resources/$relative"
-done < <(find "$repo_root/Resources" -type f ! -name Info.plist ! -name AGENTS.md -print0)
-bash "$repo_root/scripts/copy-native-integrations.sh" "$app/Contents/Resources/NativeIntegrations"
+bash "$repo_root/scripts/copy-app-resources.sh" "$app/Contents/Resources"
 # Public builds are ad hoc signed; no Developer ID/notarization is claimed.
 codesign --force --sign - "$app/Contents/MacOS/char-hook"
 codesign --force --sign - "$app/Contents/MacOS/char-appearance-script"
@@ -35,10 +30,12 @@ codesign --verify --deep --strict "$app"
 ditto "$app" "$output/Char.app"
 archive="Char-$version-macos-universal.zip"
 disk="Char-$version-macos-universal.dmg"
+examples="Char-$version-examples.zip"
+ditto -c -k --sequesterRsrc --keepParent "$app/Contents/Resources/Examples" "$output/$examples"
 ditto -c -k --sequesterRsrc --keepParent "$app" "$output/$archive"
 mkdir "$stage/disk"
 ditto "$app" "$stage/disk/Char.app"
 ln -s /Applications "$stage/disk/Applications"
 hdiutil create -quiet -ov -format UDZO -volname "Char $version" -srcfolder "$stage/disk" "$output/$disk"
-(cd "$output" && shasum -a 256 "$archive" "$disk" > SHA256SUMS)
+(cd "$output" && shasum -a 256 "$archive" "$disk" "$examples" > SHA256SUMS)
 printf 'Release artifacts: %s\n' "$output"

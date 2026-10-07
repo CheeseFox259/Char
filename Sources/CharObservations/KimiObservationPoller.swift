@@ -4,13 +4,15 @@ import CharCore
 
 /// SessionStart identifies the owning native client; only the main Agent's durable wire is read.
 public final class KimiObservationPoller {
-    private struct Cursor { var offset: UInt64; var inode: NSNumber? }
+    private typealias Cursor = JournalReadCursor
+    public private(set) var hasPendingData = false
     private let directoryIndex: JournalDirectoryIndex
+    private let decoder = JSONDecoder()
     private let hooks: URL
     private var cursors: [String: Cursor] = [:]
     private var bindings: [String: KimiHookRecord] = [:]
     private var closedAt: [String: Date] = [:]
-    private var resolvedApprovals: Set<String> = []
+    private var resolvedApprovals: [String: [String: Int]] = [:]
     private var endedTurns: [String: Int] = [:]
     private var pendingQuestions: [String: Set<String>] = [:]
 
@@ -29,57 +31,69 @@ public final class KimiObservationPoller {
         pendingQuestions.removeAll()
         endedTurns.removeAll()
         resolvedApprovals.removeAll()
-        consumeBindings(read(hooks))
+        repeat {
+            hasPendingData = false; consumeBindings(read(hooks).compactMap(decodeHook))
+        } while hasPendingData
         for file in files() {
             let id = sessionID(for: file)
             if bindings[id] != nil {
-                for line in read(file) {
+                repeat {
+                    hasPendingData = false
+                    for line in read(file) {
                     guard let record = (try? JSONSerialization.jsonObject(with: line)) as? [String: Any],
                           record["agentId"] as? String == "main", record["type"] as? String == "turn.ended",
                           let turnID = record["turnId"] as? Int else { continue }
                     endedTurns[id] = max(endedTurns[id] ?? -1, turnID)
-                }
+                    }
+                } while hasPendingData
             }
             baseline(file)
         }
     }
 
-    public func poll() -> [ObservationEvent] {
-        let hookLines = read(hooks)
-        consumeBindings(hookLines)
-        var result: [ObservationEvent] = hookLines.compactMap {
-            guard let record = decodeHook($0), record.phase == "SessionEnd" else { return nil }
+    public func poll() -> [ObservationEvent] { poll(hookRecords: nil) }
+
+    func poll(hookRecords supplied: [KimiHookRecord]?) -> [ObservationEvent] {
+        hasPendingData = false
+        let hookRecords = (supplied ?? read(hooks).compactMap(decodeHook)).filter {
+            $0.schema == "char.kimi-hook.v1" && [.kimiCLI,.kimiDesktop].contains($0.workEnd) && !$0.sessionID.isEmpty
+        }
+        consumeBindings(hookRecords)
+        var result: [ObservationEvent] = hookRecords.compactMap { record in
+            guard record.phase == "SessionEnd" else { return nil }
             return makeEvent(record, state: .closed)
         }
         for file in files() {
             let id = sessionID(for: file)
             // The hook reader can run just before SessionStart is appended. Leave unbound bytes
             // on disk until their owning client is known; startup cursors still skip old content.
-            guard let binding = bindings[id] else { continue }
+            guard let binding = bindings[id], binding.phase != "SessionEnd" else { continue }
             let lines = read(file)
-            guard binding.phase != "SessionEnd" else { continue }
             for line in lines {
                 guard let event = classify(line, binding: binding, sourcePath: file.path) else { continue }
                 result.append(event)
             }
         }
-        let approvals = hookLines.compactMap(decodeHook).filter { $0.approvalID != nil }
+        let approvals = hookRecords.filter { $0.approvalID != nil }
         for record in approvals where record.phase == "PermissionResult" {
-            resolvedApprovals.insert("\(record.sessionID):\(record.approvalID!)")
+            guard let binding = bindings[record.sessionID], binding.phase != "SessionEnd",
+                  record.timestamp >= binding.timestamp, let turnID = record.turnID,
+                  turnID > (endedTurns[record.sessionID] ?? -1) else { continue }
+            resolvedApprovals[record.sessionID,default: [:]][record.approvalID!] = turnID
         }
         for record in approvals {
             guard let turnID = record.turnID, let approvalID = record.approvalID,
                   let binding = bindings[record.sessionID], binding.workEnd == record.workEnd,
                   binding.phase != "SessionEnd", record.timestamp >= binding.timestamp,
                   turnID > (endedTurns[record.sessionID] ?? -1) else { continue }
-            if record.phase == "PermissionRequest" && resolvedApprovals.contains("\(record.sessionID):\(approvalID)") { continue }
+            if record.phase == "PermissionRequest" && resolvedApprovals[record.sessionID]?[approvalID] != nil { continue }
             result.append(makeEvent(record, state: record.phase == "PermissionRequest" ? .stopped(.approval) : .running))
         }
         return result
     }
 
     private func decodeHook(_ line: Data) -> KimiHookRecord? {
-        guard let record = try? JSONDecoder().decode(KimiHookRecord.self, from: line),
+        guard let record = try? decoder.decode(KimiHookRecord.self, from: line),
               record.schema == "char.kimi-hook.v1", [.kimiCLI, .kimiDesktop].contains(record.workEnd),
               !record.sessionID.isEmpty else { return nil }
         return record
@@ -91,11 +105,14 @@ public final class KimiObservationPoller {
                          timestamp: timestamp ?? record.timestamp, state: state)
     }
 
-    private func consumeBindings(_ lines: [Data]) {
-        for line in lines {
-            guard let record = decodeHook(line), ["SessionStart", "SessionEnd"].contains(record.phase) else { continue }
+    private func consumeBindings(_ records: [KimiHookRecord]) {
+        for record in records {
+            guard ["SessionStart", "SessionEnd"].contains(record.phase) else { continue }
             if let previous = bindings[record.sessionID], previous.timestamp > record.timestamp { continue }
-            if record.timestamp != bindings[record.sessionID]?.timestamp { pendingQuestions[record.sessionID] = [] }
+            if record.timestamp != bindings[record.sessionID]?.timestamp {
+                pendingQuestions[record.sessionID] = []
+                resolvedApprovals.removeValue(forKey: record.sessionID)
+            }
             if record.phase == "SessionEnd" { closedAt[record.sessionID] = record.timestamp }
             bindings[record.sessionID] = record
         }
@@ -117,6 +134,7 @@ public final class KimiObservationPoller {
         case "turn.ended":
             guard let turnID = record["turnId"] as? Int else { return nil }
             endedTurns[id] = max(endedTurns[id] ?? -1, turnID)
+            resolvedApprovals[id] = resolvedApprovals[id]?.filter { $0.value > turnID }
             switch record["reason"] as? String {
             case "completed":
                 guard pendingQuestions[id]?.isEmpty != false else { return nil }
@@ -160,28 +178,18 @@ public final class KimiObservationPoller {
 
     private func baseline(_ file: URL) {
         let metadata = fileMetadata(file)
-        cursors[file.path] = Cursor(offset: metadata?.size ?? 0, inode: metadata?.inode)
+        cursors[file.path] = Cursor(offset: metadata?.size ?? 0, identity: metadata?.inode)
     }
 
     private func read(_ file: URL) -> [Data] {
         guard let metadata = fileMetadata(file) else { return [] }
         let size = metadata.size, inode = metadata.inode
-        var cursor = cursors[file.path] ?? Cursor(offset: 0, inode: inode)
-        if size < cursor.offset || cursor.inode != inode { cursor = Cursor(offset: 0, inode: inode) }
-        // Most polls see no append. Do not open/seek/read unchanged journals.
-        guard size > cursor.offset, let handle = try? FileHandle(forReadingFrom: file) else {
-            cursors[file.path] = cursor
-            return []
-        }
-        defer { try? handle.close() }
+        var cursor = cursors[file.path] ?? Cursor()
         do {
-            try handle.seek(toOffset: cursor.offset)
-            let data = try handle.readToEnd() ?? Data()
-            guard let newline = data.lastIndex(of: 10) else { return [] }
-            let complete = data.prefix(through: newline)
-            cursor.offset += UInt64(complete.count)
+            let records = try cursor.read(file,size: size,identity: inode)
+            hasPendingData = hasPendingData || cursor.offset < size
             cursors[file.path] = cursor
-            return complete.split(separator: UInt8(10)).map { Data($0) }
+            return records
         } catch { return [] }
     }
 
