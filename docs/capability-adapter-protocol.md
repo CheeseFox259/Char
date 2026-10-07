@@ -41,6 +41,8 @@ stdin 接收 UTF-8 JSON Lines，stdout 仅发送完整 JSON Lines。每条都有
 
 `valid:false` 仅表示确定关闭/失效；无法查询应为 null 或返回错误，保留重试。`active` 必须确认原 token 真正处于当前焦点。锚点绑定插件进程实例和来源应用 PID，不可跨进程重启复用；Char 自身不能成为起点。默认首次起点和连续访问规则在 Char 内核，插件不实现自己的导航栈。
 
+`retainSharedIntegration` 当前仅由内置 Kimi CLI/Desktop 的宿主维护路径计算；它不是第三方共享资源引用计数接口。第三方双包共享扩展需自行协调拥有者和卸载顺序，或保留共享资源并提供最后清理操作。每个启用的 monitor 包各有一个进程；“混合包共享进程”只指同一包内的多种能力。
+
 ## 监控事件
 
 事件帧 `{"version":1,"event":{...}}`，event 字段：

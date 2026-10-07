@@ -16,3 +16,6 @@ python3 Tests/check_new_agent_hooks.py "$(swift build --show-bin-path)/char-hook
 node --test integrations/deepseek/index.test.js
 
 node integrations/native/adapter.test.mjs "$(swift build --show-bin-path)/char-hook"
+
+swift build --product char-appearance-script
+python3 Tests/check_appearance_script.py "$(swift build --show-bin-path)/char-appearance-script"

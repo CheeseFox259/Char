@@ -1,6 +1,6 @@
 # Char 文档索引
 
-当前版本：macOS原生桌宠；七工作端被动观察，v0.2.0 v3能力插件与数据形象包。源码推送与本地验证不代表签名、公证或全环境发布验收已完成。
+当前版本：macOS原生桌宠；七工作端被动观察，v0.3.0 v3集成能力插件与v2外观能力包。源码推送与本地验证不代表签名、公证或全环境发布验收已完成。
 
 ## 使用与开发
 
@@ -13,7 +13,7 @@
 | 进程接口与安装维护 | [能力协议v1](capability-adapter-protocol.md) |
 | 自制桌宠形象与动作 | [外观包开发指南](appearance-development.md) |
 | 随开发目录自动加载的通用指令 | [三份 AGENTS.md](development-prompts.md) |
-| 生产格式细则 | [集成插件v3](integration-plugin-format.md) / [形象包v1](pet-skin-format.md) |
+| 生产格式细则 | [集成插件v3](integration-plugin-format.md) / [形象包v1/v2](pet-skin-format.md) / [外观完整API](appearance-v2-api.md) |
 | Windows可行性、风险与分阶段门槛 | [Windows评估](windows-feasibility.md) |
 
 ## 原生能力与安装
@@ -24,6 +24,9 @@
 - [ADR](adr)：本地处理、单返回锚点、统一集成与自由来源等决定；[产品规格](spec.md)是原始需求，当前批准降级与验收结果见下列记录。
 
 ## 发布
+
+- [v0.3.0 外观能力](release-notes-0.3.0.md)、[本轮验证](appearance-v2-verification-2026-10-07.md)。
+- [v0.2.2 边缘宿主修复](release-notes-0.2.2.md)。
 
 - [v0.2.0 Release 发布、替换与集成迁移](release-verification-0.2.0.md)。
 

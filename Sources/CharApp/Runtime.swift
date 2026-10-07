@@ -72,11 +72,23 @@ actor ObservationWorker {
     @Published var pluginEntries: [IntegrationPluginEntry] = []
     @Published var skins: [PetSkinManifest] = []
     @Published var selectedSkinID = "char.default"
+    @Published var useAppearanceBehavior = true
+    @Published var selectedThemeID = ""
+    @Published var installedIconStatus = ""
+    var loadedAppearanceID: String?
+    var appearanceScript: AppearanceScriptHost?
+    var appearanceGeneration = 0
+    var appearancePoseCache: [String:PetSkinPose] = [:]
+    var appearanceApplyingActions = false
+    var appearanceSoundCache: [String:NSSound] = [:]
+    var appearanceSoundTimes: [String:TimeInterval] = [:]
+    var appearanceIconTask: Task<Void,Never>?
+
     @Published var petPlacement: PetPlacement = .desktop
     @Published var petSize: Double = 48
     @Published var bubbleDistance: Double = 20
     var bubbleCapacity: Int {
-        CompanionGeometry.capacity(placement: petPlacement, petSize: petSize, bubbleDistance: bubbleDistance)
+        appearanceCapacity(for: petPlacement)
     }
     private var companionPreferences = CompanionPreferences()
     private let companionPreferencesURL: URL
@@ -152,6 +164,7 @@ actor ObservationWorker {
     func start() {
         initializeCapabilityHost()
         panel = CompanionPanel(runtime: self)
+        refreshSkins()
         place(on: NSScreen.main ?? NSScreen.screens.first, animated: false)
         panel.orderFrontRegardless()
         statusBar = StatusBarController(runtime: self)
@@ -232,7 +245,7 @@ actor ObservationWorker {
         guard !busy, let item = router.nextVisit(for: workEnd) else { return }
         busy = true
         Task {
-            let capture = settings.originPolicy != .disabled && (router.snapshot.hold == nil || settings.originPolicy == .latest)
+            let capture = effectiveOriginPolicy != .disabled && (router.snapshot.hold == nil || effectiveOriginPolicy == .latest)
             let source = capture ? (demo ? fixtureAnchor() : await captureOrigin()) : nil
             let outcome = await visitCapability(workEnd, target: item.target)
             if outcome != .unavailable { panel.surface.dismissFeedback(for: workEnd) }
@@ -276,6 +289,7 @@ actor ObservationWorker {
         }
         busy = true
         panel.surface.returnFeedback()
+        appearanceEvent("return")
         Task {
             let outcome = await returnToOrigin(anchor)
             router.completeReturn(outcome: outcome)
@@ -287,7 +301,8 @@ actor ObservationWorker {
     func toggleMute() { settings.soundEnabled.toggle(); saveSettings() }
     func saveSettings() {
         settings = settings.normalized()
-        router.updateSettings(settings)
+        if !settings.soundEnabled { appearanceSoundCache.values.forEach { $0.stop() } }
+        router.updateSettings(effectiveSettings)
         do { try store.save(settings) } catch { setupMessage = error.localizedDescription }
         publish()
     }
@@ -389,7 +404,14 @@ actor ObservationWorker {
             fadeSourceBadge(old)
         }
         retainedAnchor = next.hold?.anchor
-        if snapshot != next { snapshot = next }
+        if snapshot != next {
+            let previous = snapshot
+            snapshot = next
+            for bubble in next.bubbles where previous.bubbles.first(where: { $0.workEnd == bubble.workEnd }) != bubble {
+                let state = bubble.head.flatMap { $0.isPast ? nil : $0.reason.rawValue } ?? (bubble.pendingCount > 0 ? "pending" : "running")
+                appearanceEvent("attention",workEnd: bubble.workEnd.rawValue,state: state)
+            }
+        }
         homeShortcut.updateHold(next.hold != nil)
         refreshHomeShortcutStatus()
         panel?.surface.refresh()
@@ -463,7 +485,7 @@ actor ObservationWorker {
     }
     private func trackFocusedDisplay() {
         // With one screen there can be no migration, so avoid repeated AX/CG window queries.
-        guard NSScreen.screens.count > 1, let id = platform?.foreground()?.displayID,
+        guard appearanceBehavior?.followFocus != false, NSScreen.screens.count > 1, let id = platform?.foreground()?.displayID,
               let screen = NSScreen.screens.first(where: { ($0.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber)?.uint32Value == id }) else { return }
         place(on: screen, animated: true)
     }
@@ -475,6 +497,7 @@ actor ObservationWorker {
             position(on: screen, center: petCenter(), placement: placement, animated: true, remember: true)
         }
         saveCompanionPreferences()
+        appearanceEvent("placement")
     }
     private func petCenter() -> NSPoint {
         let pet = panel.surface.pet.frame
@@ -487,11 +510,13 @@ actor ObservationWorker {
         let distances: [(PetPlacement, CGFloat)] = [(.left, abs(center.x-area.minX)), (.right, abs(center.x-area.maxX)),
             (.bottom, abs(center.y-area.minY)), (.top, abs(center.y-area.maxY))]
         let nearest = distances.min { $0.1 < $1.1 }!
-        let placement: PetPlacement = nearest.1 < 64 ? nearest.0 : .desktop
+        let previousPlacement = petPlacement
+        let placement: PetPlacement = nearest.1 < (appearanceBehavior?.edgeSnapDistance ?? 64) ? nearest.0 : .desktop
         petPlacement = placement
         companionPreferences.placement = placement
         position(on: screen, center: center, placement: placement, animated: true, remember: true)
         saveCompanionPreferences()
+        if previousPlacement != placement { appearanceEvent("placement") }
     }
     private func saveCompanionPreferences() {
         do { try JSONEncoder().encode(companionPreferences).write(to: companionPreferencesURL, options: .atomic) }
@@ -535,6 +560,10 @@ actor ObservationWorker {
             do { try await runCapabilitySmoke() } catch { fail("capability integration: \(error)") }
             NSApp.terminate(nil)
             return
+        }
+        if CommandLine.arguments.contains("--appearance-v2-check") {
+            do { try await runAppearanceV2Check() } catch { fail("appearance v2: \(error)") }
+            NSApp.terminate(nil); return
         }
         if CommandLine.arguments.contains("--appearance-edge-check") {
             do { try await runAppearanceEdgeCheck() } catch { fail("appearance edge: \(error)") }

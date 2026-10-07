@@ -33,34 +33,34 @@ public enum CompanionGeometry {
     public static func radius(petSize: Double = 48, bubbleDistance: Double = 20) -> Double {
         min(88, max(36, petSize)) / 2 + 22 + min(72, max(8, bubbleDistance))
     }
-    public static func capacity(placement: PetPlacement, petSize: Double = 48, bubbleDistance: Double = 20) -> Int {
+    public static func capacity(placement: PetPlacement, petSize: Double = 48, bubbleDistance: Double = 20, limit: Int? = nil, arcDegrees: Double = 140) -> Int {
         let r = radius(petSize: petSize, bubbleDistance: bubbleDistance)
         let minimumAngle = 2 * asin(min(1, 48 / (2 * r)))
-        return placement == .desktop ? max(3, Int(floor(2 * .pi / minimumAngle)))
-            : max(2, Int(floor(edgeSpan(radius: r) / minimumAngle)) + 1)
+        let natural = placement == .desktop ? max(3,Int(floor(2 * .pi / minimumAngle))) : max(2,Int(floor(edgeSpan(radius: r, degrees: arcDegrees)/minimumAngle))+1)
+        return min(natural,max(2,limit ?? natural))
     }
-    private static func edgeSpan(radius: Double) -> Double { min(140 * .pi / 180, 2 * acos(min(1, 18 / radius))) }
-    public static func angle(slot: Int, number: Int, placement: PetPlacement, radius: Double = 66) -> Double {
+    private static func edgeSpan(radius: Double, degrees: Double = 140) -> Double { min(min(140,max(60,degrees)) * .pi / 180, 2 * acos(min(1, 18 / radius))) }
+    public static func angle(slot: Int, number: Int, placement: PetPlacement, radius: Double = 66, arcDegrees: Double = 140, startDegrees: Double = 90, clockwise: Bool = false) -> Double {
         let fraction = number == 1 ? 0.5 : Double(slot) / Double(number - 1)
-        let span = edgeSpan(radius: radius)
+        let span = edgeSpan(radius: radius,degrees: arcDegrees)
         switch placement {
-        case .desktop: return .pi / 2 + Double(slot) * 2 * .pi / Double(max(1, number))
+        case .desktop: return startDegrees * .pi/180 + (clockwise ? -1 : 1) * Double(slot)*2 * .pi/Double(max(1,number))
         case .left: return -span / 2 + fraction * span
         case .right: return .pi - span / 2 + fraction * span
         case .top: return 3 * .pi / 2 - span / 2 + fraction * span
         case .bottom: return .pi / 2 - span / 2 + fraction * span
         }
     }
-    public static func layout(count: Int, offset: Int, placement: PetPlacement, petSize: Double = 48, bubbleDistance: Double = 20) -> [Slot] {
+    public static func layout(count: Int, offset: Int, placement: PetPlacement, petSize: Double = 48, bubbleDistance: Double = 20, limit: Int? = nil, arcDegrees: Double = 140, startDegrees: Double = 90, clockwise: Bool = false) -> [Slot] {
         guard count > 0 else { return [] }
-        let capacity = capacity(placement: placement, petSize: petSize, bubbleDistance: bubbleDistance)
+        let capacity = capacity(placement: placement, petSize: petSize, bubbleDistance: bubbleDistance,limit: limit,arcDegrees: arcDegrees)
         let number = min(count, capacity)
         let pet = petFrame(placement: placement, petSize: petSize)
         let center = CGPoint(x: pet.midX, y: pet.midY)
         let order = (0..<count).map { normalizedOffset($0 + offset, count: count) }
         let radius = radius(petSize: petSize, bubbleDistance: bubbleDistance)
         return (0..<number).map { index -> Slot in
-            let a = angle(slot: index, number: number, placement: placement, radius: radius)
+            let a = angle(slot: index, number: number, placement: placement,radius: radius,arcDegrees: arcDegrees,startDegrees: startDegrees,clockwise: clockwise)
             let point = CGPoint(x: center.x + cos(a) * radius, y: center.y + sin(a) * radius)
             let frame = CGRect(x: point.x - 22, y: point.y - 22, width: 44, height: 44)
             let overflow = count > capacity && index == number - 1

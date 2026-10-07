@@ -11,6 +11,10 @@ For user-facing software or release readiness, use `verify-product` from the ses
 
 ## Agent skills
 
+### 插件开发入口
+
+为某个软件新增 Char 插件时，先读 `integrations/AGENTS.md`，按其中的工作目录和开发流程实施。仅制作已有能力的配置包时读 `Resources/Integrations/AGENTS.md`；制作自定义形象时读 `Resources/Skins/AGENTS.md`。这些任务以对应开发指南为 SDK 契约，不需要先遍历 Char 的 Sources 或历史文档。
+
 ### Issue tracker
 
 使用 CheeseFox259/Char 的 GitHub Issues。

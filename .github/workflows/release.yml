@@ -35,7 +35,7 @@ jobs:
           shasum -a 256 -c SHA256SUMS
           ditto -x -k "Char-$CHAR_VERSION-macos-universal.zip" verify-zip
           codesign --verify --deep --strict verify-zip/Char.app
-          for executable in Char char-hook; do
+          for executable in Char char-hook char-appearance-script; do
             archs=$(lipo -archs "verify-zip/Char.app/Contents/MacOS/$executable")
             [[ " $archs " == *" arm64 "* ]]
             [[ " $archs " == *" x86_64 "* ]]

@@ -57,7 +57,9 @@ Ctrl+B仅在Hold有效时注册，冲突状态在设置呈现；结束Hold即释
 
 [集成包](integration-plugin-format.md)版本3统一监控、跳转、准确起点和生命周期，没有Agent/来源分区。workEnd为动态身份，新软件可用独立进程适配器接入而无需改源码；旧七个观察器和三个平台路径保留兼容。导入先验证、复制并再次验证，再原子写注册表；内置删除有tombstone，不随重启恢复。
 
-[形象包](pet-skin-format.md)版本1只提供七个动画PNG序列；完整校验后以同目录重命名安装。设置导入后立即选择，自定义删除回到内置方块。图片按帧身份缓存；不加载脚本。自定义位图没有默认方块的程序化眼睛跟随协议。
+[形象包](pet-skin-format.md)保留v1七种PNG动作，v2增加独立边缘、跟随图层、主题、气泡样式、音效和行为偏好。资源完整校验、复制再次校验后同目录重命名安装。图片/解析姿态缓存，gaze量化；脚本通过独立JavaScriptCore helper响应有界事件并返回Char动作，无OS桥或逐帧脚本调用。删除恢复默认并停止脚本/音效。[完整接口](appearance-v2-api.md)与[架构决定](adr/0009-appearance-capabilities-and-installed-icons.md)定义权限、超时及恢复。
+
+选中形象/主题的静态安装图标通过原Release备份、暂存App资源替换、重新ad hoc签名和严格验证后事务更新；注册LaunchServices但缓存呈现仍由用户检查。未提供权限沙箱，也不自动改签Developer ID安装；签名变化可能需要重建AX授权。
 
 | 本机位置 | 数据 |
 | --- | --- |

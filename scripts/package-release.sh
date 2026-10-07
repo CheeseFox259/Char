@@ -13,8 +13,9 @@ cp Resources/Info.plist "$app/Contents/Info.plist"
 for architecture in arm64 x86_64; do
     swift build -c release --arch "$architecture" --product Char
     swift build -c release --arch "$architecture" --product char-hook
+    swift build -c release --arch "$architecture" --product char-appearance-script
 done
-for executable in Char char-hook; do
+for executable in Char char-hook char-appearance-script; do
     arm_bin="$(swift build -c release --arch arm64 --show-bin-path)/$executable"
     intel_bin="$(swift build -c release --arch x86_64 --show-bin-path)/$executable"
     lipo -create "$arm_bin" "$intel_bin" -output "$app/Contents/MacOS/$executable"
@@ -28,6 +29,7 @@ done < <(find "$repo_root/Resources" -type f ! -name Info.plist ! -name AGENTS.m
 bash "$repo_root/scripts/copy-native-integrations.sh" "$app/Contents/Resources/NativeIntegrations"
 # Public builds are ad hoc signed; no Developer ID/notarization is claimed.
 codesign --force --sign - "$app/Contents/MacOS/char-hook"
+codesign --force --sign - "$app/Contents/MacOS/char-appearance-script"
 codesign --force --sign - "$app"
 codesign --verify --deep --strict "$app"
 ditto "$app" "$output/Char.app"

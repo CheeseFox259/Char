@@ -4,6 +4,8 @@ import argparse
 import json
 import pathlib
 import re
+import shutil
+import struct
 
 p = argparse.ArgumentParser(description=__doc__)
 p.add_argument('directory', type=pathlib.Path)
@@ -13,6 +15,7 @@ p.add_argument('--bundle', required=True)
 p.add_argument('--work-end')
 p.add_argument('--interface', choices=['cli', 'desktop', 'application'], default='application')
 p.add_argument('--capabilities', required=True, help='comma-separated monitor,visit,origin,lifecycle')
+p.add_argument('--icon', type=pathlib.Path, help='verified official or user-provided PNG to copy into the package')
 a = p.parse_args()
 caps = a.capabilities.split(',')
 if any(c not in ['monitor', 'visit', 'origin', 'lifecycle'] for c in caps) or len(caps) != len(set(caps)):
@@ -28,10 +31,27 @@ if not a.name.strip() or len(a.name) > 100:
     p.error('invalid name')
 if a.directory.exists():
     p.error('output directory already exists')
+if a.icon:
+    try:
+        with a.icon.open('rb') as source:
+            header = source.read(24)
+        if len(header) < 24 or header[:8] != b'\x89PNG\r\n\x1a\n' or header[12:16] != b'IHDR':
+            p.error('--icon must be a PNG; convert other formats before packaging')
+        width, height = struct.unpack('>II', header[16:24])
+        if not (1 <= width <= 2048 and 1 <= height <= 2048):
+            p.error('--icon dimensions must be between 1 and 2048 pixels')
+        if a.icon.stat().st_size >= 8 * 1024 * 1024:
+            p.error('--icon exceeds the package size limit')
+    except OSError as error:
+        p.error(f'could not read --icon: {error}')
 a.directory.mkdir(parents=True)
 manifest = dict(schemaVersion=3,id=a.id,name=a.name,bundleIdentifier=a.bundle,version='0.1.0',clientInterface=a.interface,
                 adapter=dict(runtime='node',entrypoint='adapter.mjs',protocolVersion=1,capabilities=caps,configuration={}))
 if a.work_end: manifest['workEnd'] = a.work_end
+if a.icon:
+    (a.directory / 'icons').mkdir()
+    shutil.copyfile(a.icon, a.directory / 'icons' / 'client.png')
+    manifest['icon'] = 'icons/client.png'
 (a.directory/'manifest.json').write_text(json.dumps(manifest,ensure_ascii=False,indent=2)+'\n')
 (a.directory/'adapter.mjs').write_text('''import {createInterface} from 'node:readline';
 // Implement only declared capabilities using the target client's documented APIs.

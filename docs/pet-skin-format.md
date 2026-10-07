@@ -1,6 +1,6 @@
-# Char pet skin format, version 1
+# Char pet skin format: v1 compatibility and v2
 
-A `.charpet` is a local directory containing `manifest.json` and PNG frames. Char never executes package code. Import completes validation before installing a private copy; the store API does not select it automatically, while Settings imports and immediately selects it. Selection applies immediately and survives restart. Deleting the selected custom pet selects built-in `char.default`; the built-in vector pet cannot be deleted.
+A `.charpet` is a local directory. Version 1 contains manifest and PNG frames; version 2 adds optional capabilities described in the [complete v2 API](appearance-v2-api.md), including restricted event scripts, audio and themes. This section defines the unchanged v1 contract. Import completes validation before installing a private copy; the store API does not select it automatically, while Settings imports and immediately selects it. Selection applies immediately and survives restart. Deleting the selected custom pet selects built-in `char.default`; the built-in vector pet cannot be deleted.
 
 ## Manifest
 
@@ -28,7 +28,7 @@ The example is a schema illustration; ship actual frames for every path. Use [th
 
 | Field | Rule |
 | --- | --- |
-| schemaVersion | Exactly `1`; unsupported versions are rejected. |
+| schemaVersion | `1` for this contract; `2` for optional capabilities. Other versions are rejected. |
 | id | 2–64 ASCII characters: lowercase letter first, then lowercase letters, digits, `.` or `-`; no `..`. IDs must be unique, including `char.default`. |
 | name | Nonempty after trimming whitespace, maximum 80 characters. |
 | appIcon | Optional safe relative PNG path; square 128, 256, 512 or 1024 pixels, single-image 8-bit RGBA. Prefer 1024. It has its own size, independent of frame canvas. Older v1 packages omit it and derive a right-edge icon from the final edgePeek frame. |
@@ -50,6 +50,8 @@ The example is a schema illustration; ship actual frames for every path. Use [th
 
 The idle sequence should include breathing, squash/stretch with elastic recovery, a small tilt and a blink. Keep the first and last pose compatible so wrapping is unobtrusive. `press` gives tactile compression; `return` gives a short rebound; `depart` ends transparent/small and `arrive` starts transparent/small, ending at rest. For edge clips, author movement toward/away from the **bottom** of the canvas; the companion renderer can orient it for the selected edge. Keep the anchor stable across every frame and leave padding for overshoot and feet.
 
+Preview edge clips and the settled idle separately. The renderer keeps the edge orientation throughout edge placement, including idle and feedback. Older hosts only rotated edgePeek/edgeHide and snapped back to desktop orientation on settling; they require the host fix, not a repackaged skin. The panel-local pet frame is not the screen clipping boundary. See the [actual edge preview coordinates](appearance-development.md#边缘预演的实际坐标) before composing artwork; installed-host behavior must be verified by the user.
+
 Char validates file structure and pixels. It cannot mechanically judge whether breathing, elastic motion or a blink looks good; preview the full sequence before distributing it.
 
 ## Included example
@@ -65,4 +67,4 @@ Developer walkthrough: [appearance-development.md](appearance-development.md). C
 
 Selecting, importing or restoring an appearance updates the running application icon, menu-bar icon and Settings preview immediately; restart restores the selected artwork. Deleting the selected appearance restores the default. Icons are static cached artwork, not an extra animation loop. An authored appIcon is used as-is; automatic legacy fallback rotates the final edgePeek frame from the bottom authoring direction to the right edge and composes it in the default icon tile.
 
-The signed installation bundle and project logo use the built-in right-edge peeking icon. Finder/Launchpad continue to use that packaged default; applying a Finder custom icon writes resource-fork/Finder metadata and fails strict code-signature verification, as tested on a disposable app copy. Char therefore uses NSApplication.applicationIconImage for runtime identity without rewriting its installation. See [Apple runtime icon API](https://developer.apple.com/documentation/appkit/nsapplication/applicationiconimage).
+The project logo and pristine installation use the built-in right-edge icon. Char 0.3.0 automatically synchronizes a selected appearance's icon into a writable ad hoc installation using a staged, re-signed, strictly verified bundle and a pristine Release backup. Default selection restores the original artwork. This can change Accessibility trust; Developer ID signatures are not silently replaced. Details, failure handling and user checks are in the [v2 API](appearance-v2-api.md#安装图标与预算).
