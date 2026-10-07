@@ -17,7 +17,11 @@ public enum InstalledAppearanceIcon {
         let signature = try command("/usr/bin/codesign", ["-dv",app.path])
         guard signature.contains("Signature=adhoc") else { throw PetSkinError.invalid("automatic icon sync requires an ad hoc Char installation") }
         try fm.createDirectory(at: archiveDirectory, withIntermediateDirectories: true)
-        let archive = archiveDirectory.appendingPathComponent("Char-\(version)-pristine.zip")
+        // Same-version Release refreshes must never restore an older executable.
+        let executable = app.appendingPathComponent("Contents/MacOS/Char")
+        let codeIdentity = SHA256.hash(data: try Data(contentsOf: executable,options: .mappedIfSafe))
+            .map { String(format: "%02x", $0) }.joined()
+        let archive = archiveDirectory.appendingPathComponent("Char-\(version)-\(codeIdentity.prefix(16))-pristine.zip")
         if !fm.fileExists(atPath: archive.path) {
             guard current["CharAppearanceIcon"] == nil else { throw PetSkinError.invalid("pristine Release backup missing") }
             _ = try command("/usr/bin/ditto", ["-c","-k","--keepParent",app.path,archive.path])

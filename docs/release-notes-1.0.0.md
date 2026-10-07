@@ -18,6 +18,8 @@
 
 ## 下载
 
+图标同步备份加入可执行文件标识，防止同版本更新后同步形象图标时恢复旧宿主。
+
 - `Char-1.0.0-macos-universal.dmg`：拖入应用程序安装。
 - `Char-1.0.0-macos-universal.zip`：应用压缩包。
 - `Char-1.0.0-examples.zip`：两个 MiniMax 插件与菲比形象。
