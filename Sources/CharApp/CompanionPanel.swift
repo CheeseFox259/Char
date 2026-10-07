@@ -419,14 +419,17 @@ import CharPlatform
         if let start = spaceAt, movement == nil {
             let elapsed = now - start
             if spaceLifecycle.state == .arriving {
-                let duration = reduce ? 0.16 : 0.60
+                let duration = reduce ? 0.16 : 0.48
                 if elapsed >= duration { finishSpaceMotion() }
                 else {
                     let progress = elapsed / duration
                     pet.spaceTuck = reduce ? 0 : CGFloat(max(-0.10, 1 - CompanionGeometry.spaceArrivalProgress(progress)))
-                    visualOpacity = CGFloat(CompanionGeometry.orbitProgress(min(1, progress * 1.8)))
+                    visualOpacity = CGFloat(CompanionGeometry.orbitProgress(min(1, progress * 2.2)))
                     pet.edgeRetraction = placement == .desktop || reduce ? 0 : pet.spaceTuck * (pet.frame.width / 2 + 8)
-                    pet.clip = placement == .desktop ? "arrive" : "edgePeek"; pet.clipElapsed = elapsed
+                    // Space restores the whole scene. Package arrival clips also
+                    // hide/fade the artwork, doubling the invisible interval.
+                    // Keep the idle clock; migration still uses authored clips.
+                    pet.clip = "idle"; pet.clipElapsed = pet.elapsed
                 }
             }
         }
@@ -926,18 +929,25 @@ import CharPlatform
     }
     func containsSurfacePoint(_ point: NSPoint) -> Bool {
         guard !isHidden else { return false }
+        if externalArtwork {
+            let artwork = graphicLayer.presentation() ?? graphicLayer
+            if let surface = artwork.superlayer?.superlayer {
+                // Artwork is hosted by the shared scene, including its current
+                // Space/migration transform. Convert through that layer tree.
+                let p = artwork.convert(point, from: surface)
+                let b = artwork.bounds
+                guard b.width > 0, b.height > 0 else { return false }
+                return containsInteractivePoint(NSPoint(
+                    x: bounds.minX+(p.x-b.minX)/b.width*bounds.width,
+                    y: bounds.minY+(p.y-b.minY)/b.height*bounds.height))
+            }
+        }
         let frame = presentationFrame
         guard frame.contains(point) else { return false }
-        if case .pet = kind {
-            guard let regions = runtime.appearanceFeatures?.hitRegions else { return true }
-            // Hit regions use the drawn canvas and the same anchor/orientation as the artwork.
-            let a = NSPoint(x: bounds.midX,y: bounds.midY), g = runtime.authoredGaze(NSPoint(x: point.x-a.x,y: point.y-a.y),placement: placement)
-            let size = runtime.customPetSize, anchor = runtime.customPetAnchor(for: placement)
-            let p = NSPoint(x: g.x/size.width+anchor.x,y: 1-(g.y/size.height+anchor.y))
-            return regions.contains { $0.contains(p) }
-        }
-        let x = (point.x-frame.midX)/(frame.width/2), y = (point.y-frame.midY)/(frame.height/2)
-        return x*x+y*y <= 1
+        guard frame.width > 0, frame.height > 0 else { return false }
+        return containsInteractivePoint(NSPoint(
+            x: bounds.minX+(point.x-frame.minX)/frame.width*bounds.width,
+            y: bounds.minY+(point.y-frame.minY)/frame.height*bounds.height))
     }
     func presentPetFrame(_ frame: NSRect) {
         CATransaction.begin(); CATransaction.setDisableActions(true)

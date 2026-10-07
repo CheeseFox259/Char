@@ -14,6 +14,23 @@ extension CompanionRuntime {
         defer { appearanceScript?.stop(); try? FileManager.default.removeItem(at: store.fileURL.deletingLastPathComponent()) }
         let manifest = try skinStore.importPackage(at:URL(fileURLWithPath:source))
         selectSkin(manifest.id)
+        // The pointer path receives surface coordinates, unlike direct local
+        // hit tests. Exercise a displaced pet as laid out in the real panel.
+        setPetSize(48)
+        let hitPet = GraphicButton(kind:.pet,runtime:self)
+        hitPet.frame = NSRect(x:120,y:100,width:48,height:48)
+        hitPet.presentPetFrame(hitPet.frame)
+        try require(hitPet.containsInteractivePoint(NSPoint(x:24,y:24)),"local pet center must be interactive")
+        try require(hitPet.containsSurfacePoint(NSPoint(x:144,y:124)),"surface pet center must accept clicks and drags")
+        let surfaceLayer = CALayer(), scene = CALayer()
+        surfaceLayer.addSublayer(scene); hitPet.attachArtwork(to:scene)
+        scene.setAffineTransform(CGAffineTransform(a:0.8,b:0,c:0,d:0.8,tx:17,ty:-11))
+        try require(hitPet.containsSurfacePoint(NSPoint(x:132.2,y:88.2)),"transformed scene must preserve pet hit region")
+        try require(!hitPet.containsSurfacePoint(NSPoint(x:5,y:5)),"blank surface must pass clicks through")
+        panel.surface.prepareSpaceAppearance()
+        panel.surface.spaceFeedback()
+        try await Task.sleep(nanoseconds:120_000_000)
+        try require(panel.surface.pet.clip == "idle","Space appearance must not stack the package arrival over the shared scene arrival")
         let pet = GraphicButton(kind:.pet,runtime:self)
         func raster(_ clip: String, _ elapsed: Double, _ placement: PetPlacement, _ size: Double) -> Data? {
             setPetSize(size); pet.frame = NSRect(x:0,y:0,width:size*3,height:size*3)
