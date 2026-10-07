@@ -49,7 +49,7 @@ def main():
     manifest = json.load(open(manifest_path))
     schema = manifest.get("schemaVersion")
     if schema not in (1, 2):
-        problems.append("this audit targets schemaVersion 1/2 base-animation and WAV packages")
+        problems.append("this audit targets schemaVersion 1/2 base-animation and audio packages")
     manifest_limit = 128 * 1024 if schema == 2 else MAX_MANIFEST_BYTES
     package_limit = 64 * 1024 * 1024 if schema == 2 else MAX_PACKAGE_BYTES
     entry_limit = 2200 if schema == 2 else MAX_ENTRIES
@@ -151,13 +151,18 @@ def main():
             continue
         full = os.path.join(package, rel)
         try:
-            with wave.open(full, "rb") as audio:
-                duration = audio.getnframes() / audio.getframerate()
-            if not 0 < duration <= 30 or os.path.getsize(full) > 8 * 1024 * 1024:
-                problems.append(f"{rel}: sound exceeds duration/size budget")
+            if os.path.getsize(full) > 8 * 1024 * 1024:
+                problems.append(f"{rel}: sound exceeds size budget")
             if not 0 <= sound.get("volume", 1) <= 1 or not 0.1 <= sound.get("cooldown", 0.3) <= 60:
                 problems.append(f"{rel}: invalid volume/cooldown")
-            sound_report[name] = {"path": rel, "duration_s": round(duration, 3), "bytes": os.path.getsize(full)}
+            sound_report[name] = {"path": rel, "bytes": os.path.getsize(full),
+                                  "decode_check": "production validator (NSSound)"}
+            if rel.lower().endswith((".wav", ".wave")):
+                with wave.open(full, "rb") as audio:
+                    duration = audio.getnframes() / audio.getframerate()
+                if not 0 < duration <= 30:
+                    problems.append(f"{rel}: sound exceeds duration budget")
+                sound_report[name]["duration_s"] = round(duration, 3)
         except (OSError, wave.Error) as error:
             problems.append(f"{rel}: invalid WAV: {error}")
 

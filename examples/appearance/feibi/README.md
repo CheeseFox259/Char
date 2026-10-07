@@ -1,6 +1,6 @@
 # 菲比 · 可导入的形象开发示例
 
-ID `feibi.pet`，v2 形象包，适用 Char 0.3.0 及以上；128×128 RGBA，24 fps，七种动作、独立 512×512 软件图标与点击音效。
+ID `feibi.pet`，v2 形象包，适用本次更新后的 Char 1.0.0（早期 1.0.0 安装尚不接受 MP3 形象资源）；128×128 RGBA，24 fps，七种动作、独立 512×512 软件图标与点击音效。
 
 ![闲置动作](../../../docs/assets/feibi-idle.webp)
 
@@ -22,10 +22,10 @@ build/feibi-venv/bin/pip install -r examples/appearance/feibi/requirements.txt
 PYTHON="$PWD/build/feibi-venv/bin/python" sh examples/appearance/feibi/generator/make.sh
 ```
 
-`reference/` 保存制作输入，`art/` 是绘画层与 rig，`audio/` 保存原 MP3、转换后的 WAV 和上游许可。`generator/` 依次生成七组动作、图标与可导入包，并调用生产校验器。生成预览与本地审计放在忽略目录；发布仅包含运行资源及相邻素材许可说明。macOS 转换命令为 `afconvert -f WAVE -d LEI16 audio/phoebe_chubby_4.mp3 audio/phoebe_chubby_4.wav`；日常重建直接复制已转换的 WAV。
+`reference/` 保存制作输入，`art/` 是绘画层与 rig，`audio/` 保存原 MP3 和上游许可。`generator/` 依次生成七组动作、图标与可导入包，并调用生产校验器。生成预览与本地审计放在忽略目录；发布仅包含运行资源及相邻素材许可说明。重建直接复制原 MP3，不额外转码。
 
 105 个唯一 128×128 帧与 512×512 图标约需 7.56 MiB 原始 RGBA 像素空间；该估算不等于 Char 的 RSS。
 
 ## 资源来源
 
-参考形象由项目使用者提供，示例通过抠像、表情图层与仿射动画制作。音效来自 [Genius-Society/phoebe_chubby](https://github.com/Genius-Society/phoebe_chubby)，保留 CC BY-NC-SA 4.0 许可，MP3 转为 PCM WAV，未剪辑声音。角色形象与相关权利归原权利人；项目 MIT 许可证适用于代码，不授予角色、音效或第三方商标的权利。详见 [素材说明](ASSET-NOTICES.md)。
+参考形象由项目使用者提供，示例通过抠像、表情图层与仿射动画制作。音效来自 [Genius-Society/phoebe_chubby](https://github.com/Genius-Society/phoebe_chubby)，保留 CC BY-NC-SA 4.0 许可，原样提供 MP3，未剪辑或转码声音。角色形象与相关权利归原权利人；项目 MIT 许可证适用于代码，不授予角色、音效或第三方商标的权利。详见 [素材说明](ASSET-NOTICES.md)。

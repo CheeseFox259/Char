@@ -74,6 +74,8 @@ public struct PetBubbleStyle: Codable, Equatable {
     public var orbitCurve: String? // smooth or spring
 }
 public struct PetSkinSound: Codable, Equatable {
+    /// Core Audio containers; import still requires NSSound to decode the actual file.
+    public static let supportedExtensions: Set<String> = ["wav", "wave", "aiff", "aif", "aifc", "m4a", "mp3", "aac", "caf", "flac"]
     public var file: String
     public var volume: Double?
     public var cooldown: Double?
@@ -183,7 +185,10 @@ extension PetSkinFeatures {
         }
         try require(defaultTheme == nil || themes?[defaultTheme!] != nil, "unknown default theme")
         try require((sounds?.count ?? 0) <= 24, "too many sounds")
-        for (_,s) in sounds ?? [:] { other.insert(s.file); try range(s.volume, 0...1); try range(s.cooldown, 0.1...60) }
+        for (_,s) in sounds ?? [:] {
+            try require(PetSkinSound.supportedExtensions.contains(URL(fileURLWithPath: s.file).pathExtension.lowercased()), "unsupported sound format")
+            other.insert(s.file); try range(s.volume, 0...1); try range(s.cooldown, 0.1...60)
+        }
         if let script { try require(script.hasSuffix(".js"), "script must be JavaScript"); other.insert(script) }
         var allClips = Set(base.clips.keys)
         for v in self.variants?.values ?? [:].values { allClips.formUnion(v.clips?.keys ?? [:].keys) }

@@ -98,7 +98,7 @@ Char 把本机 Agent 客户端的新状态聚合成桌宠旁的图标气泡。�
 
 [菲比示例](examples/appearance/feibi/README.md)包含参考素材、生成源码和可直接导入的 `.charpet`；新版采用 v2，提供七组图片动画与点击音效，不声明实时跟随、主题或脚本。选中形象同步运行/状态栏图标，并可同步可写的 ad hoc 安装图标；重新签名本机副本可能需要重建辅助功能授权，原 Release 保留备份。
 
-菲比点击音效 `phoebe_chubby_4.mp3` 来自 [Genius-Society/phoebe_chubby](https://github.com/Genius-Society/phoebe_chubby)，转换为 WAV 随形象包提供，受音效开关与播放冷却控制。上游采用 [CC BY-NC-SA 4.0](https://github.com/Genius-Society/phoebe_chubby/blob/main/LICENSE)，音效保留该许可，详细来源见[素材说明](examples/appearance/feibi/ASSET-NOTICES.md)。
+菲比点击音效 `phoebe_chubby_4.mp3` 来自 [Genius-Society/phoebe_chubby](https://github.com/Genius-Society/phoebe_chubby)，原样随形象包提供，受音效开关与播放冷却控制。上游采用 [CC BY-NC-SA 4.0](https://github.com/Genius-Society/phoebe_chubby/blob/main/LICENSE)，音效保留该许可，详细来源见[素材说明](examples/appearance/feibi/ASSET-NOTICES.md)。
 
 <p align="center"><img src="docs/assets/feibi-idle.webp" width="192" alt="菲比示例闲置动画" /> <img src="docs/assets/feibi-companion-demo.png" width="340" alt="菲比在 Char 中的实际演示界面" /></p>
 

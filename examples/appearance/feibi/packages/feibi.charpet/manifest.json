@@ -169,7 +169,7 @@
     "sounds": {
       "click": {
         "cooldown": 4,
-        "file": "audio/phoebe_chubby_4.wav",
+        "file": "audio/phoebe_chubby_4.mp3",
         "volume": 0.55
       }
     }

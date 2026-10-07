@@ -218,7 +218,8 @@ public final class PetSkinStore {
             if values.isRegularFile == true {
                 let relative = String(url.standardizedFileURL.resolvingSymlinksInPath().path.dropFirst(root.path.count + 1))
                 if url.lastPathComponent == ".DS_Store", (values.fileSize ?? 0) <= 128*1024 { totalBytes += values.fileSize ?? 0; continue }
-                guard relative == "manifest.json" || ["png","js","wav","aiff","m4a"].contains(url.pathExtension) else { throw PetSkinError.invalid("unsupported appearance asset: \(relative)") }
+                guard relative == "manifest.json" || ["png","js"].contains(url.pathExtension)
+                    || PetSkinSound.supportedExtensions.contains(url.pathExtension.lowercased()) else { throw PetSkinError.invalid("unsupported appearance asset: \(relative)") }
                 if relative.hasSuffix(".png") { packagePNGs.insert(relative) }
                 else if relative != "manifest.json" { otherAssets.insert(relative) }
             }

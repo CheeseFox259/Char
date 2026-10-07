@@ -6,7 +6,7 @@
 
 - 提供项目：Genius-Society / Phoebe Chubby，https://github.com/Genius-Society/phoebe_chubby
 - 原文件：https://github.com/Genius-Society/phoebe_chubby/blob/main/audio/phoebe_chubby_4.mp3
-- Char 修改：仅将 MP3 转为 16-bit PCM WAV 以满足形象包格式，不剪辑音频；播放音量与冷却由包清单声明。
+- Char 修改：原样提供 MP3，不剪辑或转码音频；播放音量与冷却由包清单声明。
 - 上游许可：Creative Commons Attribution-NonCommercial-ShareAlike 4.0 International（CC BY-NC-SA 4.0），https://creativecommons.org/licenses/by-nc-sa/4.0/ 。保留署名、仅限非商业使用，改编遵循相同许可。上游许可全文见仓库 `audio/LICENSE-CC-BY-NC-SA-4.0.txt`，发行附件中为 `FEIBI-AUDIO-LICENSE.txt`。
 - 上游语音来源记录：https://github.com/Genius-Society/phoebe_chubby#voice-sources--语音来源 。上游注明《鸣潮》角色相关版权属于 KURO GAMES；此处不声明官方合作或额外授权。
 

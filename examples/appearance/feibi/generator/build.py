@@ -312,11 +312,11 @@ def main():
     build_icon(rest, canvas).save(os.path.join(package, "icon.png"), optimize=True)
 
     os.makedirs(os.path.join(package, "audio"))
-    shutil.copyfile(os.path.join(work, "audio", "phoebe_chubby_4.wav"),
-                    os.path.join(package, "audio", "phoebe_chubby_4.wav"))
+    shutil.copyfile(os.path.join(work, "audio", "phoebe_chubby_4.mp3"),
+                    os.path.join(package, "audio", "phoebe_chubby_4.mp3"))
     manifest = {"schemaVersion": 2, "id": "feibi.pet", "name": "菲比", "appIcon": "icon.png",
                 "canvasSize": {"width": canvas, "height": canvas}, "anchor": rig["anchor"], "clips": clips,
-                "features": {"sounds": {"click": {"file": "audio/phoebe_chubby_4.wav",
+                "features": {"sounds": {"click": {"file": "audio/phoebe_chubby_4.mp3",
                                                 "volume": 0.55, "cooldown": 4}}}}
     with open(os.path.join(package, "manifest.json"), "w") as fh:
         json.dump(manifest, fh, indent=2, ensure_ascii=False, sort_keys=True)

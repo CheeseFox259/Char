@@ -59,7 +59,7 @@ bubbles仅改变外观，Agent身份图标仍由集成插件提供。主题可�
 
 ## 音效与事件
 
-sounds是音效ID→对象。`file`为wav/aiff/m4a，单文件≤8MiB、可解码且0–30秒；volume=0…1（默认1），cooldown=0.1…60秒（默认0.3）。音效ID与事件名一致时自动播放；其他ID用playSound。全局静音优先，切换形象停止旧音效，不允许播放包外文件。
+sounds是音效ID→对象。`file`接受wav/wave、aiff/aif/aifc、m4a、mp3、aac、caf、flac，音频扩展名不区分大小写。单文件≤8MiB，必须经当前macOS的NSSound实际解码且时长>0、≤30秒；扩展名在列表中不代表所有编码均可用。使用系统Core Audio，不附带额外解码器；OGG/Opus需先转为受支持格式。新增格式从1.0.0本次资源与音频更新起可导入，旧安装需替换为更新后的App；原有wav/aiff/m4a不受影响。volume=0…1（默认1），cooldown=0.1…60秒（默认0.3）。音效ID与事件名一致时自动播放；其他ID用playSound。全局静音优先，切换形象停止旧音效，不允许播放包外文件。[Apple NSSound格式说明](https://developer.apple.com/documentation/appkit/nssound)。
 
 ```json
 {"sounds":{"click":{"file":"audio/click.wav","volume":0.4,"cooldown":0.3}},
