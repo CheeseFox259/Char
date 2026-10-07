@@ -13,8 +13,8 @@ for skin in "$repo_root"/Resources/Skins/*.charpet; do
 done
 find "$destination" -name AGENTS.md -delete
 mkdir -p "$destination/Examples"
-ditto "$repo_root/integrations/minimax-code/packages/minimax-code-cli.charintegration" "$destination/Examples/minimax-code-cli.charintegration"
-ditto "$repo_root/integrations/minimax-code/packages/minimax-code-desktop.charintegration" "$destination/Examples/minimax-code-desktop.charintegration"
+ditto "$repo_root/examples/integrations/minimax-code/packages/minimax-code-cli.charintegration" "$destination/Examples/minimax-code-cli.charintegration"
+ditto "$repo_root/examples/integrations/minimax-code/packages/minimax-code-desktop.charintegration" "$destination/Examples/minimax-code-desktop.charintegration"
 ditto "$repo_root/examples/appearance/feibi/packages/feibi.charpet" "$destination/Examples/feibi.charpet"
 cp "$repo_root/examples/appearance/feibi/ASSET-NOTICES.md" "$destination/Examples/FEIBI-ASSET-NOTICES.md"
 cp "$repo_root/examples/appearance/feibi/audio/LICENSE-CC-BY-NC-SA-4.0.txt" "$destination/Examples/FEIBI-AUDIO-LICENSE.txt"

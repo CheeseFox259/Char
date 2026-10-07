@@ -4,9 +4,9 @@
 
 | 需求 | 开发指令 | 工作区 |
 | --- | --- | --- |
-| 新客户端 CLI、Desktop、双端或准确起点 | [integrations/AGENTS.md](../integrations/AGENTS.md) | `integrations/<软件slug>/` 或独立项目 |
-| 已有能力配置包/集成包交付/内置资源 | [Resources/Integrations/AGENTS.md](../Resources/Integrations/AGENTS.md) | 用户工作区；新增能力路由到上一份 |
-| 自定义形象、动作、跟随、主题/皮肤、音效与图标 | [Resources/Skins/AGENTS.md](../Resources/Skins/AGENTS.md) | 形象工作区的 `packages/` 输出形象包 |
+| 新客户端 CLI、Desktop、双端或准确起点 | [examples/integrations/AGENTS.md](../examples/integrations/AGENTS.md) | `integrations/<软件slug>/` 或独立项目 |
+| 已有能力配置包/集成包交付/内置资源 | [examples/configuration/AGENTS.md](../examples/configuration/AGENTS.md) | 用户工作区；新增能力路由到上一份 |
+| 自定义形象、动作、跟随、主题/皮肤、音效与图标 | [examples/appearance/AGENTS.md](../examples/appearance/AGENTS.md) | 形象工作区的 `packages/` 输出形象包 |
 
 ## 用户怎样开始
 
@@ -18,11 +18,11 @@
 
 独立项目启动时提供 SDK 路径一次：
 
-> Char SDK 在「仓库绝对路径」。读取其 integrations/AGENTS.md，在当前目录开发「软件和行为」。
+> Char SDK 在「仓库绝对路径」。读取其 examples/integrations/AGENTS.md，在当前目录开发「软件和行为」。
 
 制作形象时使用对应入口：
 
-> 读取 Resources/Skins/AGENTS.md，按「角色、风格、参考和动作要求」制作可导入形象及匹配图标。
+> 读取 examples/appearance/AGENTS.md，按「角色、风格、参考和动作要求」制作可导入形象及匹配图标。
 
 支持 AGENTS.md 的工具按目录加载；其他工具显式读取入口。独立目录不能假定工具自动发现另一仓库的指令。三份 AGENTS 不放入交付包，也不复制具体插件实现作为提示词。
 

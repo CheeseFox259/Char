@@ -1,6 +1,6 @@
 # 能力插件开发指南
 
-**开发入口：`integrations/AGENTS.md`。** 使用者给出软件、CLI/Desktop 和希望实现的行为即可。开发者用 Char 仓库作 SDK，交付独立 `.charintegration`，新增工作端无需修改或重新编译 Char。普通应用级回城已有内置实现。
+**开发入口：`examples/integrations/AGENTS.md`。** 使用者给出软件、CLI/Desktop 和希望实现的行为即可。开发者用 Char 仓库作 SDK，交付独立 `.charintegration`，新增工作端无需修改或重新编译 Char。普通应用级回城已有内置实现。
 
 ## 按问题直接查契约
 

@@ -50,7 +50,7 @@ v1.0.0 Release 构建、独立 bundle ID 与随机临时配置，默认方块、
 
 ### MiniMax 示例
 
-同机隔离的原生入口约 **9.6 MiB RSS/端**、3.3 MiB physical footprint/端，空闲平均 CPU <0.01% 单核，本地追加→协议帧 p95 <2 ms。Node 参考入口约 52.9 MiB RSS，常驻 RSS 约减少 82%。按需自检 helper 总耗时约 118 ms、生命周期 RSS 高水位约 49.1 MiB。安装/导航峰值未测。方法、工具和缓存边界见 [示例说明](../integrations/minimax-code/README.md)。
+同机隔离的原生入口约 **9.6 MiB RSS/端**、3.3 MiB physical footprint/端，空闲平均 CPU <0.01% 单核，本地追加→协议帧 p95 <2 ms。Node 参考入口约 52.9 MiB RSS，常驻 RSS 约减少 82%。按需自检 helper 总耗时约 118 ms、生命周期 RSS 高水位约 49.1 MiB。安装/导航峰值未测。方法、工具和缓存边界见 [示例说明](../examples/integrations/minimax-code/README.md)。
 
 ## 验证与后续优化
 

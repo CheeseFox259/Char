@@ -10,5 +10,5 @@ __pycache__/
 *.pyc
 examples/appearance/feibi/preview/
 examples/appearance/feibi/reports/
-integrations/minimax-code/reports/
-integrations/minimax-code/performance-sample.json
+examples/integrations/minimax-code/reports/
+examples/integrations/minimax-code/performance-sample.json

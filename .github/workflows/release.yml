@@ -26,8 +26,8 @@ jobs:
           python3 --version
       - name: Build reproducible adapter examples
         run: |
-          bash integrations/minimax-code/native-adapter/build.sh
-          node integrations/minimax-code/build-packages.mjs
+          bash examples/integrations/minimax-code/native-adapter/build.sh
+          node examples/integrations/minimax-code/build-packages.mjs
       - name: Project checks
         run: bash scripts/check.sh
       - name: Build universal release

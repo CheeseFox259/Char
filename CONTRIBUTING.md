@@ -4,9 +4,9 @@ Issues 用于缺陷、客户端接口与需求讨论。请提供版本、客户�
 
 ## 从哪里开始
 
-- 新客户端：先读 [integrations/AGENTS.md](integrations/AGENTS.md) 与 [插件指南](docs/plugin-development.md)，默认在独立集成目录开发，以 Char 为 SDK。
-- 新形象：先读 [Resources/Skins/AGENTS.md](Resources/Skins/AGENTS.md) 与 [外观指南](docs/appearance-development.md)。
-- 已有配置能力：读 [Resources/Integrations/AGENTS.md](Resources/Integrations/AGENTS.md)。
+- 新客户端：先读 [examples/integrations/AGENTS.md](examples/integrations/AGENTS.md) 与 [插件指南](docs/plugin-development.md)，默认在独立集成目录开发，以 Char 为 SDK。
+- 新形象：先读 [examples/appearance/AGENTS.md](examples/appearance/AGENTS.md) 与 [外观指南](docs/appearance-development.md)。
+- 已有配置能力：读 [examples/configuration/AGENTS.md](examples/configuration/AGENTS.md)。
 - 修改宿主：阅读 [CONTEXT.md](CONTEXT.md)、[架构](docs/architecture.md) 与相关 ADR；只改变当前需求涉及的模块。
 
 开发过程中先跑相关检查；最终提交运行 `bash scripts/check.sh`。界面改动需提供真实 Char 截图与检查范围，性能改动提供相同条件的前后测量。构建/回放不替代用户的真实客户端验收。

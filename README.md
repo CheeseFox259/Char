@@ -12,7 +12,7 @@
 <p align="center">
   <a href="https://github.com/CheeseFox259/Char/releases/latest"><strong>下载 macOS 版</strong></a> ·
   <a href="docs/README.md">使用指南</a> ·
-  <a href="docs/development-prompts.md">制作插件与形象</a> ·
+  <a href="examples/README.md">示例与开发指令</a> ·
   <a href="https://github.com/CheeseFox259/Char/issues">反馈</a>
 </p>
 
@@ -55,7 +55,7 @@
 | Kimi CLI、Kimi Code App | 安装内置集成，[Kimi 指南](integrations/kimi/README.md) |
 | DeepSeek Harness Desktop | 安装内置集成，[DeepSeek 指南](integrations/deepseek/README.md) |
 | pi | 安装内置扩展，[pi 指南](integrations/pi/README.md) |
-| MiniMax Code CLI、Desktop | 从示例包导入，[MiniMax 指南](integrations/minimax-code/README.md) |
+| MiniMax Code CLI、Desktop | 从示例包导入，[MiniMax 指南](examples/integrations/minimax-code/README.md) |
 | 其他客户端 | 可自行制作插件，或让开发助手按[插件指南](docs/plugin-development.md)接入 |
 
 CLI 支持 **Warp** 和 **Warp + tmux**。其他终端也可通过自定义插件接入。不同客户端能够提供的状态有所不同，见 [提醒类型](docs/signal-feasibility.md)。
@@ -70,11 +70,11 @@ CLI 支持 **Warp** 和 **Warp + tmux**。其他终端也可通过自定义插�
 
 你使用的软件不在列表里，也可以接入 Char。插件可提供状态提醒、跳转、准确回城和安装维护，按需求组合。
 
-**你只需要描述软件和使用方式。** 让开发助手读取 [integrations/AGENTS.md](integrations/AGENTS.md)，告诉它软件名称、CLI 或桌面版，以及希望收到哪些提醒。开发完成后会交付可导入的 `.charintegration` 包和操作说明。
+**你只需要描述软件和使用方式。** 让开发助手读取 [examples/integrations/AGENTS.md](examples/integrations/AGENTS.md)，告诉它软件名称、CLI 或桌面版，以及希望收到哪些提醒。开发完成后会交付可导入的 `.charintegration` 包和操作说明。
 
 在 **设置 → 插件 → 导入插件…** 选择完整包。需要客户端集成时，再通过该插件的维护菜单安装。插件可随时关闭或删除；添加新客户端无需重新编译 Char。
 
-[MiniMax CLI/Desktop 示例](integrations/minimax-code/README.md)包含成品包和源码。详细接口见 [插件开发指南](docs/plugin-development.md)。第三方插件会运行本机代码，请仅导入可信来源。
+[MiniMax CLI/Desktop 示例](examples/integrations/minimax-code/README.md)包含成品包和源码。详细接口见 [插件开发指南](docs/plugin-development.md)。第三方插件会运行本机代码，请仅导入可信来源。
 
 ## 换个桌宠
 
@@ -84,9 +84,11 @@ CLI 支持 **Warp** 和 **Warp + tmux**。其他终端也可通过自定义插�
 
 在 **设置 → 桌宠与动效 → 导入形象…** 选择 `.charpet` 包即可使用。[菲比示例](examples/appearance/feibi/README.md)提供七组动画、探头图标，以及点击和提醒语音；声音遵守静音开关和播放冷却。
 
-想制作自己的角色？将参考图和要求交给开发助手，让它读取 [Resources/Skins/AGENTS.md](Resources/Skins/AGENTS.md)。也可以查看 [制作指南](docs/appearance-development.md)和[可自定义范围](docs/appearance-customization.md)。
+想制作自己的角色？将参考图和要求交给开发助手，让它读取 [examples/appearance/AGENTS.md](examples/appearance/AGENTS.md)。也可以查看 [制作指南](docs/appearance-development.md)和[可自定义范围](docs/appearance-customization.md)。
 
 **MiniMax 插件与菲比形象**都在 [Release](https://github.com/CheeseFox259/Char/releases/latest) 的示例 ZIP 中提供，解压后可直接导入。更新已有形象时，先删除旧包再导入；软件图标同步可能需要重新授权辅助功能，详见 [安装指南](docs/macos-release.md)。
+
+仓库的 [examples](examples/README.md) 集中提供两个 MiniMax 插件、菲比形象的成品与源码，以及客户端、配置包和形象的三份完整开发指令。
 
 ## 运行占用
 

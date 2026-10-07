@@ -2,6 +2,8 @@
 
 一份源码生成两个可导入包：
 
+制作自己的客户端插件时，让开发助手读取[完整开发指令](../AGENTS.md)，再描述目标软件和所需行为。本示例的源码和成品包可用于参考。
+
 | 界面 | 包 | workEnd | 承载应用 |
 | --- | --- | --- | --- |
 | CLI | [minimax-code-cli.charintegration](packages/minimax-code-cli.charintegration) | minimaxcode.cli | Warp，自动添加终端角标 |
@@ -37,11 +39,11 @@ packages/            从唯一源码生成的两个运行包
 在仓库根运行：
 
 ```sh
-bash integrations/minimax-code/native-adapter/build.sh
-node integrations/minimax-code/build-packages.mjs
-node --test integrations/minimax-code/tests/adapter.test.mjs
-swift run char-package-check integration integrations/minimax-code/packages/minimax-code-cli.charintegration
-swift run char-package-check integration integrations/minimax-code/packages/minimax-code-desktop.charintegration
+bash examples/integrations/minimax-code/native-adapter/build.sh
+node examples/integrations/minimax-code/build-packages.mjs
+node --test examples/integrations/minimax-code/tests/adapter.test.mjs
+swift run char-package-check integration examples/integrations/minimax-code/packages/minimax-code-cli.charintegration
+swift run char-package-check integration examples/integrations/minimax-code/packages/minimax-code-desktop.charintegration
 ```
 
 原生客户端 TUI/模型框架为按需检查，不是默认测试。基本检查不修改真实客户端、不发起模型请求；真实 GUI 验收由用户操作。
@@ -54,4 +56,4 @@ Node helper 按需调用后退出；一次自检总耗时约 118 ms，单独测�
 
 文件通知驱动、512 KiB/批、最长行 1 MiB，根状态最多 4096 个；超容量淘汰最久未更新的存活推断状态，不阻止新事件转发。普通 helper 2.6 秒、维护 14 秒；监控队列独立。
 
-复测工具 `tests/performance-compare.mjs`、`tests/helper-cost.mjs`，原始输出在忽略的 `reports/`。通用目标与口径见 [性能契约](../../docs/plugin-performance.md)。
+复测工具 `tests/performance-compare.mjs`、`tests/helper-cost.mjs`，原始输出在忽略的 `reports/`。通用目标与口径见 [性能契约](../../../docs/plugin-performance.md)。

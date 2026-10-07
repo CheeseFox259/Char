@@ -15,7 +15,7 @@
 swift run --package-path /absolute/path/Char char-package-check skin /absolute/path/your.charpet
 ~~~
 
-完整144帧参考包：[example.charpet](../Resources/Skins/example.charpet)。详细规范：[pet-skin-format.md](pet-skin-format.md)。[通用开发指令](../Resources/Skins/AGENTS.md)提供制作、预算、预览和验收流程；角色设计及帧数量按当前任务决定。
+完整144帧参考包：[example.charpet](../Resources/Skins/example.charpet)。详细规范：[pet-skin-format.md](pet-skin-format.md)。[通用开发指令](../examples/appearance/AGENTS.md)提供制作、预算、预览和验收流程；角色设计及帧数量按当前任务决定。
 
 ## 素材、工具与制作路径
 

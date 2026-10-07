@@ -33,8 +33,8 @@ shasum -a 256 -c SHA256SUMS
 构建需要 macOS、Swift 6 / Command Line Tools、Node 与 Python 3；Node 只用于开发检查与部分可选集成，并非 Char 核心运行依赖。
 
 ```sh
-bash integrations/minimax-code/native-adapter/build.sh
-node integrations/minimax-code/build-packages.mjs
+bash examples/integrations/minimax-code/native-adapter/build.sh
+node examples/integrations/minimax-code/build-packages.mjs
 bash scripts/check.sh
 bash scripts/package-release.sh
 ```

@@ -13,7 +13,7 @@
 
 | 目标 | 入口 | 可导入示例 |
 | --- | --- | --- |
-| 新客户端的监控、跳转、回城或安装维护 | [插件开发指南](plugin-development.md) / [性能要求](plugin-performance.md) | [MiniMax CLI + Desktop](../integrations/minimax-code/README.md) |
+| 新客户端的监控、跳转、回城或安装维护 | [插件开发指南](plugin-development.md) / [性能要求](plugin-performance.md) | [MiniMax CLI + Desktop](../examples/integrations/minimax-code/README.md) |
 | 已有能力的名称、图标与目标应用 | [配置包格式](integration-plugin-format.md) | [配置包目录](../Resources/Integrations) |
 | 新角色、动作、主题、跟随或气泡皮肤 | [形象开发指南](appearance-development.md) / [完整 API](appearance-api.md) | [菲比](../examples/appearance/feibi/README.md) |
 | 使用开发 Agent | [三份开发指令](development-prompts.md) | 在对应目录读取 AGENTS.md 后提出需求 |
