@@ -112,6 +112,7 @@ public struct PluginHealth: Equatable, Sendable {
         return try await process.request(method, params: params, timeout: 15)
     }
     public var runningProcessIDs: [Int32] { (Array(processes.values) + Array(transient.values)).filter(\.isRunning).map(\.processID) }
+    public var runningPluginProcesses: [String: Int32] { processes.filter { $0.value.isRunning }.mapValues(\.processID) }
     public func stopAll() {
         generation += 1; connecting.values.forEach { $0.cancel() }; connecting.removeAll()
         processes.values.forEach { $0.stop() }; processes.removeAll(); entries.removeAll()

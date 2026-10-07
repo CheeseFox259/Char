@@ -8,6 +8,7 @@ import CharCore
     private var previousSound: Bool?
     private var previousLanguage: AppLanguage?
     private var previousSkinID: String?
+    private var previousThemeID: String?
     var iconImage: NSImage? { item.button?.image }
     var representedSkinID: String? { previousSkinID }
     init(runtime: CompanionRuntime) {
@@ -17,13 +18,15 @@ import CharCore
         refresh()
     }
     func refresh() {
-        guard previous != runtime.snapshot || previousSound != runtime.settings.soundEnabled || previousLanguage != runtime.settings.language || previousSkinID != runtime.selectedSkinID else { return }
-        if previousSkinID != runtime.selectedSkinID {
+        let iconChanged = previousSkinID != runtime.selectedSkinID || previousThemeID != runtime.selectedThemeID
+        guard previous != runtime.snapshot || previousSound != runtime.settings.soundEnabled || previousLanguage != runtime.settings.language || iconChanged else { return }
+        if iconChanged {
             let image = runtime.softwareIcon.copy() as! NSImage
             image.size = NSSize(width: 18, height: 18)
             image.isTemplate = false
             item.button?.image = image
             previousSkinID = runtime.selectedSkinID
+            previousThemeID = runtime.selectedThemeID
         }
         previous = runtime.snapshot; previousSound = runtime.settings.soundEnabled; previousLanguage = runtime.settings.language
         item.button?.setAccessibilityLabel(runtime.localized("Char 状态栏", "Char menu bar"))
