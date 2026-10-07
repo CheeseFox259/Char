@@ -1,5 +1,5 @@
 {
-  "schemaVersion": 2,
+  "schemaVersion": 3,
   "id": "example.source.safari",
   "name": "Safari",
   "bundleIdentifier": "com.apple.Safari",

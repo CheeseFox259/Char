@@ -44,7 +44,7 @@ struct PluginChecks {
         let installedCount = store.entries.count
         try expectFailure { _ = try store.importPackage(at: package) }
         try checkEqual(store.entries.count, installedCount)
-        plugin.schemaVersion = 2; plugin.bundleIdentifier = "invalid"
+        plugin.schemaVersion = 3; plugin.bundleIdentifier = "invalid"
         try writePackage(plugin, at: package)
         try expectFailure { _ = try store.importPackage(at: package) }
         plugin.bundleIdentifier = "com.example.app"; plugin.workEnd = nil
@@ -77,20 +77,18 @@ struct PluginChecks {
         try checkEqual(store.entries.count, 10)
     }
 
-    func testLegacyMigrationAndUnifiedCapabilities() throws {
+    func testCurrentFormatsAndUnifiedCapabilities() throws {
         let root = temporaryDirectory(); defer { try? FileManager.default.removeItem(at: root) }
         let store = try IntegrationPluginStore(directory: root)
         try store.setEnabled(false, for: "builtin.agent.pi")
         try store.remove(id: "builtin.source.wechat")
         let registryURL = root.appendingPathComponent("registry.json")
         var registry = try JSONSerialization.jsonObject(with: Data(contentsOf: registryURL)) as! [String: Any]
-        registry["schemaVersion"] = 1
+        registry["schemaVersion"] = 3
         var records = registry["records"] as! [[String: Any]]
         for index in records.indices {
             var manifest = records[index]["plugin"] as! [String: Any]
-            manifest["schemaVersion"] = 1
-            manifest["kind"] = manifest["workEnd"] == nil ? "source" : "agent"
-            manifest["sourceAdapter"] = manifest.removeValue(forKey: "returnAdapter")
+            manifest["schemaVersion"] = 2
             records[index]["plugin"] = manifest
         }
         registry["records"] = records
@@ -105,16 +103,16 @@ struct PluginChecks {
         for record in upgraded["records"] as! [[String: Any]] {
             try check((record["plugin"] as! [String: Any])["kind"] == nil)
         }
-        let legacyPackage = root.appendingPathComponent("legacy.charintegration")
-        try FileManager.default.createDirectory(at: legacyPackage, withIntermediateDirectories: true)
-        let legacyManifest = """
-        {"schemaVersion":1,"id":"legacy.app","name":"Legacy app","kind":"source","bundleIdentifier":"com.example.legacy","sourceAdapter":"application"}
-        """
-        try Data(legacyManifest.utf8).write(to: legacyPackage.appendingPathComponent("manifest.json"))
-        let legacyEntry = try migrated.importPackage(at: legacyPackage)
-        let reopened = try IntegrationPluginStore(directory: root)
-        try checkEqual(reopened.entries.first { $0.id == legacyEntry.id }?.plugin.returnAdapter, .application)
-        try checkEqual(reopened.entries.first { $0.id == legacyEntry.id }?.plugin.schemaVersion, 2)
+        let packageBefore = try Data(contentsOf: registryURL)
+        for oldVersion in [1,2] {
+            let unsupported = root.appendingPathComponent("unsupported.charintegration")
+            let manifest = IntegrationPlugin(schemaVersion: oldVersion,id: "unsupported.app",name: "Unsupported",
+                                             bundleIdentifier: "com.example.unsupported",returnAdapter: .application)
+            try writePackage(manifest,at: unsupported)
+            try expectFailure { _ = try migrated.importPackage(at: unsupported) }
+            try checkEqual(try Data(contentsOf: registryURL),packageBefore)
+        }
+        try check(migrated.entries.allSatisfy { $0.plugin.schemaVersion == 3 })
         // Independent capabilities coexist on one record; observer conflicts remain enforced.
         try migrated.setEnabled(false, for: "builtin.agent.codexDesktop")
         let package = root.appendingPathComponent("combined.charintegration")

@@ -31,10 +31,10 @@ public struct PetSkinManifest: Codable, Identifiable, Equatable {
     /// Normalized coordinates, measured from the top left of the full canvas.
     public let anchor: PetSkinAnchor
     public let clips: [String: PetSkinAnimation]
-    /// Optional independent square software icon. Old v1 packages derive it from edgePeek.
+    /// Optional independent square software icon; omitted icons derive from edgePeek.
     public let appIcon: String?
     public let features: PetSkinFeatures?
-    public init(schemaVersion: Int = 1, id: String, name: String, canvasSize: PetSkinSize,
+    public init(schemaVersion: Int = 2, id: String, name: String, canvasSize: PetSkinSize,
                 anchor: PetSkinAnchor, clips: [String: PetSkinAnimation], appIcon: String? = nil, features: PetSkinFeatures? = nil) {
         self.schemaVersion = schemaVersion; self.id = id; self.name = name
         self.canvasSize = canvasSize; self.anchor = anchor; self.clips = clips; self.appIcon = appIcon; self.features = features
@@ -231,7 +231,7 @@ public final class PetSkinStore {
         guard manifestData.count <= 128 * 1024 else { throw PetSkinError.invalid("manifest exceeds 128 KiB") }
         try PetSkinJSONContract.validate(manifestData)
         let manifest = try JSONDecoder().decode(PetSkinManifest.self, from: manifestData)
-        guard [1,2].contains(manifest.schemaVersion) else { throw PetSkinError.invalid("unsupported schema version") }
+        guard manifest.schemaVersion == 2 else { throw PetSkinError.invalid("unsupported schema version; appearance packages require schemaVersion 2") }
         guard manifest.id.range(of: "^[a-z][a-z0-9.-]{1,63}$", options: .regularExpression) != nil,
               !manifest.id.contains(".."), !manifest.name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
               manifest.name.count <= 80 else { throw PetSkinError.invalid("invalid identity") }
@@ -239,14 +239,13 @@ public final class PetSkinStore {
         guard (32...512).contains(size.width), (32...512).contains(size.height),
               manifest.anchor.x.isFinite, manifest.anchor.y.isFinite,
               (0...1).contains(manifest.anchor.x), (0...1).contains(manifest.anchor.y) else { throw PetSkinError.invalid("invalid canvas or anchor") }
-        guard Set(PetSkinClip.allCases.map(\.rawValue)).isSubset(of: Set(manifest.clips.keys)),
-              manifest.schemaVersion == 2 || (manifest.features == nil && otherAssets.isEmpty && Set(manifest.clips.keys) == Set(PetSkinClip.allCases.map(\.rawValue))) else { throw PetSkinError.invalid("seven base clips must be present; v1 allows no extra clips or features") }
-        if manifest.schemaVersion == 2, !manifest.clips.keys.allSatisfy({ $0.range(of: "^[a-zA-Z][a-zA-Z0-9]{0,39}$",options: .regularExpression) != nil }) { throw PetSkinError.invalid("invalid clip name") }
+        guard Set(PetSkinClip.allCases.map(\.rawValue)).isSubset(of: Set(manifest.clips.keys)) else { throw PetSkinError.invalid("seven base clips must be present") }
+        if !manifest.clips.keys.allSatisfy({ $0.range(of: "^[a-zA-Z][a-zA-Z0-9]{0,39}$",options: .regularExpression) != nil }) { throw PetSkinError.invalid("invalid clip name") }
         var uniqueFrames = Set<String>(), frameCount = 0
         for (clip, animation) in manifest.clips {
             guard animation.fps.isFinite, (1...60).contains(animation.fps), (2...120).contains(animation.frames.count) else { throw PetSkinError.invalid("invalid \(clip) duration or frame rate") }
             frameCount += animation.frames.count
-            guard frameCount <= (manifest.schemaVersion == 1 ? 480 : 2048) else { throw PetSkinError.invalid("too many frame references") }
+            guard frameCount <= 2048 else { throw PetSkinError.invalid("too many frame references") }
             for frame in animation.frames {
                 guard safePNGPath(frame) else { throw PetSkinError.invalid("unsafe PNG path") }
                 uniqueFrames.insert(frame)
@@ -254,7 +253,7 @@ public final class PetSkinStore {
         }
         let extras = try manifest.features?.validate(base: manifest)
         frameCount += extras?.references ?? 0
-        guard frameCount <= (manifest.schemaVersion == 1 ? 480 : 2048) else { throw PetSkinError.invalid("too many frame references") }
+        guard frameCount <= 2048 else { throw PetSkinError.invalid("too many frame references") }
         uniqueFrames.formUnion(extras?.frames ?? [])
         guard otherAssets == (extras?.other ?? []) else { throw PetSkinError.invalid("unreferenced script or sound") }
         for path in otherAssets {
@@ -286,7 +285,6 @@ public final class PetSkinStore {
             if !referencedPNGs.contains(path) { pixels += dimensions.width*dimensions.height }
             referencedPNGs.insert(path)
         }
-        guard manifest.schemaVersion != 1 || (entries <= 600 && totalBytes <= 32*1024*1024 && manifestData.count <= 64*1024) else { throw PetSkinError.invalid("v1 package exceeds budget") }
         guard referencedPNGs == packagePNGs else { throw PetSkinError.invalid("missing or unreferenced PNG assets") }
         guard pixels <= 16_777_216 else { throw PetSkinError.invalid("more than 16 megapixels across images") }
         for frame in uniqueFrames {

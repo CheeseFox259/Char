@@ -21,9 +21,6 @@ import numpy as np
 from PIL import Image
 
 MAX_FRAME_BYTES = 4 * 1024 * 1024
-MAX_MANIFEST_BYTES = 64 * 1024
-MAX_PACKAGE_BYTES = 32 * 1024 * 1024
-MAX_ENTRIES = 600
 MAX_TOTAL_PIXELS = 16_777_216
 CLIPS = ["idle", "press", "return", "depart", "arrive", "edgePeek", "edgeHide"]
 ID_PATTERN = re.compile(r"^[a-z][a-z0-9.\-]{1,63}$")
@@ -48,12 +45,12 @@ def main():
     manifest_bytes = os.path.getsize(manifest_path)
     manifest = json.load(open(manifest_path))
     schema = manifest.get("schemaVersion")
-    if schema not in (1, 2):
-        problems.append("this audit targets schemaVersion 1/2 base-animation and audio packages")
-    manifest_limit = 128 * 1024 if schema == 2 else MAX_MANIFEST_BYTES
-    package_limit = 64 * 1024 * 1024 if schema == 2 else MAX_PACKAGE_BYTES
-    entry_limit = 2200 if schema == 2 else MAX_ENTRIES
-    reference_limit = 2048 if schema == 2 else 480
+    if schema != 2:
+        problems.append("appearance packages require schemaVersion 2")
+    manifest_limit = 128 * 1024
+    package_limit = 64 * 1024 * 1024
+    entry_limit = 2200
+    reference_limit = 2048
     if manifest_bytes > manifest_limit:
         problems.append(f"manifest {manifest_bytes} B exceeds {manifest_limit} B")
     features = manifest.get("features", {})

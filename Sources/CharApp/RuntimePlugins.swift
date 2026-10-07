@@ -33,6 +33,7 @@ extension CompanionRuntime {
         // CLI clients retain their own identity, regardless of which terminal hosts them.
         let bundle: String?
         switch end {
+        case .claudeCode: bundle = nil // Render Claude's own artwork rather than its terminal host's icon.
         case .codexCLI, .codexDesktop: bundle = MacOSPlatform.codexBundleID
         case .kimiCLI, .kimiDesktop: bundle = MacOSPlatform.kimiBundleID
         case .deepseekDesktop: bundle = MacOSPlatform.deepseekBundleID

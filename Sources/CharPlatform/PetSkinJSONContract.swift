@@ -4,7 +4,9 @@ import Foundation
 enum PetSkinJSONContract {
     static func validate(_ data: Data) throws {
         let root = try JSONSerialization.jsonObject(with: data) as? [String:Any] ?? [:]
-        guard root["schemaVersion"] as? Int == 2 else { return }
+        guard root["schemaVersion"] as? Int == 2 else {
+            throw PetSkinError.invalid("unsupported schema version; appearance packages require schemaVersion 2")
+        }
         func keys(_ value: Any?, _ allowed: Set<String>, _ path: String) throws -> [String:Any] {
             guard let value, !(value is NSNull) else { return [:] }
             guard let object = value as? [String:Any] else { throw PetSkinError.invalid("\(path) must be an object") }

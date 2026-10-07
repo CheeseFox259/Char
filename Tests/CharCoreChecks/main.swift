@@ -53,7 +53,7 @@ let plugins = PluginChecks()
 try plugins.testPersistenceAndHotReload()
 try plugins.testImportConflictsAndAtomicFailures()
 try plugins.testAssetsAndSymlinks()
-try plugins.testLegacyMigrationAndUnifiedCapabilities()
+try plugins.testCurrentFormatsAndUnifiedCapabilities()
 print("CharCore: 4 integration plugin groups passed")
 
 try CompanionGeometryChecks().run()

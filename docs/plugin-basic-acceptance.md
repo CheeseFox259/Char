@@ -37,14 +37,14 @@
 
 ## 1. 所有集成包：格式、身份和图标
 
-- 每个包分别运行 `char-package-check integration`；v3 再运行 `char-plugin-check inspect`。调用方式见[SDK指南](plugin-development.md#5-开发与验收流程)。使用真实生产清单解码器检查所有交付配置示例，尤其 configuration 的字符串字典。
+- 每个包分别运行 `char-package-check integration`；含进程适配器的包再运行 `char-plugin-check inspect`。调用方式见[SDK指南](plugin-development.md#5-开发与验收流程)。使用真实生产清单解码器检查所有交付配置示例，尤其 configuration 的字符串字典。
 - CLI/Desktop 的插件 ID、workEnd、clientInterface 与 bundle 分别核对。CLI bundle 是终端 App；工作端不能靠进程命令中“提到了某路径”来分流。
 - 图标按[获取流程](plugin-icon-sourcing.md)取得，实际打开最终 PNG 与来源对照，核对每个生成包的引用/字节。PNG 有效不证明是目标产品图标；扩展图标与 Agent 图标分开。用户提供与官方来源分别标注。
 - 包内只放运行资源，入口/图标使用相对路径；将生成包复制/移动到新的临时目录再握手，路径由新宿主上下文解析，不依赖工作区或 build/Char.app。依赖在宿主实际 PATH 中可用。Hook 可以使用的客户端内置运行时不等于适配器 runtime 可用。
 
 通过条件：每个交付包格式有效，身份、图标和配置真实可用；骨架 notInstalled 仅证明协议通，不是能力完成。
 
-## 2. v3：真实进程与协议
+## 2. 进程适配器：真实进程与协议
 
 对最终包启动实际入口，通过 stdin 发送 hello、inspect 和各声明方法；按 id 匹配响应。覆盖未知方法、重复 start/stop/release（如适用）、EOF/SIGTERM 与在途操作。验证 stdout 无调试文字，用户可见诊断能通过 inspect.detail/error 获取。
 
@@ -114,7 +114,7 @@ inspect 的安装前→安装后→更新/损坏→卸载结果合并在维护�
 
 ## 7. 外观包：数据、完整动画与预算
 
-`.charpet` 不执行以上集成适配器分支。v2仅对声明能力补基本检查：变体/主题解析、叠加层、音效格式、bindings及脚本同步返回和超时。无需重建宿主或代替用户验收音效、鼠标和系统图标。对最终包运行 `char-package-check skin`，按[格式](pet-skin-format.md)检查七组动画、8-bit RGBA、anchor、帧序、路径、引用、尺寸/像素/字节预算和独立 appIcon。
+`.charpet` 不执行以上集成适配器分支。仅对声明能力补基本检查：变体/主题解析、叠加层、音效格式、bindings及脚本同步返回和超时。无需重建宿主或代替用户验收音效、鼠标和系统图标。对最终包运行 `char-package-check skin`，按[格式](pet-skin-format.md)检查七组动画、8-bit RGBA、anchor、帧序、路径、引用、尺寸/像素/字节预算和独立 appIcon。
 
 实际打开最终图标，检查18px/64px辨识度；先核对透明基准、表情局部与短idle，再观看七组完整预览及 idle 多次循环，检查非空画面、透明边界、回弹和首尾。按[实际边缘坐标](appearance-development.md#边缘预演的实际坐标)分别预演边缘动作和落位idle；真实裁切、跨屏、Space、Reduce Motion 与交互仍交用户验收。帧差/运动指标用于定位异常，不能代替完整视觉检查；复用适用工具，只补具体缺口。预览通过不等于 App 组合通过。
 

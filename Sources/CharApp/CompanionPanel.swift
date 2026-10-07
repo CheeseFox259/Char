@@ -5,7 +5,7 @@ import CharPlatform
 
 @MainActor private enum BubbleDrawing {
     static func raster(size: NSSize, draw: () -> Void) -> NSImage {
-        let scale: CGFloat = 2
+        let scale: CGFloat = CommandLine.arguments.contains("--documentation-export") ? 4 : 2
         let rep = NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: Int(size.width * scale),
                                   pixelsHigh: Int(size.height * scale), bitsPerSample: 8, samplesPerPixel: 4,
                                   hasAlpha: true, isPlanar: false, colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0)!
@@ -17,7 +17,7 @@ import CharPlatform
             NSGraphicsContext.restoreGraphicsState()
             NSGraphicsContext.current = previousContext
         }
-        // rep.size establishes the logical-to-pixel CTM (2×); do not scale twice.
+        // rep.size establishes the logical-to-pixel CTM; do not scale twice.
         NSGraphicsContext.current?.cgContext.clear(CGRect(origin: .zero, size: size))
         draw()
         let image = NSImage(size: size); image.addRepresentation(rep); return image

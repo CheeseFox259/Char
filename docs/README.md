@@ -1,6 +1,6 @@
 # Char 文档
 
-本文档描述 v1.0.0。历史开发日志、验收会话和实验报告保留在开发者本地，不属于发行内容。
+使用指南、自定义开发接口和维护资料。
 
 ## 使用
 
@@ -15,7 +15,7 @@
 | --- | --- | --- |
 | 新客户端的监控、跳转、回城或安装维护 | [插件开发指南](plugin-development.md) / [性能要求](plugin-performance.md) | [MiniMax CLI + Desktop](../integrations/minimax-code/README.md) |
 | 已有能力的名称、图标与目标应用 | [配置包格式](integration-plugin-format.md) | [配置包目录](../Resources/Integrations) |
-| 新角色、动作、主题、跟随或气泡皮肤 | [形象开发指南](appearance-development.md) / [完整 API](appearance-v2-api.md) | [菲比](../examples/appearance/feibi/README.md) |
+| 新角色、动作、主题、跟随或气泡皮肤 | [形象开发指南](appearance-development.md) / [完整 API](appearance-api.md) | [菲比](../examples/appearance/feibi/README.md) |
 | 使用开发 Agent | [三份开发指令](development-prompts.md) | 在对应目录读取 AGENTS.md 后提出需求 |
 
 契约：[适配器协议](capability-adapter-protocol.md)、[插件格式](integration-plugin-format.md)、[形象格式](pet-skin-format.md)、[图标获取](plugin-icon-sourcing.md)。

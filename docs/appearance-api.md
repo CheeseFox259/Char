@@ -1,10 +1,10 @@
 # Char 外观能力 API（schemaVersion 2）
 
-适用 Char 0.3.0 起。v1包继续兼容；作者按本次需求使用可选能力，不必全部实现。此文与[基础格式](pet-skin-format.md)足以开发，无需阅读宿主源码。确定SDK版本后，在独立工作区制作资源，宿主源码保持只读。
+作者按本次需求使用可选能力，不必全部实现。所有形象包使用 schemaVersion 2。此文与[基础格式](pet-skin-format.md)足以开发，无需阅读宿主源码。确定SDK版本后，在独立工作区制作资源，宿主源码保持只读。
 
 ## 清单与解析顺序
 
-保留 `schemaVersion/id/name/canvasSize/anchor/clips/appIcon`，将版本设为2，新增可选 `features`。七个基础动作仍必需；可添加英文标识命名动作（字母开头，后续字母/数字，共1–40字符）。所有逐帧动作都匹配基础画布；每组2–120帧、1–60fps。
+清单包含 `schemaVersion/id/name/canvasSize/anchor/clips/appIcon`；schemaVersion 固定为2，`features` 可选。七个基础动作仍必需；可添加英文标识命名动作（字母开头，后续字母/数字，共1–40字符）。所有逐帧动作都匹配基础画布；每组2–120帧、1–60fps。
 
 `features`字段：`variants`、`themes`、`defaultTheme`、`tracking`、`bubbles`、`sounds`、`bindings`、`behavior`、`hitRegions`、`script`、`loopingClips`。未知字段报错。路径均为安全相对路径；禁止绝对路径、反斜杠、空段、`.`、`..`及符号链接。
 
@@ -59,14 +59,14 @@ bubbles仅改变外观，Agent身份图标仍由集成插件提供。主题可�
 
 ## 音效与事件
 
-sounds是音效ID→对象。`file`接受wav/wave、aiff/aif/aifc、m4a、mp3、aac、caf、flac，音频扩展名不区分大小写。单文件≤8MiB，必须经当前macOS的NSSound实际解码且时长>0、≤30秒；扩展名在列表中不代表所有编码均可用。使用系统Core Audio，不附带额外解码器；OGG/Opus需先转为受支持格式。新增格式从1.0.0本次资源与音频更新起可导入，旧安装需替换为更新后的App；原有wav/aiff/m4a不受影响。volume=0…1（默认1），cooldown=0.1…60秒（默认0.3）。音效ID与事件名一致时自动播放；其他ID用playSound。全局静音优先，切换形象停止旧音效，不允许播放包外文件。[Apple NSSound格式说明](https://developer.apple.com/documentation/appkit/nssound)。
+sounds是音效ID→对象。`file`接受wav/wave、aiff/aif/aifc、m4a、mp3、aac、caf、flac，音频扩展名不区分大小写。单文件≤8MiB，必须经当前macOS的NSSound实际解码且时长>0、≤30秒；扩展名在列表中不代表所有编码均可用。使用系统Core Audio，不附带额外解码器；OGG/Opus需先转为受支持格式。volume=0…1（默认1），cooldown=0.1…60秒（默认0.3）。音效ID与事件名一致时自动播放；其他ID用playSound。全局静音优先，切换形象停止旧音效，不允许播放包外文件。[Apple NSSound格式说明](https://developer.apple.com/documentation/appkit/nssound)。
 
 ```json
 {"sounds":{"click":{"file":"audio/click.wav","volume":0.4,"cooldown":0.3}},
  "bindings":{"hoverEnter":[{"type":"playClip","value":"greet"}], "return":[{"type":"playSound","value":"click"}]}}
 ```
 
-`sounds.notification` 是新提醒的保留音效入口：仅在提醒经过过滤、路由器实际发出提示音时播放，运行中或普通状态变化不会触发。提醒音优先级：用户在设置中明确选择的音效 → 当前形象的 notification → 系统 Ping。形象音效在冷却中保持安静，不改播 Ping；未提供或无法播放时回退系统音。`sounds.click` 只负责点击，不能替代 notification；需要二者时可引用同一个文件。此入口随本次1.0.0音效更新提供，需更新App。
+`sounds.notification` 是新提醒的保留音效入口：仅在提醒经过过滤、路由器实际发出提示音时播放，运行中或普通状态变化不会触发。提醒音优先级：用户在设置中明确选择的音效 → 当前形象的 notification → 系统 Ping。形象音效在冷却中保持安静，不改播 Ping；未提供或无法播放时回退系统音。`sounds.click` 只负责点击，不能替代 notification；需要二者时可引用同一个文件。
 
 事件：select、theme、hoverEnter、hoverLeave、dragStart、dragEnd、click、attention、return、placement。鼠标进入/离开只各发一次，不按动画帧触发。事件对象：name、placement、theme、hold（字符串true/false）；可选workEnd（插件工作端标识）、state。click/hover中的state=pet或bubble（气泡悬停带workEnd）；attention的state为running、pending或原生StopReason标识（如turnEnded、approval、failure等，仅对监控确实提供的状态）。不含消息正文、网页内容、凭证或来源token。
 
@@ -117,7 +117,7 @@ behavior可选字段：
 | bubbleDistance | 8…72pt；默认用户距离 |
 | bubbleCapacity | 3…20，进一步限制几何可容纳数量；不会强行塞入重叠气泡 |
 | bubbleArcDegrees | 边缘弧跨度60…140度；默认140 |
-| bubbleStartDegrees / bubbleClockwise | 桌面环起点−360…360度 / 顺序方向；默认90/false（保持旧版顺序） |
+| bubbleStartDegrees / bubbleClockwise | 桌面环起点−360…360度 / 顺序方向；默认90/false（默认顺序） |
 
 设置中的“使用形象行为偏好”可关闭这些默认行为并回到用户原偏好；不会改写用户距离、回城策略或位置偏好。脚本和事件绑定仍按包定义运行。自行用click事件执行导航或设置时，将对应click/bubbleClick设为none，避免同时执行默认点击动作。hitRegions最多16个rect/ellipse，决定宠物点击/拖拽区域；气泡采用标准圆形点击区，透明空白不会阻挡其他App。锚点、旋转和镜像应用于命中换算。当前不提供任意窗口层级、系统Space曲线或外部应用命令。
 
@@ -127,7 +127,7 @@ behavior可选字段：
 
 不能用Finder资源叉图标修改signed App；[Apple QA1940](https://developer.apple.com/library/archive/qa/qa1940/_index.html)说明签名禁止这类扩展属性；本方案修改资源后重签，遵守[Apple TN2206](https://developer.apple.com/library/archive/technotes/tn2206/)的资源封存规则。
 
-v2：manifest≤128KiB，包≤64MiB，目录项≤2200，动作引用总数≤2048；PNG≤4MiB，帧32…512，其他PNG32…1024；appIcon及主题图标正方形128/256/512/1024；所有**唯一PNG总像素仍≤16,777,216**。理论裸RGBA上限64MiB，不代表RSS。包仅含引用的PNG、音效、单个JS及manifest；小型Finder .DS_Store元数据忽略，作者导出仍应排除。v1预算不变。
+资源预算：manifest≤128KiB，包≤64MiB，目录项≤2200，动作引用总数≤2048；PNG≤4MiB，帧32…512，其他PNG32…1024；appIcon及主题图标正方形128/256/512/1024；所有**唯一PNG总像素仍≤16,777,216**。理论裸RGBA上限64MiB，不代表RSS。包仅含引用的PNG、音效、单个JS及manifest；小型Finder .DS_Store元数据忽略，作者导出仍应排除。
 
 性能：主题/姿态/图片缓存；眼睛量化重绘；无脚本帧事件；无能力无helper；单脚本常驻、串行有界消息；音效按需缓存并冷却；安装图标只在选择变化时事务更新。不要为一个角色新建完整监控或物理引擎。
 

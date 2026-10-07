@@ -6,7 +6,7 @@
 | --- | --- | --- |
 | 新客户端 CLI、Desktop、双端或准确起点 | [integrations/AGENTS.md](../integrations/AGENTS.md) | `integrations/<软件slug>/` 或独立项目 |
 | 已有能力配置包/集成包交付/内置资源 | [Resources/Integrations/AGENTS.md](../Resources/Integrations/AGENTS.md) | 用户工作区；新增能力路由到上一份 |
-| 自定义形象、动作、跟随、主题/皮肤、音效与图标 | [Resources/Skins/AGENTS.md](../Resources/Skins/AGENTS.md) | 形象工作区的 `packages/` 输出v1/v2包 |
+| 自定义形象、动作、跟随、主题/皮肤、音效与图标 | [Resources/Skins/AGENTS.md](../Resources/Skins/AGENTS.md) | 形象工作区的 `packages/` 输出形象包 |
 
 ## 用户怎样开始
 
@@ -44,7 +44,7 @@
 | 目录、CLI/Desktop/准确起点分支、骨架与工具示范 | [能力SDK指南](plugin-development.md) |
 | 清单、更新、依赖与权限 | [集成格式](integration-plugin-format.md) |
 | 适配器方法、事件、运行上下文与超时 | [协议](capability-adapter-protocol.md) |
-| 图像动作、图标与预算 | [外观指南](appearance-development.md)、[形象格式](pet-skin-format.md)、[v2完整API](appearance-v2-api.md) |
+| 图像动作、图标与预算 | [外观指南](appearance-development.md)、[形象格式](pet-skin-format.md)、[完整外观API](appearance-api.md) |
 | 开发者检查：调度、所有权、并发、真实进程及性能 | [基本验收](plugin-basic-acceptance.md) |
 | 用户的导入、加载、逐端测试、热维护与恢复 | [用户验收交付规范](plugin-user-acceptance.md) |
 

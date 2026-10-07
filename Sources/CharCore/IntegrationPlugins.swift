@@ -1,7 +1,7 @@
 import Foundation
 import ImageIO
 
-/// Legacy configuration or a versioned process adapter with declared capabilities.
+/// Current integration configuration or a process adapter with declared capabilities.
 public struct IntegrationPlugin: Codable, Identifiable, Equatable, Sendable {
     public enum ReturnAdapter: String, Codable, Sendable { case tabbit, vscode, application }
     public var schemaVersion: Int
@@ -15,7 +15,7 @@ public struct IntegrationPlugin: Codable, Identifiable, Equatable, Sendable {
     public var clientInterface: ClientInterface?
     public var adapter: AdapterDescriptor?
 
-    public init(schemaVersion: Int = 2, id: String, name: String,
+    public init(schemaVersion: Int = 3, id: String, name: String,
                 workEnd: WorkEnd? = nil, bundleIdentifier: String,
                 returnAdapter: ReturnAdapter? = nil, icon: String? = nil,
                 version: String? = nil, clientInterface: ClientInterface? = nil, adapter: AdapterDescriptor? = nil) {
@@ -27,12 +27,11 @@ public struct IntegrationPlugin: Codable, Identifiable, Equatable, Sendable {
 
     private enum CodingKeys: String, CodingKey {
         case schemaVersion, id, name, workEnd, bundleIdentifier, returnAdapter, icon, version, clientInterface, adapter
-        case kind, sourceAdapter // Version 1 compatibility only; never encoded.
     }
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         let version = try c.decode(Int.self, forKey: .schemaVersion)
-        guard (1...3).contains(version) else {
+        guard version == 3 else {
             throw IntegrationPluginError.invalid("manifest version")
         }
         id = try c.decode(String.self, forKey: .id)
@@ -40,21 +39,11 @@ public struct IntegrationPlugin: Codable, Identifiable, Equatable, Sendable {
         workEnd = try c.decodeIfPresent(WorkEnd.self, forKey: .workEnd)
         bundleIdentifier = try c.decode(String.self, forKey: .bundleIdentifier)
         icon = try c.decodeIfPresent(String.self, forKey: .icon)
-        if version == 1 {
-            let kind = try c.decode(String.self, forKey: .kind)
-            returnAdapter = try c.decodeIfPresent(ReturnAdapter.self, forKey: .sourceAdapter)
-            guard (kind == "agent" && workEnd != nil && returnAdapter == nil) ||
-                    (kind == "source" && workEnd == nil && returnAdapter != nil) else {
-                throw IntegrationPluginError.invalid("legacy adapter fields")
-            }
-        } else {
-            returnAdapter = try c.decodeIfPresent(ReturnAdapter.self, forKey: .returnAdapter)
-        }
+        returnAdapter = try c.decodeIfPresent(ReturnAdapter.self, forKey: .returnAdapter)
         self.version = try c.decodeIfPresent(String.self, forKey: .version)
         clientInterface = try c.decodeIfPresent(ClientInterface.self, forKey: .clientInterface)
         adapter = try c.decodeIfPresent(AdapterDescriptor.self, forKey: .adapter)
-        guard version == 3 || adapter == nil else { throw IntegrationPluginError.invalid("adapter requires manifest v3") }
-        schemaVersion = version == 3 ? 3 : 2
+        schemaVersion = 3
     }
     public func encode(to encoder: Encoder) throws {
         var c = encoder.container(keyedBy: CodingKeys.self)
@@ -106,7 +95,7 @@ public final class IntegrationPluginStore {
         var isBuiltIn: Bool
     }
     private struct Registry: Codable {
-        var schemaVersion = 2
+        var schemaVersion = 3
         var records: [Record]
         var tombstones: Set<String> = []
     }
@@ -125,11 +114,24 @@ public final class IntegrationPluginStore {
     }
 
     public func reload() throws {
-        let candidate = try JSONDecoder().decode(Registry.self, from: Data(contentsOf: registryURL))
-        guard (1...3).contains(candidate.schemaVersion) else { throw IntegrationPluginError.invalid("registry version") }
+        let data = try Data(contentsOf: registryURL)
+        var object = try JSONSerialization.jsonObject(with: data) as? [String: Any] ?? [:]
+        guard object["schemaVersion"] as? Int == 3 else { throw IntegrationPluginError.invalid("registry version") }
+        var changed = false
+        if var records = object["records"] as? [[String: Any]] {
+            for index in records.indices where records[index]["isBuiltIn"] as? Bool == true {
+                guard let stored = records[index]["plugin"] as? [String: Any],
+                      stored["schemaVersion"] as? Int == 2,
+                      let current = Self.builtIns.first(where: { $0.id == stored["id"] as? String }) else { continue }
+                records[index]["plugin"] = try JSONSerialization.jsonObject(with: JSONEncoder().encode(current))
+                changed = true
+            }
+            object["records"] = records
+        }
+        let candidate = try JSONDecoder().decode(Registry.self, from: JSONSerialization.data(withJSONObject: object))
         try validate(candidate)
-        registry = candidate
-        publish()
+        if changed { try commit(candidate) }
+        else { registry = candidate; publish() }
     }
 
     @discardableResult public func importPackage(at url: URL, replacingExisting: Bool = false) throws -> IntegrationPluginEntry {
@@ -215,9 +217,8 @@ public final class IntegrationPluginStore {
     private func commit(_ candidate: Registry) throws {
         try validate(candidate)
         let encoder = JSONEncoder(); encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
-        var migrated = candidate; migrated.schemaVersion = 3
-        try encoder.encode(migrated).write(to: registryURL, options: .atomic)
-        registry = migrated
+        try encoder.encode(candidate).write(to: registryURL, options: .atomic)
+        registry = candidate
         publish()
     }
 
@@ -254,7 +255,7 @@ public final class IntegrationPluginStore {
     private func validateManifest(_ plugin: IntegrationPlugin) throws {
         let idPattern = "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$"
         let bundlePattern = "^[A-Za-z0-9][A-Za-z0-9-]*(\\.[A-Za-z0-9][A-Za-z0-9-]*)+$"
-        guard [2, 3].contains(plugin.schemaVersion),
+        guard plugin.schemaVersion == 3,
               plugin.id.range(of: idPattern, options: .regularExpression) != nil,
               !plugin.name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, plugin.name.count <= 100,
               plugin.bundleIdentifier.range(of: bundlePattern, options: .regularExpression) != nil else {

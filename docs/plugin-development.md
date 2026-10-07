@@ -88,7 +88,7 @@ CLI/Desktop 分开包、唯一 id/workEnd、各自 clientInterface；共用源�
 
 | 能力 | 必须实现 | 不具备精确能力时 |
 | --- | --- | --- |
-| 所有 v3 适配器包 | hello、只读 inspect | notInstalled / unavailable 并说明具体缺项 |
+| 所有适配器包 | hello、只读 inspect | notInstalled / unavailable 并说明具体缺项 |
 | monitor | start、stop、v1 事件推送 | 只声明已证实信号；不发布猜测事件 |
 | visit | nativeID→对象聚焦→确认 | 激活应用返回 fallback，失败 unavailable |
 | origin | capture、check、focus、release | 无具体来源对象则拒绝 capture 或省略 origin，宿主退回应用级锚点 |
@@ -180,7 +180,7 @@ focus params 同 check，返回 outcome；release params 仅 token、成功 resu
 # 继承第1节的路径变量。先构建自己的完整包，再按适用能力执行。
 CHAR_PLUGIN_PACKAGE="$CHAR_PLUGIN_WORKSPACE/packages/sample-cli.charintegration"
 swift run --package-path "$CHAR_SDK_ROOT" char-package-check integration "$CHAR_PLUGIN_PACKAGE"
-# v3 执行 inspect；v1/v2配置包不运行适配器。
+# 含适配器的包执行 inspect；仅组合内置能力的配置包不运行适配器。
 swift run --package-path "$CHAR_SDK_ROOT" char-plugin-check inspect "$CHAR_PLUGIN_PACKAGE"
 
 # monitor 包准备本工作端的合成SDK回放样本；不改SDK示例、不执行客户端。

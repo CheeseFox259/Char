@@ -2,6 +2,7 @@
 """Check published Markdown links and accidental developer-home paths."""
 import pathlib
 import re
+import subprocess
 import sys
 from urllib.parse import unquote, urlsplit
 root = pathlib.Path(__file__).resolve().parent.parent
@@ -9,6 +10,10 @@ files = [root/name for name in ('README.md','CONTRIBUTING.md','SECURITY.md','CON
 for directory in ('docs','integrations','examples','Resources'):
     files += [p for p in (root/directory).rglob('*.md') if not any(x in p.parts for x in ('build','reports','preview','__pycache__'))]
 errors = []
+ignored = set(subprocess.run(
+    ['git','check-ignore','--stdin'], input='\n'.join(str(p.relative_to(root)) for p in files),
+    text=True, capture_output=True, cwd=root, check=False).stdout.splitlines())
+files = [p for p in files if str(p.relative_to(root)) not in ignored]
 for path in files:
     if not path.exists(): continue
     source = path.read_text()

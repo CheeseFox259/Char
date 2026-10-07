@@ -1,12 +1,12 @@
-# Char pet skin format: v1 compatibility and v2
+# Char 形象包格式
 
-A `.charpet` is a local directory. Version 1 contains manifest and PNG frames; version 2 adds optional capabilities described in the [complete v2 API](appearance-v2-api.md), including restricted event scripts, audio and themes. This section defines the unchanged v1 contract. Import completes validation before installing a private copy; the store API does not select it automatically, while Settings imports and immediately selects it. Selection applies immediately and survives restart. Deleting the selected custom pet selects built-in `char.default`; the built-in vector pet cannot be deleted.
+A `.charpet` is a local directory containing manifest and referenced resources. All packages use schemaVersion 2. Optional capabilities, including scripts, audio, themes and tracking, are described in the [appearance API](appearance-api.md). Settings imports and immediately selects the package; selection survives restart. Deleting the selected custom pet restores the built-in `char.default`.
 
 ## Manifest
 
 ```json
 {
-  "schemaVersion": 1,
+  "schemaVersion": 2,
   "id": "studio.my-pet",
   "name": "My pet",
   "appIcon": "icon.png",
@@ -28,20 +28,20 @@ The example is a schema illustration; ship actual frames for every path. Use [th
 
 | Field | Rule |
 | --- | --- |
-| schemaVersion | `1` for this contract; `2` for optional capabilities. Other versions are rejected. |
+| schemaVersion | Integer `2`. Other values are rejected. |
 | id | 2–64 ASCII characters: lowercase letter first, then lowercase letters, digits, `.` or `-`; no `..`. IDs must be unique, including `char.default`. |
 | name | Nonempty after trimming whitespace, maximum 80 characters. |
-| appIcon | Optional safe relative PNG path; square 128, 256, 512 or 1024 pixels, single-image 8-bit RGBA. Prefer 1024. It has its own size, independent of frame canvas. Older v1 packages omit it and derive a right-edge icon from the final edgePeek frame. |
+| appIcon | Optional safe relative PNG path; square 128, 256, 512 or 1024 pixels, single-image 8-bit RGBA. Prefer 1024. It has its own size, independent of frame canvas. When omitted, derive a right-edge icon from the final edgePeek frame. |
 | canvasSize | Integer width and height, each 32–512 pixels; every frame has this size. |
 | anchor | Finite normalized x/y in `[0,1]`, measured from the top left. Renderer places this point at the pet's saved center. |
-| clips | Exactly the seven named clips above; each has 2–120 ordered frame references and finite fps from 1–60. Maximum 480 references across all clips. |
+| clips | The seven named clips above are required; extra named clips are optional; each has 2–120 ordered frame references and finite fps from 1–60. Maximum 2048 references across all clips. |
 | frames | Relative `/` paths ending in `.png`. No absolute paths, backslashes, empty components, `.` or `..`. A path may be reused by multiple clips. |
 
 ## Frame and package limits
 
 - Each frame is a single-image, **8-bit RGBA PNG** (PNG color type 6). Indexed, RGB-only, grayscale, 16-bit and animated PNGs are rejected. Export in sRGB; pixels outside the character should have alpha zero.
-- Maximum 4 MiB per PNG, 64 KiB manifest, 32 MiB entire package, 600 directory entries and **16,777,216 pixels across unique frames and the authored icon**. Dimensions are checked before bitmap decoding.
-- All package files must be `manifest.json` or PNG assets referenced by clips or appIcon; no unused images, links, sockets or executables. Symlinks are rejected anywhere, including the package directory. All required files must be present and decodable.
+- Maximum 4 MiB per PNG, 128 KiB manifest, 64 MiB entire package, 2200 directory entries and **16,777,216 pixels across unique frames and the authored icon**. Dimensions are checked before bitmap decoding.
+- All package files must be `manifest.json` or referenced PNG/audio/script resources allowed by the [appearance API](appearance-api.md); no unused files, links, sockets or native executables. Symlinks are rejected anywhere, including the package directory. All required files must be present and decodable.
 - An invalid import, duplicate ID or copied package that changes during import leaves installed skins and selection intact. Import is published by a same-directory rename; selection JSON uses atomic replacement.
 
 ## Animation authoring
@@ -50,7 +50,7 @@ The example is a schema illustration; ship actual frames for every path. Use [th
 
 The idle sequence should include breathing, squash/stretch with elastic recovery, a small tilt and a blink. Keep the first and last pose compatible so wrapping is unobtrusive. `press` gives tactile compression; `return` gives a short rebound; `depart` ends transparent/small and `arrive` starts transparent/small, ending at rest. For edge clips, author movement toward/away from the **bottom** of the canvas; the companion renderer can orient it for the selected edge. Keep the anchor stable across every frame and leave padding for overshoot and feet.
 
-Preview edge clips and the settled idle separately. The renderer keeps the edge orientation throughout edge placement, including idle and feedback. Older hosts only rotated edgePeek/edgeHide and snapped back to desktop orientation on settling; they require the host fix, not a repackaged skin. The panel-local pet frame is not the screen clipping boundary. See the [actual edge preview coordinates](appearance-development.md#边缘预演的实际坐标) before composing artwork; installed-host behavior must be verified by the user.
+Preview edge clips and the settled idle separately. The renderer keeps the edge orientation throughout edge placement, including idle and feedback. The panel-local pet frame is not the screen clipping boundary. See the [actual edge preview coordinates](appearance-development.md#边缘预演的实际坐标) before composing artwork; installed-host behavior must be verified by the user.
 
 Char validates file structure and pixels. It cannot mechanically judge whether breathing, elastic motion or a blink looks good; preview the full sequence before distributing it.
 
@@ -65,6 +65,6 @@ Developer walkthrough: [appearance-development.md](appearance-development.md). C
 
 ## Software icons
 
-Selecting, importing or restoring an appearance updates the running application icon, menu-bar icon and Settings preview immediately; restart restores the selected artwork. Deleting the selected appearance restores the default. Icons are static cached artwork, not an extra animation loop. An authored appIcon is used as-is; automatic legacy fallback rotates the final edgePeek frame from the bottom authoring direction to the right edge and composes it in the default icon tile.
+Selecting, importing or restoring an appearance updates the running application icon, menu-bar icon and Settings preview immediately; restart restores the selected artwork. Deleting the selected appearance restores the default. Icons are static cached artwork, not an extra animation loop. An authored appIcon is used as-is; automatic icon derivation rotates the final edgePeek frame from the bottom authoring direction to the right edge and composes it in the default icon tile.
 
-The project logo and pristine installation use the built-in right-edge icon. Char 0.3.0 automatically synchronizes a selected appearance's icon into a writable ad hoc installation using a staged, re-signed, strictly verified bundle and a pristine Release backup. Default selection restores the original artwork. This can change Accessibility trust; Developer ID signatures are not silently replaced. Details, failure handling and user checks are in the [v2 API](appearance-v2-api.md#安装图标与预算).
+The project logo and pristine installation use the built-in right-edge icon. Char automatically synchronizes a selected appearance's icon into a writable ad hoc installation using a staged, re-signed, strictly verified bundle and a pristine Release backup. Default selection restores the original artwork. This can change Accessibility trust; Developer ID signatures are not silently replaced. Details, failure handling and user checks are in the [外观 API](appearance-api.md#安装图标与预算).

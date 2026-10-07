@@ -32,16 +32,16 @@ private func skinRequire(_ condition: @autoclosure () -> Bool, _ message: String
     try skinRequire(budgetStore.image(clip: "idle",elapsed: 0,placement: "desktop")?.tiffRepresentation != nil,"eviction prevented frame reload")
     try budgetStore.select(id: PetSkinStore.defaultID)
     try skinRequire(budgetStore.cachedImageBytes == 0,"inactive skin cache retained after selection")
-    // Old schema-v1 packages remain valid and derive a peeking icon.
-    let legacy = temp.appendingPathComponent("legacy.charpet")
-    try fm.copyItem(at: sample, to: legacy)
-    var legacyJSON = try JSONSerialization.jsonObject(with: Data(contentsOf: legacy.appendingPathComponent("manifest.json"))) as! [String: Any]
-    legacyJSON.removeValue(forKey: "appIcon"); legacyJSON["id"] = "char.legacy-icon-check"
-    try fm.removeItem(at: legacy.appendingPathComponent(manifest.appIcon!))
-    try JSONSerialization.data(withJSONObject: legacyJSON).write(to: legacy.appendingPathComponent("manifest.json"))
-    let legacyStore = try PetSkinStore(directory: temp.appendingPathComponent("legacy-store"))
-    let legacyManifest = try legacyStore.importPackage(at: legacy)
-    try skinRequire(legacyManifest.appIcon == nil && legacyStore.icon(for: legacyManifest.id)?.size == NSSize(width: 1024, height: 1024), "old package lost derived software icon")
+    // Current packages without appIcon derive a peeking icon.
+    let derived = temp.appendingPathComponent("derived.charpet")
+    try fm.copyItem(at: sample, to: derived)
+    var derivedJSON = try JSONSerialization.jsonObject(with: Data(contentsOf: derived.appendingPathComponent("manifest.json"))) as! [String: Any]
+    derivedJSON.removeValue(forKey: "appIcon"); derivedJSON["id"] = "char.derived-icon-check"
+    try fm.removeItem(at: derived.appendingPathComponent(manifest.appIcon!))
+    try JSONSerialization.data(withJSONObject: derivedJSON).write(to: derived.appendingPathComponent("manifest.json"))
+    let derivedStore = try PetSkinStore(directory: temp.appendingPathComponent("derived-store"))
+    let derivedManifest = try derivedStore.importPackage(at: derived)
+    try skinRequire(derivedManifest.appIcon == nil && derivedStore.icon(for: derivedManifest.id)?.size == NSSize(width: 1024, height: 1024), "package lost derived software icon")
     for clip in PetSkinClip.allCases {
         try skinRequire(store.image(for: manifest.id, clip: clip, elapsed: 0) != nil, "first frame did not decode")
         try skinRequire(store.image(for: manifest.id, clip: clip, elapsed: 0.2) != nil, "animated frame did not decode")
@@ -95,7 +95,7 @@ private func skinRequire(_ condition: @autoclosure () -> Bool, _ message: String
         edit(&object)
         try JSONSerialization.data(withJSONObject: object).write(to: url)
     }
-    try reject("version") { root in try changeManifest(root) { $0["schemaVersion"] = 2 } }
+    try reject("version") { root in try changeManifest(root) { $0["schemaVersion"] = 1 } }
     try reject("path") { root in try changeManifest(root) { object in
         var clips = object["clips"] as! [String: Any]
         clips["idle"] = ["fps":24,"frames":["../outside.png","../outside.png"]]; object["clips"] = clips
