@@ -317,7 +317,9 @@ def main():
     manifest = {"schemaVersion": 2, "id": "feibi.pet", "name": "菲比", "appIcon": "icon.png",
                 "canvasSize": {"width": canvas, "height": canvas}, "anchor": rig["anchor"], "clips": clips,
                 "features": {"sounds": {"click": {"file": "audio/phoebe_chubby_4.mp3",
-                                                "volume": 0.55, "cooldown": 4}}}}
+                                                "volume": 0.55, "cooldown": 4},
+                                        "notification": {"file": "audio/phoebe_chubby_4.mp3",
+                                                         "volume": 0.55, "cooldown": 4}}}}
     with open(os.path.join(package, "manifest.json"), "w") as fh:
         json.dump(manifest, fh, indent=2, ensure_ascii=False, sort_keys=True)
         fh.write("\n")

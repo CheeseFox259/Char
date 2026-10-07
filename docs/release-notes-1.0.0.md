@@ -4,7 +4,7 @@
 
 ## 同版本资源更新（2026-10-07）
 
-菲比示例替换为用户已确认正常的新版美术，形象包升为 v2 并增加点击音效（55% 音量、4 秒冷却）。音效来自 [Genius-Society/phoebe_chubby](https://github.com/Genius-Society/phoebe_chubby)，原样提供 MP3，保留 CC BY-NC-SA 4.0 来源与许可说明。App、DMG、示例 ZIP 和校验和同时重新打包，版本号仍为 1.0.0；新增形象音效格式 MP3、AAC、CAF、FLAC 及 WAV/AIFF 别名，沿用系统解码与导入时的大小/时长检查；重新构建通用应用，源代码标签不移动，本次更新的实际源码见 main 后续提交及下方来源链接。本次按用户要求未执行新的测试。已有菲比私有副本需删除后重新导入才能获得音效。
+菲比示例替换为用户已确认正常的新版美术，形象包升为 v2 并增加点击与新提醒音效（55% 音量、4 秒冷却）。音效来自 [Genius-Society/phoebe_chubby](https://github.com/Genius-Society/phoebe_chubby)，原样提供 MP3，保留 CC BY-NC-SA 4.0 来源与许可说明。App、DMG、示例 ZIP 和校验和同时重新打包，版本号仍为 1.0.0；新增形象音效格式 MP3、AAC、CAF、FLAC 及 WAV/AIFF 别名，沿用系统解码与导入时的大小/时长检查；重新构建通用应用，源代码标签不移动，本次更新的实际源码见 main 后续提交及下方来源链接。本次按用户要求未执行新的测试。新提醒优先使用用户音效，其次当前形象的 notification，最后系统 Ping。已有菲比私有副本需删除后重新导入才能获得音效；仅点击音绑定不会改变提醒音。
 
 - 支持 Claude Code、Codex CLI/Desktop、Kimi CLI/App、DeepSeek Harness Desktop 与 pi；提供 MiniMax CLI/Desktop 能力插件示例。
 - 插件支持不重启导入、启停、同 ID 更新与所属集成卸载；新增客户端无需修改 Char 源码。

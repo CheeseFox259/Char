@@ -435,6 +435,7 @@ actor ObservationWorker {
             if effect == .playSound {
                 if demo { demoSoundCount += 1 }
                 else if let path = settings.audioFilePath, let sound = NSSound(contentsOfFile: path, byReference: true) { sound.play() }
+                else if playAppearanceSound("notification") { }
                 else { NSSound(named: NSSound.Name("Ping"))?.play() }
             }
         }

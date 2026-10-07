@@ -66,6 +66,8 @@ sounds是音效ID→对象。`file`接受wav/wave、aiff/aif/aifc、m4a、mp3、
  "bindings":{"hoverEnter":[{"type":"playClip","value":"greet"}], "return":[{"type":"playSound","value":"click"}]}}
 ```
 
+`sounds.notification` 是新提醒的保留音效入口：仅在提醒经过过滤、路由器实际发出提示音时播放，运行中或普通状态变化不会触发。提醒音优先级：用户在设置中明确选择的音效 → 当前形象的 notification → 系统 Ping。形象音效在冷却中保持安静，不改播 Ping；未提供或无法播放时回退系统音。`sounds.click` 只负责点击，不能替代 notification；需要二者时可引用同一个文件。此入口随本次1.0.0音效更新提供，需更新App。
+
 事件：select、theme、hoverEnter、hoverLeave、dragStart、dragEnd、click、attention、return、placement。鼠标进入/离开只各发一次，不按动画帧触发。事件对象：name、placement、theme、hold（字符串true/false）；可选workEnd（插件工作端标识）、state。click/hover中的state=pet或bubble（气泡悬停带workEnd）；attention的state为running、pending或原生StopReason标识（如turnEnded、approval、failure等，仅对监控确实提供的状态）。不含消息正文、网页内容、凭证或来源token。
 
 bindings按事件名提供动作数组，每次最多16动作。playClip可播放额外命名动作；idle以及loopingClips中的动作循环，其他播放一次后恢复idle。迁移中宿主动作优先；新playClip替换旧动作，playClip idle可结束表情循环；当前姿态未声明的额外动作忽略。

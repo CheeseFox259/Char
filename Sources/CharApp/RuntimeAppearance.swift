@@ -116,13 +116,17 @@ extension CompanionRuntime {
         default: return false
         }
     }
-    func playAppearanceSound(_ id: String) {
-        guard !demo, settings.soundEnabled, let descriptor = appearanceFeatures?.sounds?[id] else { return }
+    @discardableResult func playAppearanceSound(_ id: String) -> Bool {
+        guard !demo, settings.soundEnabled, let descriptor = appearanceFeatures?.sounds?[id] else { return false }
         let now = ProcessInfo.processInfo.systemUptime
-        guard now-(appearanceSoundTimes[id] ?? -.infinity) >= (descriptor.cooldown ?? 0.3) else { return }
+        // A configured sound in cooldown is handled; do not replace it with Ping.
+        guard now-(appearanceSoundTimes[id] ?? -.infinity) >= (descriptor.cooldown ?? 0.3) else { return true }
         if appearanceSoundCache[id] == nil, let url = skinStore?.resourceURL(descriptor.file) { appearanceSoundCache[id] = NSSound(contentsOf: url,byReference: true) }
-        guard let sound = appearanceSoundCache[id] else { return }
-        sound.volume = Float(descriptor.volume ?? 1); sound.stop(); sound.play(); appearanceSoundTimes[id] = now
+        guard let sound = appearanceSoundCache[id] else { return false }
+        sound.volume = Float(descriptor.volume ?? 1); sound.stop()
+        guard sound.play() else { return false }
+        appearanceSoundTimes[id] = now
+        return true
     }
     func scheduleInstalledIcon() {
         appearanceIconTask?.cancel()
