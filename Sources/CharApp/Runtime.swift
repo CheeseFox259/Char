@@ -536,6 +536,11 @@ actor ObservationWorker {
             NSApp.terminate(nil)
             return
         }
+        if CommandLine.arguments.contains("--appearance-edge-check") {
+            do { try await runAppearanceEdgeCheck() } catch { fail("appearance edge: \(error)") }
+            NSApp.terminate(nil)
+            return
+        }
         if CommandLine.arguments.contains("--bubble-state-check") {
             for end in enabledWorkEnds { router.remove(workEnd: end) }
             var filtered = settings; filtered.filterSeconds = 10; filtered.soundEnabled = false
