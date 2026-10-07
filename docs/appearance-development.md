@@ -85,6 +85,6 @@ swift run --package-path /absolute/path/Char char-package-check skin /absolute/p
 
 全部可自定义范围和宿主负责的行为见[外观能力范围](appearance-customization.md)。可选能力按完整API声明。
 
-内置项目/安装图标与示例图标均由原生向量生成，修改后从仓库根目录运行 `scripts/generate-app-icons.sh` 再构建。图标按形象缓存，只在选择变化时更新，不增加动画计时器；这里的4 MiB是RGBA像素估算，不是整机性能测量。
+内置项目/安装图标与示例图标均由原生向量生成，修改后从仓库根目录运行 `scripts/generate-app-icons.sh` 再构建。图标按形象缓存，只在选择变化时更新，不增加动画计时器；1024图标的4 MiB是裸RGBA估算；界面按36/128/256像素解码，安装图标使用原文件。缓存预算与进程footprint分开计量。
 
 有身体动画与原生跟随时，先制作短基准，再用共同帧索引和 `trackingFrames`/`tracking.states` 验证一条边，最后扩展主题与动作。官方完整参考见[菲比](../examples/appearance/feibi/README.md)。

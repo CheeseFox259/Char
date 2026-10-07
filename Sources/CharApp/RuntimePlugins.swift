@@ -3,9 +3,15 @@ import CharCore
 import CharPlatform
 
 extension CompanionRuntime {
-    private static let defaultSoftwareIcon = Bundle.main.resourceURL
-        .flatMap { NSImage(contentsOf: $0.appendingPathComponent("Icons/Char.png")) } ?? PetIconArtwork.rightEdgeIcon()
-    var softwareIcon: NSImage { skinStore?.icon(for: selectedSkinID) ?? Self.defaultSoftwareIcon }
+    var softwareIcon: NSImage { softwareIcon(maxPixels:256) }
+    func softwareIcon(maxPixels: Int) -> NSImage {
+        if selectedSkinID != PetSkinStore.defaultID, let image = skinStore?.icon(for:selectedSkinID,maxPixels:maxPixels) { return image }
+        if let url = Bundle.main.resourceURL?.appendingPathComponent("Icons/Char.png"),
+           let image = interfaceImages.image(at:url,maxPixels:maxPixels,owner:"host") { return image }
+        return interfaceImages.image(key:"default-vector-icon",maxPixels:maxPixels,owner:"host") {
+            DecodedImageCache.thumbnail(PetIconArtwork.rightEdgeIcon(),maxPixels:maxPixels)
+        }!
+    }
     var enabledWorkEnds: Set<WorkEnd> {
         Set(pluginEntries.filter(\.enabled).compactMap { $0.plugin.workEnd })
     }
@@ -20,16 +26,11 @@ extension CompanionRuntime {
         return NSSize(width: Double(size.width)*scale, height: Double(size.height)*scale)
     }
     func agentIcon(for end: WorkEnd) -> NSImage? {
-        if let image = agentIconCache[end] { return image }
-        let image = loadAgentIcon(for: end)
-        agentIconCache[end] = image
-        return image
-    }
-    private func loadAgentIcon(for end: WorkEnd) -> NSImage? {
         guard let entry = pluginEntries.first(where: { $0.enabled && $0.plugin.workEnd == end }) else { return nil }
-        if let url = pluginStore?.iconURL(for: entry.id), let image = NSImage(contentsOf: url) { return image }
+        let owner = "plugin/"+entry.id
+        if let url = pluginStore?.iconURL(for:entry.id), let image = interfaceImages.image(at:url,maxPixels:88,owner:owner) { return image }
         if end == .pi, let url = Bundle.main.resourceURL?.appendingPathComponent("Icons/pi.png"),
-           let image = NSImage(contentsOf: url) { return image }
+           let image = interfaceImages.image(at:url,maxPixels:88,owner:owner) { return image }
         // CLI clients retain their own identity, regardless of which terminal hosts them.
         let bundle: String?
         switch end {
@@ -40,9 +41,12 @@ extension CompanionRuntime {
         default: bundle = entry.plugin.bundleIdentifier
         }
         if let bundle, let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundle) {
-            return NSWorkspace.shared.icon(forFile: url.path)
+            return interfaceImages.image(key:"application/"+bundle,maxPixels:88,owner:owner) {
+                DecodedImageCache.thumbnail(NSWorkspace.shared.icon(forFile:url.path),maxPixels:88)
+            }
         }
-        return NSImage(size: NSSize(width: 64, height: 64), flipped: false) { rect in
+        return interfaceImages.image(key:"fallback/"+end.rawValue,maxPixels:88,owner:owner) {
+            DecodedImageCache.thumbnail(NSImage(size: NSSize(width: 64, height: 64), flipped: false) { rect in
             NSColor.white.setFill()
             if end == .claudeCode {
                 let center = NSPoint(x: 32, y: 32)
@@ -60,6 +64,7 @@ extension CompanionRuntime {
                 label.draw(at: NSPoint(x: (rect.width-size.width)/2,y: (rect.height-size.height)/2), withAttributes: attrs)
             }
             return true
+            },maxPixels:88)
         }
     }
     func customPetClipDuration(clip: String, placement: PetPlacement? = nil) -> TimeInterval? {
@@ -68,7 +73,7 @@ extension CompanionRuntime {
     }
     func customPetImage(clip: String, elapsed: TimeInterval, placement: PetPlacement? = nil) -> NSImage? {
         guard let skinStore else { return nil }
-        return skinStore.image(clip: clip,elapsed: elapsed,placement: (placement ?? petPlacement).rawValue)
+        return skinStore.image(clip: clip,elapsed: elapsed,placement: (placement ?? petPlacement).rawValue,maxPixels:Int(ceil(petSize*2.2)))
     }
     func reloadPlugins() {
         do {
@@ -79,7 +84,9 @@ extension CompanionRuntime {
             try pluginStore.reload()
             pluginRegistryRevision = revision
             let next = pluginStore.entries
-            guard next != pluginEntries else { return }
+            // Imported artwork can change while identity and capabilities stay the same.
+            interfaceImages.removeOwners(prefix:"plugin/")
+            guard next != pluginEntries else { panel?.surface.refresh(); return }
             let old = enabledWorkEnds
             let replaced = Set(next.compactMap { entry -> WorkEnd? in
                 guard entry.enabled, let previous = pluginEntries.first(where: { $0.id == entry.id }),
@@ -87,7 +94,6 @@ extension CompanionRuntime {
                 return entry.plugin.workEnd
             })
             pluginEntries = next
-            agentIconCache.removeAll()
             for end in old.subtracting(enabledWorkEnds).union(replaced) { router.remove(workEnd: end) }
             platform?.configure(plugins: next.filter(\.enabled).map(\.plugin))
             if let anchor = router.snapshot.hold?.anchor,

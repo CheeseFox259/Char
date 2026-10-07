@@ -39,7 +39,7 @@ extension CompanionRuntime {
         if bubbleStyle?.orbitCurve == "spring" { return 1-pow(1-t,3)*(cos(t*2*Double.pi)*0.15+0.85) }
         return CompanionGeometry.orbitProgress(t)
     }
-    func appearanceAsset(_ path: String?) -> NSImage? { path.flatMap { skinStore?.asset($0) } }
+    func appearanceAsset(_ path: String?) -> NSImage? { path.flatMap { skinStore?.asset($0,maxPixels:Int(ceil(petSize*2.2))) } }
     func appearanceColor(_ hex: String?, fallback: NSColor) -> NSColor {
         guard let hex, let bits = UInt64(hex.dropFirst(),radix: 16) else { return fallback }
         let rgba = hex.count == 9 ? bits : (bits << 8)|255
@@ -132,8 +132,17 @@ extension CompanionRuntime {
         appearanceIconTask?.cancel()
         guard !demo, Bundle.main.bundleURL.pathExtension == "app" else { return }
         let isDefault = selectedSkinID == PetSkinStore.defaultID
-        var rect = NSRect(origin: .zero,size: softwareIcon.size)
-        let data = softwareIcon.cgImage(forProposedRect: &rect,context: nil,hints: nil).flatMap { NSBitmapImageRep(cgImage: $0).representation(using: .png,properties: [:]) }
+        // Preserve the authored PNG for installation; small UI images never expand
+        // into a 1024-point AppKit drawing cache just to re-encode the same file.
+        let data: Data?
+        if isDefault { data = nil }
+        else if let url = skinStore?.applicationIconURL(for:selectedSkinID) { data = try? Data(contentsOf:url) }
+        else {
+            data = autoreleasepool {
+                skinStore?.icon(for:selectedSkinID,maxPixels:1024)?.cgImage(forProposedRect:nil,context:nil,hints:nil)
+                    .flatMap { NSBitmapImageRep(cgImage:$0).representation(using:.png,properties:[:]) }
+            }
+        }
         guard isDefault || data != nil else { return }
         let app = Bundle.main.bundleURL, archive = store.fileURL.deletingLastPathComponent().appendingPathComponent("ReleaseBackups/AppearanceIcons")
         appearanceIconTask = Task {

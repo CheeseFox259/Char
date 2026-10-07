@@ -39,15 +39,17 @@ public enum InstalledAppearanceIcon {
             guard let source = NSBitmapImageRep(data: png), source.pixelsWide > 0 else { throw PetSkinError.invalid("icon is not a PNG") }
             let iconset = transaction.appendingPathComponent("Appearance.iconset")
             try fm.createDirectory(at: iconset, withIntermediateDirectories: false)
-            let image = NSImage(size: NSSize(width: source.pixelsWide,height: source.pixelsHigh)); image.addRepresentation(source)
+            let image = NSImage(size: NSSize(width: source.pixelsWide,height: source.pixelsHigh)); image.addRepresentation(source); image.cacheMode = .never
             for size in [16,32,128,256,512] {
                 for scale in [1,2] {
-                    let px = size*scale
-                    guard let bitmap = NSBitmapImageRep(bitmapDataPlanes: nil,pixelsWide: px,pixelsHigh: px,bitsPerSample: 8,samplesPerPixel: 4,hasAlpha: true,isPlanar: false,colorSpaceName: .deviceRGB,bytesPerRow: 0,bitsPerPixel: 0), let context = NSGraphicsContext(bitmapImageRep: bitmap) else { throw PetSkinError.invalid("icon raster failed") }
-                    NSGraphicsContext.saveGraphicsState(); NSGraphicsContext.current = context
-                    image.draw(in: NSRect(x: 0,y: 0,width: px,height: px), from: .zero, operation: .copy, fraction: 1)
-                    NSGraphicsContext.restoreGraphicsState()
-                    try bitmap.representation(using: .png,properties: [:])!.write(to: iconset.appendingPathComponent("icon_\(size)x\(size)\(scale == 2 ? "@2x" : "").png"))
+                    try autoreleasepool {
+                        let px = size*scale
+                        guard let bitmap = NSBitmapImageRep(bitmapDataPlanes: nil,pixelsWide: px,pixelsHigh: px,bitsPerSample: 8,samplesPerPixel: 4,hasAlpha: true,isPlanar: false,colorSpaceName: .deviceRGB,bytesPerRow: 0,bitsPerPixel: 0), let context = NSGraphicsContext(bitmapImageRep: bitmap) else { throw PetSkinError.invalid("icon raster failed") }
+                        NSGraphicsContext.saveGraphicsState(); NSGraphicsContext.current = context
+                        image.draw(in: NSRect(x: 0,y: 0,width: px,height: px), from: .zero, operation: .copy, fraction: 1)
+                        NSGraphicsContext.restoreGraphicsState()
+                        try bitmap.representation(using: .png,properties: [:])!.write(to: iconset.appendingPathComponent("icon_\(size)x\(size)\(scale == 2 ? "@2x" : "").png"))
+                    }
                 }
             }
             let name = "CharAppearance-" + String(identity.prefix(16))

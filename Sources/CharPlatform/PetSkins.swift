@@ -71,36 +71,23 @@ public final class PetSkinStore {
     private var packages: [String: URL] = [:]
     public private(set) var skins: [PetSkinManifest] = [defaultSkin]
     public private(set) var selectedSkin: PetSkinManifest = defaultSkin
-    private struct CachedImage { let image: NSImage; let bytes: Int; var accessed: UInt64 }
-    private var images: [String: CachedImage] = [:]
-    private var cacheAccess: UInt64 = 0
-    private let imageCacheBudget: Int
-    public private(set) var cachedImageBytes = 0
-    private func cachedImage(_ key: String) -> NSImage? {
-        guard var entry = images[key] else { return nil }
-        cacheAccess &+= 1; entry.accessed = cacheAccess; images[key] = entry; return entry.image
+    private let images: DecodedImageCache
+    private let interfaceImages: DecodedImageCache
+    public var cachedImageBytes: Int { images.bytes }
+    public func cachedImageBytes(for id: String) -> Int { imageCacheUsage(for:id).bytes }
+    public var sharedImageCacheBytes: Int { images.sharedBytes }
+    public func imageCacheUsage(for id: String) -> (bytes: Int, shared: Int) {
+        let frames = images.usage(owner:id), icons = interfaceImages.usage(owner:"skin/"+id)
+        return (frames.bytes+icons.bytes,frames.shared+icons.shared)
     }
-    private func cache(_ image: NSImage, key: String) {
-        let pixels = image.representations.map { max(1,$0.pixelsWide)*max(1,$0.pixelsHigh) }.max() ?? Int(image.size.width*image.size.height)
-        let bytes = max(1,pixels)*4
-        guard bytes <= imageCacheBudget else { return }
-        if let old = images.removeValue(forKey: key) { cachedImageBytes -= old.bytes }
-        while cachedImageBytes+bytes > imageCacheBudget,
-              let oldest = images.min(by: { $0.value.accessed < $1.value.accessed })?.key {
-            if let removed = images.removeValue(forKey: oldest) { cachedImageBytes -= removed.bytes }
-        }
-        cacheAccess &+= 1; images[key] = CachedImage(image: image,bytes: bytes,accessed: cacheAccess); cachedImageBytes += bytes
-    }
-    private func pruneImages(keeping prefix: String?) {
-        images = prefix.map { value in images.filter { $0.key.hasPrefix(value) } } ?? [:]
-        cachedImageBytes = images.values.reduce(0) { $0+$1.bytes }
-    }
+    public func releaseImageCache() { images.removeAll() }
     public private(set) var behaviorEnabled = true
     public private(set) var selectedTheme: String?
     private struct Selection: Codable { let selectedID: String; var theme: String?; var behaviorEnabled: Bool? }
 
-    public init(directory: URL, imageCacheBudget: Int = 32 * 1024 * 1024) throws {
-        self.imageCacheBudget = max(0,imageCacheBudget)
+    public init(directory: URL, imageCacheBudget: Int = 16 * 1024 * 1024, interfaceImages: DecodedImageCache = DecodedImageCache(budget:2*1024*1024)) throws {
+        self.interfaceImages = interfaceImages
+        self.images = DecodedImageCache(budget:imageCacheBudget)
         self.directory = directory.standardizedFileURL
         let fm = FileManager.default
         try fm.createDirectory(at: self.directory, withIntermediateDirectories: true)
@@ -139,14 +126,14 @@ public final class PetSkinStore {
         guard let skin = skins.first(where: { $0.id == id }) else { throw PetSkinError.unknownSkin }
         let data = try JSONEncoder().encode(Selection(selectedID: id, theme: skin.features?.defaultTheme, behaviorEnabled: true))
         try data.write(to: directory.appendingPathComponent("selection.json"), options: .atomic)
-        pruneImages(keeping: id+"/")
+        images.retainOwners([id]); interfaceImages.removeOwners(prefix:"skin/",except:"skin/"+id)
         selectedSkin = skin; behaviorEnabled = true; selectedTheme = skin.features?.defaultTheme
     }
 
     public func selectTheme(_ theme: String) throws {
         guard theme.isEmpty || selectedSkin.features?.themes?[theme] != nil else { throw PetSkinError.invalid("unknown theme") }
         try JSONEncoder().encode(Selection(selectedID: selectedSkin.id, theme: theme, behaviorEnabled: behaviorEnabled)).write(to: directory.appendingPathComponent("selection.json"), options: .atomic)
-        if selectedTheme != (theme.isEmpty ? nil : theme) { pruneImages(keeping: nil) }
+        if selectedTheme != (theme.isEmpty ? nil : theme) { images.removeAll(); interfaceImages.removeOwners(prefix:"skin/") }
         selectedTheme = theme.isEmpty ? nil : theme
     }
     public func setBehaviorEnabled(_ enabled: Bool) throws {
@@ -154,18 +141,16 @@ public final class PetSkinStore {
         behaviorEnabled = enabled
     }
     public func resourceURL(_ path: String) -> URL? { packages[selectedSkin.id]?.appendingPathComponent(path) }
-    public func asset(_ path: String) -> NSImage? {
-        let key = selectedSkin.id + "/" + path
-        if let cached = cachedImage(key) { return cached }
-        guard let url = resourceURL(path), let image = NSImage(contentsOf: url) else { return nil }
-        cache(image,key: key); return image
+    public func asset(_ path: String, maxPixels: Int = 192) -> NSImage? {
+        guard let url = resourceURL(path) else { return nil }
+        return images.image(at:url,maxPixels:maxPixels,owner:selectedSkin.id)
     }
-    public func image(clip: String, elapsed: TimeInterval, placement: String) -> NSImage? {
+    public func image(clip: String, elapsed: TimeInterval, placement: String, maxPixels: Int = 192) -> NSImage? {
         let pose = selectedSkin.pose(placement: placement, theme: selectedTheme)
         guard let animation = pose.clips[clip], !animation.frames.isEmpty else { return nil }
         let loop = clip == "idle" || selectedSkin.features?.loopingClips?.contains(clip) == true
         let index = animation.frameIndex(elapsed: elapsed,looping: loop)
-        return asset(animation.frames[index])
+        return asset(animation.frames[index],maxPixels:maxPixels)
     }
 
     public func delete(id: String) throws {
@@ -175,8 +160,7 @@ public final class PetSkinStore {
         if selectedSkin.id == id { try select(id: Self.defaultID) }
         try FileManager.default.removeItem(at: url)
         packages.removeValue(forKey: id); skins.removeAll { $0.id == id }
-        images = images.filter { !$0.key.hasPrefix(id + "/") }
-        cachedImageBytes = images.values.reduce(0) { $0+$1.bytes }
+        images.retainOwners(Set(skins.map(\.id))); interfaceImages.remove(owner:"skin/"+id)
     }
 
     /// `idle` loops; interaction clips clamp to their last frame. Negative/nonfinite time starts at frame zero.
@@ -189,25 +173,21 @@ public final class PetSkinStore {
         let index = clip == .idle
             ? Int((safeTime.truncatingRemainder(dividingBy: duration)) * animation.fps) % animation.frames.count
             : Int(min(Double(animation.frames.count - 1), floor(safeTime * animation.fps)))
-        let frame = animation.frames[index], key = id + "/" + frame
-        if let cached = cachedImage(key) { return cached }
-        guard let image = NSImage(contentsOf: root.appendingPathComponent(frame)) else { return nil }
-        cache(image,key: key)
-        return image
+        return images.image(at:root.appendingPathComponent(animation.frames[index]),maxPixels:192,owner:id)
     }
 
-    public func icon(for id: String) -> NSImage? {
+    public func applicationIconURL(for id: String) -> URL? {
         guard let skin = skins.first(where: { $0.id == id }), let root = packages[id] else { return nil }
-        let theme = id == selectedSkin.id ? selectedTheme : skin.features?.defaultTheme
-        let key = id + "/@application-icon/" + (theme ?? "")
-        if let cached = cachedImage(key) { return cached }
-        let icon: NSImage?
-        if let path = skin.pose(placement: "right", theme: theme).appIcon { icon = NSImage(contentsOf: root.appendingPathComponent(path)) }
-        else if let frame = image(for: id, clip: .edgePeek, elapsed: .greatestFiniteMagnitude) {
-            icon = PetIconArtwork.rightEdgeIcon(pet: frame, anchor: NSPoint(x: skin.anchor.x, y: 1 - skin.anchor.y))
-        } else { icon = nil }
-        if let icon { cache(icon,key: key) }
-        return icon
+        let theme = id == selectedSkin.id ? selectedTheme:skin.features?.defaultTheme
+        return skin.pose(placement:"right",theme:theme).appIcon.map { root.appendingPathComponent($0) }
+    }
+    public func icon(for id: String, maxPixels: Int = 256) -> NSImage? {
+        if let url = applicationIconURL(for:id) { return interfaceImages.image(at:url,maxPixels:maxPixels,owner:"skin/"+id) }
+        return interfaceImages.image(key:id+"/derived-icon",maxPixels:maxPixels,owner:"skin/"+id) {
+            guard let skin = skins.first(where: { $0.id == id }),
+                  let frame = image(for:id,clip:.edgePeek,elapsed:.greatestFiniteMagnitude) else { return nil }
+            return DecodedImageCache.thumbnail(PetIconArtwork.rightEdgeIcon(pet:frame,anchor:NSPoint(x:skin.anchor.x,y:1-skin.anchor.y)),maxPixels:maxPixels)
+        }
     }
 
     public static func validatePackage(at root: URL) throws -> PetSkinManifest {
@@ -318,19 +298,21 @@ public final class PetSkinStore {
             components.allSatisfy { !$0.isEmpty && $0 != "." && $0 != ".." }
     }
     private static func pngSize(at url: URL) throws -> PetSkinSize {
-        let data = try Data(contentsOf: url)
-        let signature: [UInt8] = [137, 80, 78, 71, 13, 10, 26, 10]
-        guard data.count >= 33, data.count <= 4 * 1024 * 1024,
-              Array(data.prefix(8)) == signature, Array(data[12..<16]) == Array("IHDR".utf8),
-              data[24] == 8, data[25] == 6,
-              let source = CGImageSourceCreateWithData(data as CFData, nil), CGImageSourceGetCount(source) == 1,
-              let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any],
-              let width = properties[kCGImagePropertyPixelWidth] as? Int,
-              let height = properties[kCGImagePropertyPixelHeight] as? Int,
-              (32...1024).contains(width), (32...1024).contains(height),
-              let image = CGImageSourceCreateImageAtIndex(source, 0, nil), image.width == width, image.height == height else {
-            throw PetSkinError.invalid("asset must be a single 8-bit RGBA PNG, at most 1024 pixels: \(url.lastPathComponent)")
+        try autoreleasepool {
+            let data = try Data(contentsOf: url)
+            let signature: [UInt8] = [137, 80, 78, 71, 13, 10, 26, 10]
+            guard data.count >= 33, data.count <= 4 * 1024 * 1024,
+                  Array(data.prefix(8)) == signature, Array(data[12..<16]) == Array("IHDR".utf8),
+                  data[24] == 8, data[25] == 6,
+                  let source = CGImageSourceCreateWithData(data as CFData, [kCGImageSourceShouldCache:false] as CFDictionary), CGImageSourceGetCount(source) == 1,
+                  let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any],
+                  let width = properties[kCGImagePropertyPixelWidth] as? Int,
+                  let height = properties[kCGImagePropertyPixelHeight] as? Int,
+                  (32...1024).contains(width), (32...1024).contains(height),
+                  let image = CGImageSourceCreateImageAtIndex(source, 0, [kCGImageSourceShouldCacheImmediately:true] as CFDictionary), image.width == width, image.height == height else {
+                throw PetSkinError.invalid("asset must be a single 8-bit RGBA PNG, at most 1024 pixels: \(url.lastPathComponent)")
+            }
+            return PetSkinSize(width: width, height: height)
         }
-        return PetSkinSize(width: width, height: height)
     }
 }

@@ -64,7 +64,8 @@ actor ObservationWorker {
     let worker: ObservationWorker?
     let pluginStore: IntegrationPluginStore?
     let skinStore: PetSkinStore?
-    var agentIconCache: [WorkEnd: NSImage] = [:]
+    let interfaceImages: DecodedImageCache
+    private var memoryPressure: DispatchSourceMemoryPressure?
     var pluginRegistryRevision: Date?
     var observationGeneration = ObservationGeneration()
     var capabilityHost: CapabilityHost?
@@ -135,7 +136,9 @@ actor ObservationWorker {
         store = CharSettingsStore(fileURL: directory.appendingPathComponent("settings.json"))
         companionPreferencesURL = directory.appendingPathComponent("companion.json")
         pluginStore = try? IntegrationPluginStore(directory: directory.appendingPathComponent("integrations"))
-        skinStore = try? PetSkinStore(directory: directory.appendingPathComponent("skins"))
+        let uiImages = DecodedImageCache(budget:2*1024*1024)
+        interfaceImages = uiImages
+        skinStore = try? PetSkinStore(directory: directory.appendingPathComponent("skins"),interfaceImages:uiImages)
         let loaded: CharSettings
         let loadMessage: String
         do { loaded = try store.load(); loadMessage = "" }
@@ -169,6 +172,7 @@ actor ObservationWorker {
     }
 
     func start() {
+        installMemoryPressureHandling()
         performanceMonitor.targets = { [weak self] in self?.performanceTargets() ?? [] }
         prepareDocumentationDemo()
         initializeCapabilityHost()
@@ -473,11 +477,19 @@ actor ObservationWorker {
     func setPetSize(_ size: Double) {
         companionPreferences.setSize(size)
         petSize = companionPreferences.petSize
+        skinStore?.releaseImageCache()
         if let screen = panel.screen ?? NSScreen.main {
             position(on: screen, center: companionPreferences.center(in: screen.visibleFrame), placement: petPlacement, animated: false)
         }
         panel.surface.refresh()
         saveCompanionPreferences()
+    }
+    private func installMemoryPressureHandling() {
+        let source = DispatchSource.makeMemoryPressureSource(eventMask:[.warning,.critical],queue:.main)
+        source.setEventHandler { [weak self] in
+            self?.skinStore?.releaseImageCache(); self?.interfaceImages.removeAll()
+        }
+        source.resume(); memoryPressure = source
     }
     func showPet() { panel.orderFrontRegardless() }
     func setBubbleDistance(_ distance: Double) {
@@ -581,6 +593,10 @@ actor ObservationWorker {
         }
         if CommandLine.arguments.contains("--feibi-check") {
             do { try await runFeibiCheck() } catch { fail("Phoebe: \(error)") }
+            NSApp.terminate(nil); return
+        }
+        if CommandLine.arguments.contains("--memory-check") {
+            do { try await runMemoryCheck() } catch { fail("memory workload: \(error)") }
             NSApp.terminate(nil); return
         }
         if CommandLine.arguments.contains("--appearance-v2-check") {
@@ -731,7 +747,7 @@ actor ObservationWorker {
                 selectSkin(skin.id)
                 guard !iconsMatch(softwareIcon, originalApp) else { fail("icon fixture must distinguish default from authored artwork") }
                 guard iconsMatch(NSApp.applicationIconImage, softwareIcon),
-                      iconsMatch(statusBar?.iconImage, softwareIcon), statusBar?.representedSkinID == skin.id else { fail("targeted icon selection") }
+                      iconsMatch(statusBar?.iconImage, softwareIcon(maxPixels:36)), statusBar?.representedSkinID == skin.id else { fail("targeted icon selection") }
                 deleteSkin(skin.id)
                 guard iconsMatch(NSApp.applicationIconImage, originalApp), iconsMatch(statusBar?.iconImage, originalMenu),
                       statusBar?.representedSkinID == "char.default" else { fail("targeted icon restoration") }
@@ -893,7 +909,7 @@ actor ObservationWorker {
                 selectSkin(skin.id)
                 guard customPetImage(clip: "idle", elapsed: 0) != nil else { fail("imported skin rendering") }
                 guard !iconsMatch(softwareIcon, defaultIcon), iconsMatch(NSApp.applicationIconImage, softwareIcon),
-                      iconsMatch(statusBar?.iconImage, softwareIcon), statusBar?.representedSkinID == skin.id else { fail("appearance software/menu icon did not follow selection") }
+                      iconsMatch(statusBar?.iconImage, softwareIcon(maxPixels:36)), statusBar?.representedSkinID == skin.id else { fail("appearance software/menu icon did not follow selection") }
                 let pet = panel.surface.pet
                 pet.clip = "idle"; pet.clipElapsed = 0; pet.feedbackElapsed = nil
                 router.clearNavigationFeedback(); publish()

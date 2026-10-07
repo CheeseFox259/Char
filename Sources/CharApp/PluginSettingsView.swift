@@ -200,7 +200,7 @@ struct AppearanceSettingsView: View {
                 SelectedPetPreview(runtime: runtime, reduceMotion: reduceMotion)
                     .frame(width: 76, height: 76)
                 VStack(spacing: 4) {
-                    Image(nsImage: runtime.softwareIcon).resizable().interpolation(.high).frame(width: 64, height: 64)
+                    Image(nsImage: runtime.softwareIcon(maxPixels:128)).resizable().interpolation(.high).frame(width: 64, height: 64)
                         .accessibilityLabel(runtime.localized("当前软件图标", "Selected application icon"))
                     Text(runtime.localized("软件图标", "App icon")).font(.caption).foregroundStyle(.secondary)
                 }

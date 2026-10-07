@@ -22,7 +22,7 @@ private func skinRequire(_ condition: @autoclosure () -> Bool, _ message: String
     try skinRequire(store.selectedSkin.id == PetSkinStore.defaultID, "first launch default")
     try store.importPackage(at: sample)
     try store.select(id: manifest.id)
-    let authoredIcon = NSImage(contentsOf: sample.appendingPathComponent(manifest.appIcon!))!.tiffRepresentation
+    let authoredIcon = DecodedImageCache(budget:2*1024*1024).image(at:sample.appendingPathComponent(manifest.appIcon!),maxPixels:256,owner:"reference")!.tiffRepresentation
     try skinRequire(store.icon(for: manifest.id)?.tiffRepresentation == authoredIcon, "selected appearance did not load authored icon")
     try skinRequire(store.icon(for: manifest.id) === store.icon(for: manifest.id), "icon cache regenerated stable artwork")
     let budgetStore = try PetSkinStore(directory: temp.appendingPathComponent("budget-store"),imageCacheBudget: 16 * 1024)
@@ -41,7 +41,7 @@ private func skinRequire(_ condition: @autoclosure () -> Bool, _ message: String
     try JSONSerialization.data(withJSONObject: derivedJSON).write(to: derived.appendingPathComponent("manifest.json"))
     let derivedStore = try PetSkinStore(directory: temp.appendingPathComponent("derived-store"))
     let derivedManifest = try derivedStore.importPackage(at: derived)
-    try skinRequire(derivedManifest.appIcon == nil && derivedStore.icon(for: derivedManifest.id)?.size == NSSize(width: 1024, height: 1024), "package lost derived software icon")
+    try skinRequire(derivedManifest.appIcon == nil && derivedStore.icon(for: derivedManifest.id)?.size == NSSize(width: 256, height: 256), "package lost derived software icon")
     for clip in PetSkinClip.allCases {
         try skinRequire(store.image(for: manifest.id, clip: clip, elapsed: 0) != nil, "first frame did not decode")
         try skinRequire(store.image(for: manifest.id, clip: clip, elapsed: 0.2) != nil, "animated frame did not decode")
@@ -68,7 +68,8 @@ private func skinRequire(_ condition: @autoclosure () -> Bool, _ message: String
     let arriveDuration = Double(slowManifest.clips["arrive"]!.frames.count)
     let playback = CompanionPlayback(departure: departDuration, arrival: arriveDuration)
     let finalImage = slowStore.image(for: slowManifest.id, clip: .arrive, elapsed: playback.clipElapsed(at: playback.duration))!.tiffRepresentation
-    let finalFile = NSImage(contentsOf: slow.appendingPathComponent(slowManifest.clips["arrive"]!.frames.last!))!.tiffRepresentation
+    let finalFile = DecodedImageCache(budget:1024*1024).image(
+        at:slow.appendingPathComponent(slowManifest.clips["arrive"]!.frames.last!),maxPixels:192,owner:"reference")!.tiffRepresentation
     try skinRequire(finalImage == finalFile, "full slow arrival must reach authored final frame")
     try skinRequire(slowStore.image(for: slowManifest.id, clip: .arrive, elapsed: 0)!.tiffRepresentation != finalImage,
                     "slow arrival fixture must distinguish first and final poses")

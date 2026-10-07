@@ -55,10 +55,13 @@ extension CompanionRuntime {
         }
         performanceMonitor.setEnabled(true)
         try await Task.sleep(nanoseconds: 1_300_000_000)
-        try require(performanceMonitor.rows.first?.statistics.residentBytes != nil && performanceMonitor.rows.first?.statistics.averageCPUPercent != nil,"performance dashboard did not sample real host")
+        try require(performanceMonitor.rows.first?.statistics.physicalFootprintBytes != nil && performanceMonitor.rows.first?.statistics.averagePhysicalFootprintBytes != nil && performanceMonitor.rows.first?.statistics.averageCPUPercent != nil,"performance dashboard did not sample real host")
+        let shapeRow = performanceMonitor.rows.first { $0.target.id == "skin/"+manifest.id }
+        try require(shapeRow?.target.imageCacheBytes == skinStore.cachedImageBytes(for:manifest.id),"shape cached pixels not attributed to the shape")
         if let output = ProcessInfo.processInfo.environment["CHAR_APPEARANCE_CHECK_OUTPUT"] {
             let view = NSHostingView(rootView: ScrollView { PerformanceSettingsView(runtime: self,monitor: performanceMonitor).padding(16) }.frame(width: 530,height: 650).background(Color(nsColor: .windowBackgroundColor)))
             let window = NSWindow(contentRect: NSRect(x: 0,y: 0,width: 530,height: 650),styleMask: [.titled],backing: .buffered,defer: false)
+            window.isReleasedWhenClosed = false
             window.contentView = view; window.orderFrontRegardless()
             try await Task.sleep(nanoseconds: 250_000_000)
             view.layoutSubtreeIfNeeded()
@@ -66,7 +69,7 @@ extension CompanionRuntime {
                 view.cacheDisplay(in: view.bounds,to: bitmap)
                 try bitmap.representation(using: .png,properties: [:])?.write(to: URL(fileURLWithPath: output).appendingPathComponent("performance.png"))
             }
-            window.orderOut(nil)
+            window.close(); window.contentView = nil
         }
         performanceMonitor.setEnabled(false)
         let frozen = performanceMonitor.rows.first?.statistics.sampleCount
@@ -74,7 +77,10 @@ extension CompanionRuntime {
         try require(performanceMonitor.rows.first?.statistics.sampleCount == frozen,"disabled performance monitor kept sampling")
         performanceMonitor.reset()
         try require(performanceMonitor.rows.isEmpty,"performance dashboard reset failed")
+        let viewReleased = { [weak view = settingsWindow?.contentView] in view == nil }
         settingsWindow?.close()
+        try await Task.sleep(nanoseconds:250_000_000)
+        try require(settingsWindow == nil && viewReleased(),"closed settings retained its hosting view")
         let executable = Bundle.main.executableURL!.deletingLastPathComponent().appendingPathComponent("char-appearance-script")
         let script = try AppearanceScriptHost(executable: executable,source: "let count=0; function onEvent(e){count++; return [{type:'playClip',value:String(count)}]} ")
         let one = try await script.event(["name":"click"]), two = try await script.event(["name":"click"])

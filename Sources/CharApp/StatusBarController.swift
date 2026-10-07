@@ -21,7 +21,7 @@ import CharCore
         let iconChanged = previousSkinID != runtime.selectedSkinID || previousThemeID != runtime.selectedThemeID
         guard previous != runtime.snapshot || previousSound != runtime.settings.soundEnabled || previousLanguage != runtime.settings.language || iconChanged else { return }
         if iconChanged {
-            let image = runtime.softwareIcon.copy() as! NSImage
+            let image = runtime.softwareIcon(maxPixels:36).copy() as! NSImage
             image.size = NSSize(width: 18, height: 18)
             image.isTemplate = false
             item.button?.image = image

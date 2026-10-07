@@ -6,7 +6,7 @@ export CLANG_MODULE_CACHE_PATH="$PWD/build/module-cache"
 export SWIFTPM_MODULECACHE_OVERRIDE="$PWD/build/module-cache"
 swift build --disable-sandbox -c release --scratch-path build/swift-preview
 bin="$PWD/build/swift-preview/release"
-app="$PWD/build/feibi-preview/Char.app"
+app="${CHAR_APPEARANCE_PREVIEW_APP:-$PWD/build/feibi-preview/Char.app}"
 # Remove only generated resources; keep the adjacent isolated user-test Profile.
 python3 -c 'import shutil,sys; shutil.rmtree(sys.argv[1],ignore_errors=True)' "$app/Contents/Resources"
 mkdir -p "$app/Contents/MacOS" "$app/Contents/Resources"

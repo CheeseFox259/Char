@@ -6,6 +6,8 @@ struct PerformanceTarget: Identifiable, Sendable {
     let title: String
     let kind: String
     let processID: Int32?
+    var imageCacheBytes: Int = 0
+    var sharedImageCacheBytes: Int = 0
 }
 struct PerformanceRow: Identifiable {
     let target: PerformanceTarget
@@ -68,6 +70,19 @@ extension CompanionRuntime {
         let processes = capabilityHost?.runningPluginProcesses ?? [:]
         for entry in pluginEntries.filter(\.enabled).sorted(by: { $0.plugin.name < $1.plugin.name }) {
             targets.append(PerformanceTarget(id: "plugin/"+entry.id,title: entry.plugin.name,kind: "adapter",processID: processes[entry.id]))
+        }
+        for index in targets.indices {
+            let usage = interfaceImages.usage(owner:targets[index].id)
+            targets[index].imageCacheBytes = usage.bytes
+            targets[index].sharedImageCacheBytes = usage.shared
+            if targets[index].kind == "host" {
+                targets[index].imageCacheBytes = interfaceImages.bytes+(skinStore?.cachedImageBytes ?? 0)
+                targets[index].sharedImageCacheBytes = interfaceImages.sharedBytes+(skinStore?.sharedImageCacheBytes ?? 0)
+            }
+            if targets[index].kind == "appearance" {
+                let shape = skinStore?.imageCacheUsage(for:selectedSkinID) ?? usage
+                targets[index].imageCacheBytes = shape.bytes; targets[index].sharedImageCacheBytes = shape.shared
+            }
         }
         return targets
     }

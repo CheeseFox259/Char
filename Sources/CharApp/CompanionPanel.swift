@@ -20,7 +20,7 @@ import CharPlatform
         // rep.size establishes the logical-to-pixel CTM; do not scale twice.
         NSGraphicsContext.current?.cgContext.clear(CGRect(origin: .zero, size: size))
         draw()
-        let image = NSImage(size: size); image.addRepresentation(rep); return image
+        let image = NSImage(size: size); image.addRepresentation(rep); image.cacheMode = .never; return image
     }
     static func shell(in bounds: NSRect, tint: NSColor) {
         let rect = bounds.insetBy(dx: 2, dy: 2)
@@ -1034,22 +1034,28 @@ import CharPlatform
         guard case .pet = kind, bounds.width > 0 else { return }
         let imageClip = feedbackElapsed == nil ? clip : feedbackClip
         let animation = runtime.appearancePose(for: placement)?.clips[imageClip]
-        let frameKey = animation?.trackingFrames == nil ? "" : "\(imageClip)/\(runtime.trackingFrameIndex(clip: imageClip,elapsed: feedbackElapsed ?? clipElapsed,placement: placement))"
+        let frameKey = animation.map { animation -> String in
+            let index = runtime.trackingFrameIndex(clip:imageClip,elapsed:feedbackElapsed ?? clipElapsed,placement:placement)
+            // Object addresses can be reused after LRU eviction. Plain PNG clips
+            // need an authored frame identity too; repeated files still avoid redraw.
+            return animation.trackingFrames == nil ? animation.frames[index]:"\(imageClip)/\(index)"
+        } ?? ""
         let trackingKey = runtime.appearancePose(for: placement)?.tracking == nil ? "" : "\(Int(gaze.x*20))/\(Int(gaze.y*20))/\(frameKey)"
         let badge = runtime.sourceBadgeAnchor
         let overlayKey = "\(badge?.id ?? "")/\(badge?.bundleIdentifier ?? "")/\(String(describing: badge?.accuracy))/\(Int(runtime.sourceBadgeOpacity*30))/\(String(describing: runtime.snapshot.navigationFeedback))"
         if let custom = runtime.customPetImage(clip: imageClip, elapsed: feedbackElapsed ?? clipElapsed,placement: placement) {
             let identity = ObjectIdentifier(custom)
-            guard identity != customImageIdentity || petArtworkKey != "custom/\(bounds.size)/\(placement)/\(runtime.selectedThemeID)/\(trackingKey)/\(overlayKey)" else { return }
-            customImageIdentity = identity; petArtworkKey = "custom/\(bounds.size)/\(placement)/\(runtime.selectedThemeID)/\(trackingKey)/\(overlayKey)"
+            guard identity != customImageIdentity || petArtworkKey != "custom/\(bounds.size)/\(placement)/\(runtime.selectedThemeID)/\(frameKey)/\(trackingKey)/\(overlayKey)" else { return }
+            customImageIdentity = identity; petArtworkKey = "custom/\(bounds.size)/\(placement)/\(runtime.selectedThemeID)/\(frameKey)/\(trackingKey)/\(overlayKey)"
         } else {
             let blink = !reducedMotion && elapsed.truncatingRemainder(dividingBy: 5.2) > 5.04
             let key = "\(bounds.size)/\(placement)/\(Int(gaze.x*30))/\(Int(gaze.y*30))/\(blink)/\(responding)/\(overlayKey)"
             guard petArtworkKey != key else { return }
             customImageIdentity = nil; petArtworkKey = key
         }
-        let image = BubbleDrawing.raster(size: bounds.size) { drawPet() }
-        renderedImage = image.cgImage(forProposedRect: nil, context: nil, hints: nil)
+        renderedImage = autoreleasepool {
+            BubbleDrawing.raster(size:bounds.size) { drawPet() }.cgImage(forProposedRect:nil,context:nil,hints:nil)
+        }
         textureLayer.contents = renderedImage
     }
     func configureIdle(reduced: Bool) {
@@ -1128,12 +1134,13 @@ import CharPlatform
             if sourceIconBundle != anchor.bundleIdentifier {
                 sourceIconBundle = anchor.bundleIdentifier
                 sourceIcon = runtime.demo ? NSImage(systemSymbolName: "bubble.left.and.bubble.right.fill", accessibilityDescription: nil)
-                    : NSWorkspace.shared.urlForApplication(withBundleIdentifier: anchor.bundleIdentifier).map { NSWorkspace.shared.icon(forFile: $0.path) }
+                    : NSWorkspace.shared.urlForApplication(withBundleIdentifier: anchor.bundleIdentifier).flatMap { DecodedImageCache.thumbnail(NSWorkspace.shared.icon(forFile:$0.path),maxPixels:64) }
             }
             sourceIcon?.draw(in: NSRect(x: 54, y: 11, width: 17, height: 17))
             if anchor.accuracy == .application { symbol(NavigationPresentation.applicationSymbol, in: NSRect(x: 5, y: 8, width: 16, height: 16), color: .systemOrange) }
             NSGraphicsContext.restoreGraphicsState()
         }
+        if runtime.sourceBadgeAnchor == nil { sourceIcon = nil; sourceIconBundle = nil }
         if runtime.snapshot.navigationFeedback == .exact {
             symbol(NavigationPresentation.exactSymbol, in: NSRect(x: 55, y: 53, width: 18, height: 18), color: .systemGreen)
         } else if runtime.snapshot.navigationFeedback == .fallback {
@@ -1175,9 +1182,10 @@ import CharPlatform
         let key = "\(name)/\(rect.height)/\(color.description)"
         if symbolImages[key] == nil {
             guard let image = NSImage(systemSymbolName: name, accessibilityDescription: nil)?.withSymbolConfiguration(.init(pointSize: rect.height, weight: .semibold)) else { return }
-            let tinted = NSImage(size: image.size)
-            tinted.lockFocus(); image.draw(at: .zero, from: .zero, operation: .sourceOver, fraction: 1)
-            color.set(); NSRect(origin: .zero, size: image.size).fill(using: .sourceAtop); tinted.unlockFocus()
+            let tinted = BubbleDrawing.raster(size:image.size) {
+                image.draw(at:.zero,from:.zero,operation:.sourceOver,fraction:1)
+                color.set(); NSRect(origin:.zero,size:image.size).fill(using:.sourceAtop)
+            }
             symbolImages[key] = tinted
         }
         symbolImages[key]?.draw(in: rect)

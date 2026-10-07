@@ -197,6 +197,7 @@ import ServiceManagement
         try! petSkinChecks()
         try! petSkinV2Checks()
         performanceChecks()
+        try! imageCacheChecks()
         try! homeShortcutChecks()
         try! await workEndDestinationChecks()
         print("CharPlatform: 9 contract groups passed without controlling user apps")
