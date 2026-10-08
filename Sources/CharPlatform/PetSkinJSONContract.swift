@@ -16,7 +16,7 @@ enum PetSkinJSONContract {
         }
         func region(_ value: Any?) throws { _ = try keys(value,["x","y","width","height","shape"],"region") }
         func trackingLayers(_ t: [String:Any]) throws {
-            for eye in t["eyes"] as? [Any] ?? [] { let e = try keys(eye,["image","rect","travelX","travelY"],"eye"); try region(e["rect"]) }
+            for eye in t["eyes"] as? [Any] ?? [] { let e = try keys(eye,["image","rect","clipRegion","travelX","travelY"],"eye"); try region(e["rect"]); try region(e["clipRegion"]) }
             let h = try keys(t["head"],["rect","poses"],"head"); try region(h["rect"])
         }
         func tracking(_ value: Any?) throws {
@@ -43,17 +43,18 @@ enum PetSkinJSONContract {
         }
         _ = try keys(root,["schemaVersion","id","name","canvasSize","anchor","clips","appIcon","features"],"manifest")
         _ = try keys(root["canvasSize"],["width","height"],"canvasSize"); _ = try keys(root["anchor"],["x","y"],"anchor"); try clips(root["clips"])
-        let f = try keys(root["features"],["variants","themes","defaultTheme","tracking","bubbles","sounds","bindings","behavior","hitRegions","script","loopingClips"],"features")
+        let f = try keys(root["features"],["variants","themes","defaultTheme","tracking","bubbles","edgeBoundary","sounds","soundBindings","bindings","behavior","hitRegions","script","loopingClips"],"features")
+        _ = try keys(f["edgeBoundary"],["width","thickness","opacity","glowOpacity","glowRadius"],"edgeBoundary")
         try variants(f["variants"]); try tracking(f["tracking"]); try bubbles(f["bubbles"])
         for theme in (f["themes"] as? [String:Any] ?? [:]).values {
             let t = try keys(theme,["name","clips","variants","tracking","bubbles","appIcon"],"theme")
             try clips(t["clips"]); try variants(t["variants"]); try tracking(t["tracking"]); try bubbles(t["bubbles"])
         }
-        for sound in (f["sounds"] as? [String:Any] ?? [:]).values { _ = try keys(sound,["file","volume","cooldown"],"sound") }
+        for sound in (f["sounds"] as? [String:Any] ?? [:]).values { _ = try keys(sound,["file","files","volume","cooldown"],"sound") }
         for actions in (f["bindings"] as? [String:Any] ?? [:]).values {
             for action in actions as? [Any] ?? [] { _ = try keys(action,["type","value","steps"],"action") }
         }
-        _ = try keys(f["behavior"],["click","bubbleClick","returnPolicy","followFocus","edgeSnapDistance","collision","bubbleDistance","bubbleCapacity","bubbleArcDegrees","bubbleStartDegrees","bubbleClockwise"],"behavior")
+        _ = try keys(f["behavior"],["click","bubbleClick","returnPolicy","followFocus","edgeSnapDistance","edgeInset","collision","bubbleDistance","bubbleCapacity","bubbleArcDegrees","bubbleStartDegrees","bubbleClockwise"],"behavior")
         for r in f["hitRegions"] as? [Any] ?? [] { try region(r) }
     }
 }

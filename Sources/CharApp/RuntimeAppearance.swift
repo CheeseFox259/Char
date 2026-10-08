@@ -14,7 +14,7 @@ extension CompanionRuntime {
     var appearanceBehavior: PetSkinBehavior? { useAppearanceBehavior ? appearanceFeatures?.behavior : nil }
     func setAppearanceBehavior(_ enabled: Bool) {
         do { try skinStore?.setBehaviorEnabled(enabled); useAppearanceBehavior = enabled; router.updateSettings(effectiveSettings); panel?.surface.refresh() }
-        catch { setupMessage = error.localizedDescription }
+        catch { setupSection = "appearance"; setupMessage = error.localizedDescription }
     }
     var bubbleStyle: PetBubbleStyle? { appearancePose?.bubbles }
     var effectiveBubbleDistance: Double { appearanceBehavior?.bubbleDistance ?? bubbleDistance }
@@ -48,13 +48,12 @@ extension CompanionRuntime {
     func setAppearanceTheme(_ id: String) {
         guard id != selectedThemeID else { return }
         do { try skinStore?.selectTheme(id); refreshSkins(); appearanceEvent("theme") }
-        catch { setupMessage = error.localizedDescription }
+        catch { setupSection = "appearance"; setupMessage = error.localizedDescription }
     }
     func prepareAppearance() {
         appearanceScript?.stop(); appearanceScript = nil; appearanceGeneration += 1
         appearancePoseCache.removeAll()
-        appearanceSoundCache.values.forEach { $0.stop() }
-        appearanceSoundCache.removeAll(); appearanceSoundTimes.removeAll()
+        audio.stop(); appearanceEventRevision += 1; appearanceAudioRevision += 1
         useAppearanceBehavior = skinStore?.behaviorEnabled ?? true
         selectedThemeID = skinStore?.selectedTheme ?? ""
         router.updateSettings(effectiveSettings)
@@ -62,21 +61,29 @@ extension CompanionRuntime {
             do {
                 let executable = Bundle.main.executableURL!.deletingLastPathComponent().appendingPathComponent("char-appearance-script")
                 appearanceScript = try AppearanceScriptHost(executable: executable,source: String(contentsOf: url,encoding: .utf8))
-            } catch { setupMessage = localized("形象脚本无法启动：\(error)","Could not start appearance script: \(error)") }
+            } catch { setupSection = "appearance"; setupMessage = localized("形象脚本无法启动：\(error)","Could not start appearance script: \(error)") }
         }
         scheduleInstalledIcon()
         appearanceEvent("select")
     }
-    func appearanceEvent(_ name: String, workEnd: String? = nil, state: String? = nil) {
+    func appearanceEvent(_ name: String, workEnd: String? = nil, state: String? = nil, metadata: [String: String] = [:], allowSound: Bool = true) {
         guard !appearanceApplyingActions, let features = appearanceFeatures else { return }
         appearanceApplyingActions = true
-        if features.sounds?[name] != nil { playAppearanceSound(name) }
-        for action in features.bindings?[name] ?? [] { applyAppearanceAction(action) }
+        if allowSound, name == "click", state == "pet" {
+            _ = playAppearanceSound(features.soundBindings?["petClick"] ?? "click")
+        } else if allowSound, name != "click", features.sounds?[name] != nil { playAppearanceSound(name) }
+        for action in features.bindings?[name] ?? [] where action.type != "playSound" || allowSound { applyAppearanceAction(action) }
         appearanceApplyingActions = false
         guard let script = appearanceScript else { return }
         let generation = appearanceGeneration
+        appearanceEventRevision += 1
+        let revision = appearanceEventRevision
+        // A muted reminder is consumed permanently. Muting also revokes sound
+        // permission from responses already in flight, even after unmuting.
+        let audioRevision = appearanceAudioRevision
         var event = ["name":name,"placement":petPlacement.rawValue,"theme":skinStore?.selectedTheme ?? "","hold":snapshot.hold == nil ? "false":"true"]
         if let workEnd { event["workEnd"] = workEnd }; if let state { event["state"] = state }
+        event.merge(metadata) { _, new in new }
         Task {
             do {
                 let actions = try await script.event(event)
@@ -84,11 +91,15 @@ extension CompanionRuntime {
                 for action in actions { try features.validate(action: action,manifest: skinStore!.selectedSkin) }
                 appearanceApplyingActions = true
                 defer { appearanceApplyingActions = false }
-                for action in actions { applyAppearanceAction(action) }
+                for action in actions {
+                    if action.type == "playClip", revision != appearanceEventRevision { continue }
+                    if action.type == "playSound", !allowSound || audioRevision != appearanceAudioRevision { continue }
+                    applyAppearanceAction(action)
+                }
             } catch {
                 guard generation == appearanceGeneration else { return }
                 script.stop()
-                setupMessage = localized("形象脚本已停止：\(error)","Appearance script stopped: \(error)"); appearanceScript = nil
+                setupSection = "appearance"; setupMessage = localized("形象脚本已停止：\(error)","Appearance script stopped: \(error)"); appearanceScript = nil
             }
         }
     }
@@ -117,16 +128,21 @@ extension CompanionRuntime {
         }
     }
     @discardableResult func playAppearanceSound(_ id: String) -> Bool {
-        guard !demo, settings.soundEnabled, let descriptor = appearanceFeatures?.sounds?[id] else { return false }
-        let now = ProcessInfo.processInfo.systemUptime
-        // A configured sound in cooldown is handled; do not replace it with Ping.
-        guard now-(appearanceSoundTimes[id] ?? -.infinity) >= (descriptor.cooldown ?? 0.3) else { return true }
-        if appearanceSoundCache[id] == nil, let url = skinStore?.resourceURL(descriptor.file) { appearanceSoundCache[id] = NSSound(contentsOf: url,byReference: true) }
-        guard let sound = appearanceSoundCache[id] else { return false }
-        sound.volume = Float(descriptor.volume ?? 1); sound.stop()
-        guard sound.play() else { return false }
-        appearanceSoundTimes[id] = now
-        return true
+        guard !demo, settings.soundEnabled, let descriptor = appearanceFeatures?.sounds?[id],
+              let path = descriptor.paths.randomElement(), let url = skinStore?.resourceURL(path),
+              let sound = audio.sound(at: url.path) else { return false }
+        return audio.interaction(id: id, sound: sound, volume: Float(descriptor.volume ?? 1), cooldown: descriptor.cooldown ?? 0.3)
+    }
+    func attentionSound(_ group: AttentionPresentationGroup) -> (NSSound, Float)? {
+        if let path = settings.attentionAudioPaths[group.rawValue], let sound = audio.sound(at: path) { return (sound, 1) }
+        let id = appearanceFeatures?.soundBindings?[group.rawValue] ?? "notification"
+        if let descriptor = appearanceFeatures?.sounds?[id], let path = descriptor.paths.randomElement(),
+           let url = skinStore?.resourceURL(path), let sound = audio.sound(at: url.path) { return (sound, Float(descriptor.volume ?? 1)) }
+        return NSSound(named: NSSound.Name("Ping")).map { ($0, Float(1)) }
+    }
+    func previewAttentionSound(_ group: AttentionPresentationGroup) {
+        guard settings.soundEnabled, let (sound, volume) = attentionSound(group) else { return }
+        _ = audio.interaction(id: "preview", sound: sound, volume: volume, cooldown: 0)
     }
     func scheduleInstalledIcon() {
         appearanceIconTask?.cancel()
@@ -199,10 +215,16 @@ extension CompanionRuntime {
             appearanceAsset(head.poses[direction.isEmpty ? "center":direction] ?? head.poses["center"])?.draw(in: frame(head.rect))
         }
         for eye in eyes ?? [] {
+            NSGraphicsContext.saveGraphicsState()
+            if let clip = eye.clipRegion {
+                let region = frame(clip)
+                (clip.shape == "ellipse" ? NSBezierPath(ovalIn: region) : NSBezierPath(rect: region)).addClip()
+            }
             var target = frame(eye.rect)
             target.origin.x += g.x*(eye.travelX ?? 0.025)*rect.width
             target.origin.y += g.y*(eye.travelY ?? 0.025)*rect.height
             appearanceAsset(eye.image)?.draw(in: target)
+            NSGraphicsContext.restoreGraphicsState()
         }
     }
 }

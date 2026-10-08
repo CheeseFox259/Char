@@ -1,6 +1,6 @@
 # macOS 安装与发布
 
-Char v1.1.0 提供 macOS 13+ Universal 应用，包含 Apple Silicon 与 Intel 架构。日常安装直接使用 [GitHub Release](https://github.com/CheeseFox259/Char/releases/latest)，无需 Swift、Node 或本地构建。
+Char v1.2.0 提供 macOS 13+ Universal 应用，包含 Apple Silicon 与 Intel 架构。日常安装直接使用 [GitHub Release](https://github.com/CheeseFox259/Char/releases/latest)，无需 Swift、Node 或本地构建。
 
 ## 安装
 
@@ -20,7 +20,7 @@ Char v1.1.0 提供 macOS 13+ Universal 应用，包含 Apple Silicon 与 Intel �
 
 ## 自定义示例
 
-Release 的 `Char-1.1.0-examples.zip` 包含 MiniMax CLI、Desktop 与菲比；解压后从设置导入整个 `.charintegration` 或 `.charpet` 目录。示例也随 App 放在 `Contents/Resources/Examples`，源码见仓库对应目录。安装不会自动启用示例、运行其代码或安装客户端 Hook。
+Release 的 `Char-1.2.0-examples.zip` 包含 MiniMax CLI、Desktop 与菲比；解压后从设置导入整个 `.charintegration` 或 `.charpet` 目录。示例也随 App 放在 `Contents/Resources/Examples`，源码见仓库对应目录。安装不会自动启用示例、运行其代码或安装客户端 Hook。
 
 ## 校验与重建
 
@@ -39,4 +39,4 @@ bash scripts/check.sh
 bash scripts/package-release.sh
 ```
 
-产物在 `build/release/1.1.0/`。tag 触发 GitHub Actions，执行检查、Universal 构建、ZIP/DMG/示例校验后创建草稿；下载最终附件复验后才公开发布。Intel 架构构建与静态检查不替代 Intel 实机验收。
+产物在 `build/release/1.2.0/`。tag 触发 GitHub Actions，执行检查、Universal 构建、ZIP/DMG/示例校验后创建草稿；下载最终附件复验后才公开发布。Intel 架构构建与静态检查不替代 Intel 实机验收。

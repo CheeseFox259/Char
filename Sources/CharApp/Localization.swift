@@ -2,9 +2,9 @@ import CharCore
 
 /// One graphical vocabulary for configured capabilities and navigation feedback.
 enum NavigationPresentation {
-    static let exactSymbol = "scope"
-    static let applicationSymbol = "macwindow"
-    static let unavailableSymbol = "exclamationmark.circle.fill"
+    static let exactSymbol = CompanionSymbols.exactReturn
+    static let applicationSymbol = CompanionSymbols.applicationReturn
+    static let unavailableSymbol = CompanionSymbols.unavailable
 }
 
 extension CompanionRuntime {

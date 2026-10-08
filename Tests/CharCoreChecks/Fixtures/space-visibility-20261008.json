@@ -1,0 +1,207 @@
+[
+  {
+    "time": 0.0,
+    "event": "workspace",
+    "visible": true
+  },
+  {
+    "time": 0.782511,
+    "event": "occlusion",
+    "visible": false
+  },
+  {
+    "time": 0.97955,
+    "event": "occlusion",
+    "visible": true
+  },
+  {
+    "time": 1.387197,
+    "event": "workspace",
+    "visible": true
+  },
+  {
+    "time": 3.146073,
+    "event": "workspace",
+    "visible": true
+  },
+  {
+    "time": 4.174202,
+    "event": "occlusion",
+    "visible": false
+  },
+  {
+    "time": 4.869528,
+    "event": "occlusion",
+    "visible": true
+  },
+  {
+    "time": 5.245491,
+    "event": "workspace",
+    "visible": true
+  },
+  {
+    "time": 6.561661,
+    "event": "workspace",
+    "visible": true
+  },
+  {
+    "time": 7.060795,
+    "event": "occlusion",
+    "visible": false
+  },
+  {
+    "time": 7.523879,
+    "event": "workspace",
+    "visible": false
+  },
+  {
+    "time": 7.524626,
+    "event": "occlusion",
+    "visible": true
+  },
+  {
+    "time": 8.639092,
+    "event": "workspace",
+    "visible": true
+  },
+  {
+    "time": 9.170303,
+    "event": "occlusion",
+    "visible": false
+  },
+  {
+    "time": 9.336708,
+    "event": "occlusion",
+    "visible": true
+  },
+  {
+    "time": 9.720582,
+    "event": "workspace",
+    "visible": true
+  },
+  {
+    "time": 10.929059,
+    "event": "workspace",
+    "visible": true
+  },
+  {
+    "time": 11.974001,
+    "event": "occlusion",
+    "visible": false
+  },
+  {
+    "time": 12.501796,
+    "event": "workspace",
+    "visible": false
+  },
+  {
+    "time": 12.502393,
+    "event": "occlusion",
+    "visible": true
+  },
+  {
+    "time": 13.611114,
+    "event": "workspace",
+    "visible": true
+  },
+  {
+    "time": 17.449185,
+    "event": "occlusion",
+    "visible": false
+  },
+  {
+    "time": 17.738786,
+    "event": "occlusion",
+    "visible": true
+  },
+  {
+    "time": 18.019885,
+    "event": "workspace",
+    "visible": true
+  },
+  {
+    "time": 18.736224,
+    "event": "occlusion",
+    "visible": false
+  },
+  {
+    "time": 19.434508,
+    "event": "occlusion",
+    "visible": true
+  },
+  {
+    "time": 19.992948,
+    "event": "occlusion",
+    "visible": false
+  },
+  {
+    "time": 20.017486,
+    "event": "occlusion",
+    "visible": true
+  },
+  {
+    "time": 20.79482,
+    "event": "workspace",
+    "visible": true
+  },
+  {
+    "time": 21.601133,
+    "event": "occlusion",
+    "visible": false
+  },
+  {
+    "time": 21.904262,
+    "event": "occlusion",
+    "visible": true
+  },
+  {
+    "time": 22.173158,
+    "event": "workspace",
+    "visible": true
+  },
+  {
+    "time": 25.384155,
+    "event": "workspace",
+    "visible": true
+  },
+  {
+    "time": 28.338533,
+    "event": "workspace",
+    "visible": true
+  },
+  {
+    "time": 152.532235,
+    "event": "workspace",
+    "visible": true
+  },
+  {
+    "time": 153.042993,
+    "event": "occlusion",
+    "visible": false
+  },
+  {
+    "time": 153.682661,
+    "event": "occlusion",
+    "visible": true
+  },
+  {
+    "time": 157.042526,
+    "event": "occlusion",
+    "visible": false
+  },
+  {
+    "time": 157.113946,
+    "event": "occlusion",
+    "visible": true
+  },
+  {
+    "time": 157.329847,
+    "event": "workspace",
+    "visible": true
+  },
+  {
+    "time": 195.718612,
+    "event": "workspace",
+    "visible": true
+  }
+]

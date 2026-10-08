@@ -23,7 +23,13 @@ def frame(theme,edge,clip,i,gaze=(0,0)):
         direction=('n' if gy<-.25 else 's' if gy>.25 else '')+('e' if gx>.25 else 'w' if gx<-.25 else '')
         layer.alpha_composite(Image.open(P/head['poses'].get(direction or 'center',head['poses']['center'])))
     for eye in state.get('eyes',[]):
-        layer.alpha_composite(Image.open(P/eye['image']),(round(gx*eye.get('travelX',.025)*192),round(gy*eye.get('travelY',.025)*192)))
+        moved=Image.new('RGBA',out.size)
+        moved.alpha_composite(Image.open(P/eye['image']),(round(gx*eye.get('travelX',.025)*192),round(gy*eye.get('travelY',.025)*192)))
+        if 'clipRegion' in eye:
+            r=eye['clipRegion'];mask=Image.new('L',out.size)
+            ImageDraw.Draw(mask).ellipse((r['x']*192,r['y']*192,(r['x']+r['width'])*192,(r['y']+r['height'])*192),fill=255)
+            moved.putalpha(Image.fromarray(np.minimum(np.array(moved.getchannel('A')),np.array(mask))))
+        layer.alpha_composite(moved)
     t=f.get('transform',[1,0,0,1,0,0]); a,b,c,d,tx,ty=t
     mat=np.array([[a,c,tx*192],[b,d,ty*192],[0,0,1]])
     layer=affine(layer,mat);layer.putalpha(layer.getchannel('A').point(lambda a:round(a*f.get('opacity',1))))
@@ -38,9 +44,10 @@ def placed(image,p,size,edge):
     if p.get('mirrorX'):canvas=canvas.transpose(Image.Transpose.FLIP_LEFT_RIGHT)
     canvas=canvas.rotate(p.get('rotation',0),resample=Image.Resampling.BICUBIC,center=(center,center))
     if edge!='desktop':
-        # Stable center is 8pt inside the screen's visible frame.
+        # Stable center follows the package's pet-size-relative usable-edge inset.
+        inset=size*M['features']['behavior'].get('edgeInset',8/size)
         mask=Image.new('L',canvas.size);d=ImageDraw.Draw(mask)
-        boxes={'left':(center-8,0,size*3,size*3),'right':(0,0,center+8,size*3),'top':(0,center-8,size*3,size*3),'bottom':(0,0,size*3,center+8)}
+        boxes={'left':(center-inset,0,size*3,size*3),'right':(0,0,center+inset,size*3),'top':(0,center-inset,size*3,size*3),'bottom':(0,0,size*3,center+inset)}
         d.rectangle(boxes[edge],fill=255);canvas.putalpha(Image.composite(canvas.getchannel('A'),Image.new('L',canvas.size),mask))
     return canvas
 

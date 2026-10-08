@@ -7,7 +7,7 @@ public enum PetPlacement: String, Codable, CaseIterable, Sendable {
 
 /// Window-local geometry. Positions are pet centers, independent of panel origin.
 public enum CompanionGeometry {
-    public static let canvasSize = CGSize(width: 340, height: 340)
+    public static let canvasSize = CGSize(width: 420, height: 420)
     public struct Slot: Equatable, Sendable {
         public let frame: CGRect
         public let primaryIndex: Int?
@@ -17,11 +17,11 @@ public enum CompanionGeometry {
     public static func petFrame(placement: PetPlacement, petSize: Double = 48) -> CGRect {
         let center: CGPoint
         switch placement {
-        case .desktop: center = CGPoint(x: 170, y: 170)
-        case .left: center = CGPoint(x: 38, y: 170)
-        case .right: center = CGPoint(x: 302, y: 170)
-        case .top: center = CGPoint(x: 170, y: 302)
-        case .bottom: center = CGPoint(x: 170, y: 38)
+        case .desktop: center = CGPoint(x: 210, y: 210)
+        case .left: center = CGPoint(x: 38, y: 210)
+        case .right: center = CGPoint(x: 382, y: 210)
+        case .top: center = CGPoint(x: 210, y: 382)
+        case .bottom: center = CGPoint(x: 210, y: 38)
         }
         let size = min(88, max(36, petSize))
         return CGRect(x: center.x - size / 2, y: center.y - size / 2, width: size, height: size)
@@ -31,15 +31,15 @@ public enum CompanionGeometry {
         return ((offset % count) + count) % count
     }
     public static func radius(petSize: Double = 48, bubbleDistance: Double = 20) -> Double {
-        min(88, max(36, petSize)) / 2 + 22 + min(72, max(8, bubbleDistance))
+        min(88, max(36, petSize)) / 2 + 42 + min(72, max(8, bubbleDistance))
     }
     public static func capacity(placement: PetPlacement, petSize: Double = 48, bubbleDistance: Double = 20, limit: Int? = nil, arcDegrees: Double = 140) -> Int {
         let r = radius(petSize: petSize, bubbleDistance: bubbleDistance)
-        let minimumAngle = 2 * asin(min(1, 48 / (2 * r)))
+        let minimumAngle = 2 * asin(min(1, 84 / (2 * r)))
         let natural = placement == .desktop ? max(3,Int(floor(2 * .pi / minimumAngle))) : max(2,Int(floor(edgeSpan(radius: r, degrees: arcDegrees)/minimumAngle))+1)
         return min(natural,max(2,limit ?? natural))
     }
-    private static func edgeSpan(radius: Double, degrees: Double = 140) -> Double { min(min(140,max(60,degrees)) * .pi / 180, 2 * acos(min(1, 18 / radius))) }
+    private static func edgeSpan(radius: Double, degrees: Double = 140) -> Double { min(min(140,max(60,degrees)) * .pi / 180, 2 * acos(min(1, 42 / radius))) }
     public static func angle(slot: Int, number: Int, placement: PetPlacement, radius: Double = 66, arcDegrees: Double = 140, startDegrees: Double = 90, clockwise: Bool = false) -> Double {
         let fraction = number == 1 ? 0.5 : Double(slot) / Double(number - 1)
         let span = edgeSpan(radius: radius,degrees: arcDegrees)
@@ -73,12 +73,6 @@ public enum CompanionGeometry {
             }
             return Slot(frame: frame, primaryIndex: overflow ? nil : order[index], overflowIndices: indices, miniFrames: mini)
         }
-    }
-    /// A slower, gentler response for a Space appearance, distinct from migration.
-    public static func spaceArrivalProgress(_ progress: Double) -> Double {
-        let t = min(max(progress, 0), 1)
-        if t == 1 { return 1 }
-        return 1 - exp(-6 * t) * (cos(5 * t) + 1.2 * sin(5 * t))
     }
     /// Monotone ease-in/out: zero speed at both ends, no directional overshoot.
     public static func orbitProgress(_ progress: Double) -> Double {

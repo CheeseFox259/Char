@@ -11,6 +11,7 @@ extension CompanionRuntime {
               let destination = ProcessInfo.processInfo.environment["CHAR_APPEARANCE_CHECK_OUTPUT"] else { throw PetSkinError.invalid("isolated example required") }
         let output = URL(fileURLWithPath: destination)
         try FileManager.default.createDirectory(at: output,withIntermediateDirectories:true)
+        presentationTracing = true
         defer { appearanceScript?.stop(); try? FileManager.default.removeItem(at: store.fileURL.deletingLastPathComponent()) }
         let manifest = try skinStore.importPackage(at:URL(fileURLWithPath:source))
         selectSkin(manifest.id)
@@ -33,7 +34,7 @@ extension CompanionRuntime {
         try require(panel.surface.pet.clip == "idle","Space appearance must not stack the package arrival over the shared scene arrival")
         let pet = GraphicButton(kind:.pet,runtime:self)
         func raster(_ clip: String, _ elapsed: Double, _ placement: PetPlacement, _ size: Double) -> Data? {
-            setPetSize(size); pet.frame = NSRect(x:0,y:0,width:size*3,height:size*3)
+            setPetSize(size); pet.frame = NSRect(x:0,y:0,width:size,height:size)
             pet.placement = placement; pet.clip = clip; pet.clipElapsed = elapsed; pet.feedbackElapsed = nil
             pet.refreshPetArtwork(); return pet.artworkPixelData
         }
@@ -61,18 +62,51 @@ extension CompanionRuntime {
                 }
             }
         }
-        setAppearanceTheme("day"); pet.gaze = NSPoint(x:-1,y:0)
-        let left = raster("idle",0,.desktop,88)
-        pet.gaze = NSPoint(x:1,y:0)
-        try require(left != raster("idle",0,.desktop,88),"gaze did not change pixels")
+        setAppearanceTheme("day")
+        for placement in PetPlacement.allCases {
+            pet.gaze = .zero
+            let center = raster("idle",0,placement,48)
+            for gaze in [NSPoint(x:-1,y:0), NSPoint(x:1,y:0), NSPoint(x:0,y:-1), NSPoint(x:0,y:1),
+                         NSPoint(x:-1,y:-1), NSPoint(x:1,y:-1), NSPoint(x:-1,y:1), NSPoint(x:1,y:1)] {
+                pet.gaze = authoredGaze(gaze, placement: placement)
+                try require(center != raster("idle",0,placement,48), "48pt gaze did not change pixels: \(placement)/\(gaze)")
+            }
+        }
         pet.gaze = .zero
         let open = raster("idle",0,.desktop,88)
         try require(open != raster("idle",35.0/30,.desktop,88),"blink state did not change pixels")
         // The same empty edge PNG must still repaint when tracking metadata changes.
-        try require(raster("edgePeek",0.35,.left,88) != raster("edgePeek",0.6,.left,88),"tracking frame cache retained old layers")
+        try require(raster("edgePeek",0.04,.left,48) != raster("edgePeek",0.12,.left,48),"tracking frame cache retained old layers")
         pet.reducedMotion = true
         try require(raster("idle",0,.desktop,48) == raster("idle",0,.desktop,48),"reduced motion frame must remain stable")
         pet.reducedMotion = false
+        // Verify the real scene clip separately from the light outside it.
+        setPetSize(48)
+        for edge in [PetPlacement.left,.right,.top,.bottom] {
+            let previous = petPlacement
+            let motion = CompanionPlayback(departure:customPetClipDuration(clip:previous == .desktop ? "depart" : "edgeHide",placement:previous),
+                                           arrival:customPetClipDuration(clip:"edgePeek",placement:edge))
+            setPlacement(edge)
+            try await Task.sleep(nanoseconds:UInt64((motion.duration+0.1)*1_000_000_000))
+            let surface = panel.surface
+            try require(surface.pet.clip == "idle" && surface.visualOpacity == 1,"edge scene sampled before placement settled")
+            guard let root = surface.layer else { throw PetSkinError.invalid("missing native scene") }
+            let pixels = Int(surface.bounds.width*2)
+            guard let context = CGContext(data:nil,width:pixels,height:pixels,bitsPerComponent:8,bytesPerRow:pixels*4,
+                                          space:CGColorSpaceCreateDeviceRGB(),bitmapInfo:CGImageAlphaInfo.premultipliedLast.rawValue) else { throw PetSkinError.invalid("scene bitmap unavailable") }
+            context.scaleBy(x:2,y:2); root.render(in:context)
+            guard let image = context.makeImage() else { throw PetSkinError.invalid("scene capture failed") }
+            try NSBitmapImageRep(cgImage:image).representation(using:.png,properties:[:])!.write(to:output.appendingPathComponent("scene-\(edge).png"))
+            let area = panel.screen!.visibleFrame
+            let edgePoint: NSPoint
+            switch edge {
+            case .left: edgePoint = NSPoint(x:area.minX-panel.frame.minX,y:surface.pet.frame.midY+35)
+            case .right: edgePoint = NSPoint(x:area.maxX-panel.frame.minX,y:surface.pet.frame.midY+35)
+            case .top: edgePoint = NSPoint(x:surface.pet.frame.midX+35,y:area.maxY-panel.frame.minY)
+            default: edgePoint = NSPoint(x:surface.pet.frame.midX+35,y:area.minY-panel.frame.minY)
+            }
+            try require(surface.hitTest(edgePoint) == nil,"edge boundary intercepted desktop input")
+        }
         let executable = Bundle.main.executableURL!.deletingLastPathComponent().appendingPathComponent("char-appearance-script")
         let script = try AppearanceScriptHost(executable:executable,source:String(contentsOf:URL(fileURLWithPath:source).appendingPathComponent("behavior.js")))
         defer { script.stop() }
@@ -84,6 +118,61 @@ extension CompanionRuntime {
         let leave = try await script.event(["name":"hoverLeave"])
         try require(leave.first?.value == "idle","hover leave did not restore idle")
         script.stop()
+        // Exercise actual layer conversions at the maximum age size.
+        let bubble = GraphicButton(kind: .bubble(.claudeCode), runtime: self)
+        bubble.frame = NSRect(x:100,y:100,width:44,height:44)
+        bubble.presentBubble(frame:bubble.frame,miniature:false,visible:true,animated:false,orbitCenter:.zero)
+        let root = CALayer(), bubbleHost = CALayer(); root.addSublayer(bubbleHost); bubble.attachArtwork(to:bubbleHost)
+        _ = bubble.setAgeScale(1.5)
+        try require(bubble.containsSurfacePoint(NSPoint(x:153,y:122)), "grown bubble rim cannot receive clicks")
+        try require(!bubble.containsSurfacePoint(NSPoint(x:157,y:122)), "outside grown bubble did not pass through")
+        try require(abs(bubble.presentationFrame.width-66)<0.01, "grown bubble geometry is not66pt")
+        setPetSize(48); setPlacement(.desktop)
+        try await Task.sleep(nanoseconds:1_200_000_000)
+        // Edge checks finish near a screen margin. Start this regression in
+        // the actual desktop middle, where a small drag is not clamped.
+        let desktop = panel.screen!.visibleFrame
+        panel.setFrame(NSRect(x:desktop.midX-210,y:desktop.midY-210,width:420,height:420),display:true)
+        saveDraggedPosition()
+        let dragged = panel.frame.offsetBy(dx:20,dy:15)
+        panel.surface.beginDrag(); panel.setFrame(dragged,display:true); saveDraggedPosition()
+        try require(panel.surface.visualOpacity == 1 && panel.surface.pet.clip == "idle", "desktop drag commit replayed migration")
+        try await Task.sleep(nanoseconds:100_000_000)
+        try require(panel.frame == dragged, "desktop drag commit reverted its location")
+        try require(presentationTraceCount > 0, "diagnostic notification timeline was not recorded")
+        try Data(contentsOf:presentationTraceURL).write(to:output.appendingPathComponent("presentation-trace.log"))
+        presentationTracing = false
+        for language in AppLanguage.allCases {
+            setLanguage(language); settings.collapsedSettingsSections = ["general","appearance","return","plugins","performance"]
+            showSettings()
+            try await Task.sleep(nanoseconds:100_000_000)
+            if let view = settingsWindow?.contentView, let bitmap = view.bitmapImageRepForCachingDisplay(in:view.bounds) {
+                view.cacheDisplay(in:view.bounds,to:bitmap)
+                try bitmap.representation(using:.png,properties:[:])!.write(to:output.appendingPathComponent("settings-\(language.rawValue).png"))
+            }
+            settingsWindow?.close()
+        }
+        // Native playback probe is silent; verifies delegate completion and category priority.
+        let probe = CompanionAudio(), epoch = Date(timeIntervalSince1970:1)
+        let reminders = AttentionRouter(startedAt:epoch,settings:CharSettings(filterSeconds:0))
+        reminders.ingest([StopReason.question,.failure,.turnEnded].enumerated().map { index,reason in
+            ObservationEvent(key:SessionKey(workEnd:.pi,nativeID:"audio-\(index)"),target:SessionTarget(bundleIdentifier:"fixture-only"),timestamp:epoch,state:.stopped(reason))
+        })
+        reminders.advance(to:epoch); reminders.advance(to:epoch.addingTimeInterval(0.25))
+        guard let tone = NSSound(named:NSSound.Name("Ping")) else { throw PetSkinError.invalid("native sound fixture unavailable") }
+        try require(probe.interaction(id:"touch",sound:tone,volume:0,cooldown:0),"initial interaction playback failed")
+        try require(probe.interaction(id:"touch",sound:tone,volume:0,cooldown:0),"zero cooldown did not interrupt")
+        probe.enqueue(reminders.drainEffects().map { CompanionAudio.Request(notices:$0.notices,resolve:{(tone,0)},isValid:{_ in true}) })
+        try require(probe.currentGroup == .interaction,"attention did not preempt interaction")
+        try require(probe.interaction(id:"touch",sound:tone,volume:0,cooldown:0),"suppressed click must retain visual success")
+        var groups:[AttentionPresentationGroup] = [.interaction]
+        let deadline = ProcessInfo.processInfo.systemUptime+5
+        while probe.isPlayingAttention && ProcessInfo.processInfo.systemUptime<deadline {
+            if let group = probe.currentGroup, groups.last != group { groups.append(group) }
+            try await Task.sleep(nanoseconds:10_000_000)
+        }
+        try require(!probe.isPlayingAttention && groups == [.interaction,.issue,.ended],"native attention queue did not finish in category order")
+        probe.stop()
         // One steady-state sample: same demo scene, native 30fps animation and idle helper.
         setPetSize(48); setPlacement(.desktop)
         var host = ProcessPerformanceStatistics(), helper = ProcessPerformanceStatistics()
@@ -93,13 +182,17 @@ extension CompanionRuntime {
             if let helperPID { helper.record(ProcessPerformanceSample.read(helperPID)) }
             try await Task.sleep(nanoseconds:1_000_000_000)
         }
-        let report: [String:Any] = ["checks":checks,"host":host.report,"script":helper.report,"conditions":"release / isolated demo / desktop 48pt / day / 30fps / no external clients / 12 seconds"]
+        let report: [String:Any] = ["checks":checks,"host":host.report,"script":helper.report,
+            "image_cache_bytes":skinStore.cachedImageBytes,
+            "conditions":"isolated demo / desktop 48pt / day / 30fps / no external clients / 12 seconds"]
         try JSONSerialization.data(withJSONObject:report,options:[.prettyPrinted,.sortedKeys]).write(to:output.appendingPathComponent("native-check.json"))
         print("Phoebe native check passed: \(checks) theme/placement/size combinations, tracking states, transparent endpoints, dedup and performance sample")
     }
 }
 private extension ProcessPerformanceStatistics {
     var report: [String:Any] {
-        ["cpu_average":averageCPUPercent ?? 0,"rss_mib":Double(residentBytes ?? 0)/1048576,"rss_average_mib":(averageResidentBytes ?? 0)/1048576,"samples":sampleCount]
+        ["cpu_average":averageCPUPercent ?? 0,"rss_mib":Double(residentBytes ?? 0)/1048576,
+         "rss_average_mib":(averageResidentBytes ?? 0)/1048576,
+         "footprint_average_mib":(averagePhysicalFootprintBytes ?? 0)/1048576,"samples":sampleCount]
     }
 }

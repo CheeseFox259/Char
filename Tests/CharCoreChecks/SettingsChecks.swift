@@ -73,4 +73,19 @@ struct SettingsChecks {
         }
     }
 
+    func testCategorySoundAndDisclosureMigration() throws {
+        try withStore { store in
+            try FileManager.default.createDirectory(at: store.fileURL.deletingLastPathComponent(), withIntermediateDirectories: true)
+            let legacy = #"{"filterSeconds":10,"graceSeconds":300,"soundEnabled":true,"audioFilePath":"/tmp/legacy.mp3","launchAtLogin":false}"#
+            try Data(legacy.utf8).write(to: store.fileURL)
+            var settings = try store.load()
+            try checkEqual(settings.attentionAudioPaths, ["interaction":"/tmp/legacy.mp3", "issue":"/tmp/legacy.mp3", "ended":"/tmp/legacy.mp3"])
+            settings.attentionAudioPaths.removeValue(forKey: "issue")
+            settings.collapsedSettingsSections.insert("attention")
+            try store.save(settings)
+            let restored = try store.load()
+            try check(restored.attentionAudioPaths["issue"] == nil, "reset category resurrected the legacy override")
+            try checkEqual(restored, settings)
+        }
+    }
 }

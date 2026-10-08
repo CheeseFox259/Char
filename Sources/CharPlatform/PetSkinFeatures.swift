@@ -7,7 +7,9 @@ public struct PetSkinFeatures: Codable, Equatable {
     public var defaultTheme: String?
     public var tracking: PetSkinTracking?
     public var bubbles: PetBubbleStyle?
+    public var edgeBoundary: PetSkinEdgeBoundary?
     public var sounds: [String: PetSkinSound]?
+    public var soundBindings: [String: String]?
     public var bindings: [String: [PetSkinAction]]?
     public var behavior: PetSkinBehavior?
     public var hitRegions: [PetSkinRegion]?
@@ -45,6 +47,7 @@ public struct PetSkinRegion: Codable, Equatable {
 public struct PetSkinTrackingLayer: Codable, Equatable {
     public var image: String
     public var rect: PetSkinRegion
+    public var clipRegion: PetSkinRegion?
     public var travelX: Double?
     public var travelY: Double?
 }
@@ -97,10 +100,20 @@ public struct PetBubbleStyle: Codable, Equatable {
     public var orbitDuration: Double?
     public var orbitCurve: String? // smooth or spring
 }
+/// Native, stationary light at the usable desktop edge. It never intercepts input.
+public struct PetSkinEdgeBoundary: Codable, Equatable {
+    public var width: Double? // Pet-size multiple; default 1.25.
+    public var thickness: Double? // Points at 48pt pet size; default 1.2.
+    public var opacity: Double? // Default 0.55.
+    public var glowOpacity: Double? // Default 0.12.
+    public var glowRadius: Double? // Points at 48pt pet size; default 4.
+}
 public struct PetSkinSound: Codable, Equatable {
     /// Core Audio containers; import still requires NSSound to decode the actual file.
     public static let supportedExtensions: Set<String> = ["wav", "wave", "aiff", "aif", "aifc", "m4a", "mp3", "aac", "caf", "flac"]
-    public var file: String
+    public var file: String?
+    public var files: [String]?
+    public var paths: [String] { files ?? file.map { [$0] } ?? [] }
     public var volume: Double?
     public var cooldown: Double?
 }
@@ -114,6 +127,7 @@ public struct PetSkinBehavior: Codable, Equatable {
     public var returnPolicy: String? // user, original, latest, disabled
     public var followFocus: Bool?
     public var edgeSnapDistance: Double?
+    public var edgeInset: Double? // Pet-size fraction inside the usable desktop edge.
     public var collision: String? // clamp, free
     public var bubbleDistance: Double?
 }
@@ -156,7 +170,7 @@ public extension PetSkinManifest {
 }
 
 extension PetSkinFeatures {
-    static let events: Set<String> = ["select", "theme", "hoverEnter", "hoverLeave", "dragStart", "dragEnd", "click", "attention", "return", "placement"]
+    static let events: Set<String> = ["select", "theme", "hoverEnter", "hoverLeave", "dragStart", "dragEnd", "click", "attention", "attentionNotified", "attentionEscalated", "spaceChanged", "return", "placement"]
     func validate(base: PetSkinManifest) throws -> (frames: Set<String>, images: Set<String>, other: Set<String>, references: Int) {
         func require(_ condition: Bool, _ reason: String) throws { if !condition { throw PetSkinError.invalid(reason) } }
         func range(_ value: Double?, _ bounds: ClosedRange<Double>) throws {
@@ -176,7 +190,7 @@ extension PetSkinFeatures {
         }
         func trackingLayers(_ eyes: [PetSkinTrackingLayer]?, _ head: PetSkinHead?) throws {
             try require((eyes?.count ?? 0) <= 8, "too many tracking layers")
-            for eye in eyes ?? [] { images.insert(eye.image); try region(eye.rect); try range(eye.travelX, 0...0.15); try range(eye.travelY, 0...0.15) }
+            for eye in eyes ?? [] { images.insert(eye.image); try region(eye.rect); if let clip = eye.clipRegion { try region(clip) }; try range(eye.travelX, 0...0.15); try range(eye.travelY, 0...0.15) }
             if let head {
                 try region(head.rect)
                 try require(head.poses["center"] != nil && Set(head.poses.keys).isSubset(of: ["center","n","ne","e","se","s","sw","w","nw"]), "head requires center and only eight directions")
@@ -210,6 +224,9 @@ extension PetSkinFeatures {
             }
         }
         try variants(self.variants); try tracking(self.tracking); try bubbles(self.bubbles)
+        try range(edgeBoundary?.width, 0.5...2); try range(edgeBoundary?.thickness, 0.5...3)
+        try range(edgeBoundary?.opacity, 0...1); try range(edgeBoundary?.glowOpacity, 0...0.3)
+        try range(edgeBoundary?.glowRadius, 0...10)
         try require((themes?.count ?? 0) <= 12, "too many themes")
         for (id,t) in themes ?? [:] {
             try require(id.range(of: "^[a-z][a-z0-9-]{0,39}$",options: .regularExpression) != nil && !t.name.isEmpty && t.name.count <= 80, "invalid theme")
@@ -229,9 +246,16 @@ extension PetSkinFeatures {
         }
         try require((sounds?.count ?? 0) <= 24, "too many sounds")
         for (_,s) in sounds ?? [:] {
-            try require(PetSkinSound.supportedExtensions.contains(URL(fileURLWithPath: s.file).pathExtension.lowercased()), "unsupported sound format")
-            other.insert(s.file); try range(s.volume, 0...1); try range(s.cooldown, 0.1...60)
+            try require((s.file == nil) != (s.files == nil) && (1...24).contains(s.paths.count), "sound requires one file or a nonempty pool")
+            try require(Set(s.paths).count == s.paths.count, "duplicate sound pool file")
+            for path in s.paths {
+                try require(PetSkinSound.supportedExtensions.contains(URL(fileURLWithPath: path).pathExtension.lowercased()), "unsupported sound format")
+                other.insert(path)
+            }
+            try range(s.volume, 0...1); try range(s.cooldown, 0...60)
         }
+        try require(Set(soundBindings?.keys ?? [:].keys).isSubset(of: ["interaction", "issue", "ended", "petClick"]), "unknown sound binding")
+        try require((soundBindings?.values ?? [:].values).allSatisfy { sounds?[$0] != nil }, "unknown bound sound")
         if let script { try require(script.hasSuffix(".js"), "script must be JavaScript"); other.insert(script) }
         var allClips = Set(base.clips.keys)
         for v in self.variants?.values ?? [:].values { allClips.formUnion(v.clips?.keys ?? [:].keys) }
@@ -252,7 +276,7 @@ extension PetSkinFeatures {
         try require([nil,"default","settings","return","none"].contains(behavior?.click), "invalid click behavior")
         try require([nil,"user","original","latest","disabled"].contains(behavior?.returnPolicy), "invalid return policy")
         try require([nil,"clamp","free"].contains(behavior?.collision), "invalid collision mode")
-        try range(behavior?.edgeSnapDistance, 0...100); try range(behavior?.bubbleDistance, 8...72)
+        try range(behavior?.edgeInset, 0...0.5); try range(behavior?.edgeSnapDistance, 0...100); try range(behavior?.bubbleDistance, 8...72)
         try require((hitRegions?.count ?? 0) <= 16 && hitRegions?.isEmpty != true, "invalid hit region count")
         for r in hitRegions ?? [] { try region(r) }
         return (frames,images,other,references)

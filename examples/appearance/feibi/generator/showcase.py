@@ -120,7 +120,7 @@ def metadata(p,state):
 def main():
     if P.exists():shutil.rmtree(P)
     P.mkdir(parents=True)
-    source,body,heads,pupils,eyes=layers();blank=save(Image.new('RGBA',(SIZE,SIZE)),'frames','blank')
+    source,body,heads,pupils,eyes=layers()
     # Head states reuse the body, and closed expressions need no pupil image.
     tracks={}; icons={}
     for key,night in [('day',False),('night',True)]:
@@ -128,8 +128,14 @@ def main():
         for direction,(gx,gy) in DIRECTIONS.items():
             m=matrix(dict(REST,rot=gx*.7,skew=gx*.003,dy=gy*.35),SS,(SIZE*.5,SIZE*.7))
             hposes[direction]=save(resize_premultiplied(affine(theme(heads['open'],night),m),(SIZE,SIZE)),'layers',key+'-'+direction)
-        iris=save(resize_premultiplied(theme(pupils,night),(SIZE,SIZE)),'layers',key+'-iris')
-        track={'head':{'rect':RECT,'poses':hposes},'eyes':[{'image':iris,'rect':RECT,'travelX':.006,'travelY':.004}], 'states':{}}
+        eye_layers=[]
+        for index,(l,t,r,b) in enumerate(eyes):
+            pupil=Image.new('RGBA',pupils.size);box=tuple(round(v) for v in (l,t,r,b))
+            pupil.paste(pupils.crop(box),box[:2])
+            iris=save(resize_premultiplied(theme(pupil,night),(SIZE,SIZE)),'layers',key+'-iris-'+str(index))
+            clip={'x':l/(SIZE*SS),'y':t/(SIZE*SS),'width':(r-l)/(SIZE*SS),'height':(b-t)/(SIZE*SS),'shape':'ellipse'}
+            eye_layers.append({'image':iris,'rect':RECT,'clipRegion':clip,'travelX':.022,'travelY':.020})
+        track={'head':{'rect':RECT,'poses':hposes},'eyes':eye_layers,'states':{}}
         for expression in ['blink','happy','concern']:
             path=save(resize_premultiplied(theme(heads[expression],night),(SIZE,SIZE)),'layers',key+'-'+expression)
             track['states'][expression]={'head':{'rect':RECT,'poses':{'center':path}},'eyes':track['eyes'] if expression=='concern' else []}
@@ -155,19 +161,22 @@ def main():
         clips[name]={'frames':frames,'fps':FPS,'trackingFrames':tf}
     variants={}
     # Each edge has an authored lean, anchor, timeline and mirrored stance.
-    for edge,rot,lean,anchor,mirror in [('left',-90,-2.5,{'x':.5,'y':.57},False),('right',90,2.5,{'x':.5,'y':.57},True),('top',180,-1.2,{'x':.5,'y':.57},False),('bottom',0,1.2,{'x':.5,'y':.57},False)]:
+    for edge,rot,lean,anchor,mirror in [('left',-90,-2.5,{'x':.5,'y':.64},False),('right',90,2.5,{'x':.5,'y':.64},True),('top',180,-1.2,{'x':.5,'y':.64},False),('bottom',0,1.2,{'x':.5,'y':.64},False)]:
         edgeclips={}
-        for name,n in [('idle',counts['idle']),('edgePeek',21),('edgeHide',18)]:
-            tf=[]
+        for name,n in [('edgePeek',7),('edgeHide',6)]:
+            frames=[]; tf=[]
             for i in range(n):
                 t=i/n if name in ('idle','focus','curious','concern','drag') else i/(n-1)
-                p,state=pose(t,name if name not in ('edgePeek','edgeHide') else 'idle');p['rot']+=lean
+                motion=name if name in ('idle','press','return','depart','arrive','celebrate') else 'idle'
+                p,_=pose(t,motion); headpose,state=pose(t,name if name not in ('edgePeek','edgeHide') else 'idle')
+                if name=='celebrate':p,_=pose(t,'return')
                 if name in ('edgePeek','edgeHide'):
                     f=1-t if name=='edgePeek' else t;e=f*f*(3-2*f)
-                    p.update(dy=SIZE*.70*e,alpha=1-e,rot=lean);state=None
-                    if name=='edgePeek':p['dy']+=keyed(t,[(0,0),(.65,0),(.82,-1.2),(.94,.25),(1,0)])
-                tf.append(metadata(p,state))
-            edgeclips[name]={'frames':[blank]*n,'fps':FPS,'trackingFrames':tf}
+                    p.update(dy=SIZE*.70*e,alpha=1-e);headpose=dict(p);state=None
+                image=resize_premultiplied(affine(body,matrix(p,SS,(SIZE*.5,SIZE*.73))),(SIZE,SIZE))
+                image.putalpha(image.getchannel('A').point(lambda a:round(a*p['alpha'])))
+                frames.append(save(image,'frames','body'));tf.append(metadata(headpose,state))
+            edgeclips[name]={'frames':frames,'fps':FPS,'trackingFrames':tf}
         variants[edge]={'rotation':rot,'mirrorX':mirror,'anchor':anchor,'clips':edgeclips}
     # Base edge animation is available on desktop for format completeness.
     clips['edgePeek']=variants['bottom']['clips']['edgePeek'];clips['edgeHide']=variants['bottom']['clips']['edgeHide']
@@ -183,13 +192,16 @@ def main():
         d.line((26,32,39,45,26,57),fill=(250,252,255),width=6);d.line((48,59,69,59),fill=(250,252,255),width=5)
         badgepath=save(badge,'bubbles',key+'-terminal')
         bubble[key]={'shell':shellpath,'cliBadge':badgepath,'statusColors':{'pending':'#8B96C2','running':'#659ACB','issue':'#D78385','interaction':'#B291D2','ended':'#7CA99A'},'fontName':'HelveticaNeue-Medium','fontSize':10,'hoverColor':'#8E99AD','hoverGlow':.09,'hoverAmplitude':.105,'hoverDuration':1.7,'shatterDivisions':3,'shatterDuration':.46,'shatterTravel':17,'orbitDuration':.3,'orbitCurve':'spring'}
-    (P/'audio').mkdir();shutil.copyfile(ROOT/'audio/phoebe_chubby_4.mp3',P/'audio/phoebe_chubby_4.mp3')
+    (P/'audio').mkdir()
+    for audio in sorted((ROOT/'audio').glob('*.mp3')):shutil.copyfile(audio,P/'audio'/audio.name)
     shutil.copyfile(ROOT/'generator/behavior.js',P/'behavior.js')
     manifest={'schemaVersion':2,'id':'feibi.pet','name':'菲比 · Phoebe','canvasSize':{'width':SIZE,'height':SIZE},'anchor':{'x':.5,'y':.5},'appIcon':icons['day'],'clips':clips,'features':{
         'variants':variants,'tracking':tracks['day'],'themes':{'day':{'name':'日光','appIcon':icons['day'],'bubbles':bubble['day']},'night':{'name':'月夜','appIcon':icons['night'],'tracking':tracks['night'],'bubbles':bubble['night']}},'defaultTheme':'day','bubbles':bubble['day'],
         'loopingClips':['focus','drag'], 'bindings':{'dragStart':[{'type':'playClip','value':'drag'}],'dragEnd':[{'type':'playClip','value':'press'}],'return':[{'type':'playClip','value':'return'}]},
-        'sounds':{k:{'file':'audio/phoebe_chubby_4.mp3','volume':.55,'cooldown':4} for k in ['click','notification']},
-        'behavior':{'click':'default','bubbleClick':'visit','returnPolicy':'user','followFocus':True,'bubbleDistance':16,'bubbleCapacity':6,'bubbleArcDegrees':130,'collision':'free'},
+        'sounds':{**{k:{'file':'audio/'+v+'.mp3','volume':.55,'cooldown':0} for k,v in [('needsAttention','phoebe_0'),('problem','phoeba_chubby_1'),('turnEnded','phoebe_chubby_4')]},'petInteraction':{'files':['audio/'+f.name for f in sorted((ROOT/'audio').glob('*.mp3')) if f.stem not in ['phoebe_0','phoeba_chubby_1','phoebe_chubby_4']],'volume':.55,'cooldown':0}},
+        'soundBindings':{'interaction':'needsAttention','issue':'problem','ended':'turnEnded','petClick':'petInteraction'},
+        'edgeBoundary':{'width':1.35,'thickness':1.4,'opacity':.58,'glowOpacity':.12,'glowRadius':4},
+        'behavior':{'click':'default','bubbleClick':'visit','returnPolicy':'user','followFocus':True,'bubbleDistance':16,'bubbleCapacity':6,'bubbleArcDegrees':130,'collision':'free','edgeInset':.09},
         'hitRegions':[{'x':.16,'y':.07,'width':.68,'height':.62,'shape':'ellipse'},{'x':.22,'y':.68,'width':.57,'height':.27,'shape':'ellipse'}], 'script':'behavior.js'}}
     (P/'manifest.json').write_text(json.dumps(manifest,ensure_ascii=False,separators=(',',':'))+'\n')
     images=list(P.rglob('*.png'));pixels=sum(Image.open(f).width*Image.open(f).height for f in images)

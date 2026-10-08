@@ -5,6 +5,7 @@ public struct AttentionItem: Equatable, Sendable {
     public var target: SessionTarget
     public var reason: StopReason
     public var stoppedAt: Date
+    public var firstNotifiedAt: Date?
     public var isPast: Bool
     public var navigationOutcome: NavigationOutcome?
     public init(key: SessionKey, target: SessionTarget, reason: StopReason, stoppedAt: Date,
@@ -44,7 +45,6 @@ public struct AttentionSnapshot: Equatable, Sendable {
     }
 }
 
-public enum AttentionEffect: Equatable, Sendable { case playSound }
 
 /// Deterministic, local-only state. Callers ingest a complete observation batch before advancing time.
 /// All calls belong on the same executor (the app's main thread); this type owns no timers or effects.
@@ -63,10 +63,8 @@ public final class AttentionRouter {
     private var focus = FocusContext()
     private var hold: HoldSnapshot?
     private var navigationFeedback: NavigationOutcome?
-    private var pendingSound: Set<SessionKey> = []
-    private var soundDue: Date?
+    private var feedback = AttentionFeedback()
     private var effects: [AttentionEffect] = []
-    private let soundDebounce: TimeInterval = 0.25
 
     public init(startedAt: Date = Date(), settings: CharSettings = CharSettings()) {
         self.startedAt = startedAt; self.now = startedAt; self.settings = settings.normalized()
@@ -91,7 +89,13 @@ public final class AttentionRouter {
     public func updateSettings(_ settings: CharSettings) {
         self.settings = settings.normalized()
         if settings.originPolicy == .disabled || (!settings.applicationOrigins && hold?.anchor.accuracy == .application) { endHold() }
-        if !self.settings.soundEnabled { pendingSound.removeAll(); soundDue = nil }
+        if !self.settings.soundEnabled {
+            feedback.mutePending()
+            effects = effects.map { effect in
+                guard case let .notify(group, notices) = effect else { return effect }
+                return .notify(group, notices.map { notice in var muted = notice; muted.audible = false; return muted })
+            }
+        }
         expireHoldIfNeeded()
     }
 
@@ -101,7 +105,11 @@ public final class AttentionRouter {
             sessions.removeValue(forKey: key)
             removeItem(key)
         }
-        if pendingSound.isEmpty { effects.removeAll(); soundDue = nil }
+        effects = effects.compactMap { effect in
+            let remaining = effect.notices.filter { $0.occurrence.key.workEnd != workEnd }
+            guard case let .notify(group, _) = effect, !remaining.isEmpty else { return nil }
+            return .notify(group, remaining)
+        }
     }
 
     public func ingest(_ events: [ObservationEvent]) {
@@ -137,9 +145,12 @@ public final class AttentionRouter {
                 }
                 if var item = items[event.key] {
                     // An emitted item survives resume, but a fresh stop replaces its current reason and age.
-                    item.reason = reason; item.target = event.target; item.isPast = false
-                    item.stoppedAt = session.stoppedAt ?? event.timestamp
-                    items[event.key] = item
+                    if item.isPast {
+                        // A new stop must pass the filter again; retain the previous record until then.
+                    } else {
+                        item.reason = reason; item.target = event.target
+                        items[event.key] = item
+                    }
                 }
                 if focus.exactSession == event.key {
                     session.acknowledged = true
@@ -162,21 +173,17 @@ public final class AttentionRouter {
         expireHoldIfNeeded()
         for key in sessions.keys {
             guard var session = sessions[key], case let .stopped(reason) = session.event.state,
-                  !session.acknowledged, items[key] == nil, let stoppedAt = session.stoppedAt,
+                  !session.acknowledged, (items[key] == nil || items[key]?.isPast == true), let stoppedAt = session.stoppedAt,
                   stoppedAt <= now, now.timeIntervalSince(stoppedAt) >= settings.filterSeconds else { continue }
             if focus.exactSession == key {
                 session.acknowledged = true; sessions[key] = session
                 continue
             }
             items[key] = AttentionItem(key: key, target: session.event.target, reason: reason, stoppedAt: stoppedAt)
-            if settings.soundEnabled {
-                pendingSound.insert(key)
-                if soundDue == nil { soundDue = now.addingTimeInterval(soundDebounce) }
-            }
         }
-        if let due = soundDue, now >= due {
-            if settings.soundEnabled && pendingSound.contains(where: { items[$0] != nil }) { effects.append(.playSound) }
-            pendingSound.removeAll(); soundDue = nil
+        effects += feedback.advance(items: Array(items.values), at: now, soundEnabled: settings.soundEnabled)
+        for key in Array(items.keys) {
+            var item = items[key]!; item.firstNotifiedAt = feedback.firstNotifiedAt(for: item); items[key] = item
         }
     }
 
@@ -240,12 +247,18 @@ public final class AttentionRouter {
     public func clearNavigationFeedback() { navigationFeedback = nil }
     public func drainEffects() -> [AttentionEffect] {
         defer { effects.removeAll() }
-        return effects
+        return effects.compactMap { effect in
+            let valid = effect.notices.filter { notice in
+                guard let item = items[notice.occurrence.key] else { return false }
+                return !item.isPast && item.occurrence == notice.occurrence && item.reason == notice.reason
+            }
+            guard case let .notify(group, _) = effect, !valid.isEmpty else { return nil }
+            return .notify(group, valid)
+        }
     }
 
     private func removeItem(_ key: SessionKey) {
-        items.removeValue(forKey: key); pendingSound.remove(key)
-        if pendingSound.isEmpty { soundDue = nil }
+        items.removeValue(forKey: key)
     }
     private func expireHoldIfNeeded() {
         if let hold, hold.elapsedGraceSeconds >= settings.graceSeconds, !focus.isAgent { endHold() }

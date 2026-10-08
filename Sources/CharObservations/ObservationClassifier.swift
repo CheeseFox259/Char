@@ -41,7 +41,14 @@ public enum ObservationClassifier {
         switch type {
         case "user":
             guard record["isMeta"] as? Bool != true else { return nil }
-            state = .running
+            let content = (record["message"] as? [String: Any])?["content"] as? String
+            // Claude writes local command output as user records too. It is not
+            // another prompt and must not undo the preceding /exit closure.
+            if content?.hasPrefix("<local-command-stdout>") == true { return nil }
+            if let content, ["exit", "quit"].contains(where: {
+                content.hasPrefix("<command-name>/\($0)</command-name>") && content.contains("<command-message>")
+            }) { state = .closed }
+            else { state = .running }
         case "assistant":
             guard let message = record["message"] as? [String: Any],
                   message["stop_reason"] as? String == "end_turn" else { return nil }

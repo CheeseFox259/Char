@@ -84,8 +84,9 @@ actor ObservationWorker {
     var appearanceGeneration = 0
     var appearancePoseCache: [String:PetSkinPose] = [:]
     var appearanceApplyingActions = false
-    var appearanceSoundCache: [String:NSSound] = [:]
-    var appearanceSoundTimes: [String:TimeInterval] = [:]
+    let audio = CompanionAudio()
+    var appearanceEventRevision = 0
+    var appearanceAudioRevision = 0
     var appearanceIconTask: Task<Void,Never>?
 
     @Published var petPlacement: PetPlacement = .desktop
@@ -99,6 +100,20 @@ actor ObservationWorker {
     @Published var settings: CharSettings
     @Published var snapshot: AttentionSnapshot
     @Published var setupMessage = ""
+    @Published var setupSection = "general"
+    @Published var presentationTracing = false
+    @Published var presentationTraceCount = 0
+    var presentationTraceURL: URL { store.fileURL.deletingLastPathComponent().appendingPathComponent("presentation-trace.log") }
+    func recordPresentationTrace(_ data: Data) {
+        guard presentationTracing else { return }
+        do {
+            try FileManager.default.createDirectory(at: presentationTraceURL.deletingLastPathComponent(), withIntermediateDirectories: true)
+            if !FileManager.default.fileExists(atPath: presentationTraceURL.path) { FileManager.default.createFile(atPath: presentationTraceURL.path, contents: nil) }
+            let file = try FileHandle(forWritingTo: presentationTraceURL)
+            defer { try? file.close() }
+            try file.seekToEnd(); try file.write(contentsOf: data); presentationTraceCount += 1
+        } catch { setupSection = "performance"; setupMessage = error.localizedDescription }
+    }
     @Published var loginStatus = ""
     @Published var loginFailure: LoginItemError?
     @Published var accessibilityStatus = ""
@@ -161,7 +176,7 @@ actor ObservationWorker {
         }
         setupMessage = loadMessage
         if let pluginStore { pluginEntries = pluginStore.entries }
-        else { setupMessage = localized("插件目录无法加载；请检查本地配置。", "Could not load plugin directory.") }
+        else { setupSection = "plugins"; setupMessage = localized("插件目录无法加载；请检查本地配置。", "Could not load plugin directory.") }
         platform?.configure(plugins: pluginEntries.filter(\.enabled).map(\.plugin))
         refreshSkins()
         if let data = try? Data(contentsOf: companionPreferencesURL),
@@ -322,9 +337,9 @@ actor ObservationWorker {
     func toggleMute() { settings.soundEnabled.toggle(); saveSettings() }
     func saveSettings() {
         settings = settings.normalized()
-        if !settings.soundEnabled { appearanceSoundCache.values.forEach { $0.stop() } }
+        if !settings.soundEnabled { audio.stop(); appearanceAudioRevision += 1 }
         router.updateSettings(effectiveSettings)
-        do { try store.save(settings) } catch { setupMessage = error.localizedDescription }
+        do { try store.save(settings) } catch { setupSection = "general"; setupMessage = error.localizedDescription }
         publish(forceRefresh: true)
     }
     func setLogin(_ enabled: Bool) {
@@ -349,7 +364,7 @@ actor ObservationWorker {
         guard let platform else { return }
         Task { _ = await platform.requestTabbitAutomationPermission(); refreshStatus() }
     }
-    func chooseAudio() {
+    func chooseAudio(group: AttentionPresentationGroup = .interaction) {
         guard !demo else { return }
         let picker = NSOpenPanel()
         picker.canChooseDirectories = false; picker.allowsMultipleSelection = false
@@ -358,9 +373,9 @@ actor ObservationWorker {
         picker.prompt = localized("选择", "Choose")
         if picker.runModal() == .OK, let path = picker.url?.path {
             guard NSSound(contentsOfFile: path, byReference: true) != nil else {
-                setupMessage = localized("无法播放所选音频。", "The selected audio file cannot be played by macOS."); return
+                setupSection = "attention"; setupMessage = localized("无法播放所选音频。", "The selected audio file cannot be played by macOS."); return
             }
-            settings.audioFilePath = path; saveSettings()
+            settings.attentionAudioPaths[group.rawValue] = path; saveSettings()
         }
     }
     func refreshStatus() {
@@ -388,7 +403,7 @@ actor ObservationWorker {
     func showSettings() {
         refreshStatus()
         if settingsWindow == nil {
-            let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 530, height: 630),
+            let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 580, height: 720),
                                   styleMask: [.titled, .closable], backing: .buffered, defer: false)
             window.title = localized("Char 设置", "Char Settings")
             window.collectionBehavior = [.fullScreenNone]
@@ -437,15 +452,27 @@ actor ObservationWorker {
         homeShortcut.updateHold(next.hold != nil)
         refreshHomeShortcutStatus()
         if changed || forceRefresh { panel?.surface.refresh(); statusBar?.refresh() }
-        for effect in router.drainEffects() {
-            if effect == .playSound {
-                if demo { demoSoundCount += 1 }
-                else if let path = settings.audioFilePath, let sound = NSSound(contentsOfFile: path, byReference: true) { sound.play() }
-                else if playAppearanceSound("notification") { }
-                else { NSSound(named: NSSound.Name("Ping"))?.play() }
-            }
+        let effects = router.drainEffects()
+        if demo && settings.soundEnabled { demoSoundCount += effects.filter { $0.notices.contains(where: \.audible) }.count }
+        for notice in effects.flatMap(\.notices) {
+            appearanceEvent(notice.stage == .initial ? "attentionNotified" : "attentionEscalated",
+                            workEnd: notice.occurrence.key.workEnd.rawValue, state: notice.reason.rawValue,
+                            metadata: ["notificationID": notice.occurrence.id, "reason": notice.reason.rawValue,
+                                       "group": notice.group.rawValue, "stage": notice.stage.rawValue],
+                            allowSound: notice.audible)
+        }
+        if !demo {
+            audio.enqueue(effects.filter { $0.notices.contains(where: \.audible) }.map { effect in
+                let group = effect.notices[0].group
+                return CompanionAudio.Request(notices: effect.notices.filter(\.audible), resolve: { [weak self] in self?.attentionSound(group) },
+                    isValid: { [weak self] notice in
+                        guard let self, self.settings.soundEnabled else { return false }
+                        return self.snapshot.bubbles.flatMap(\.items).contains { !$0.isPast && $0.occurrence == notice.occurrence && $0.reason == notice.reason }
+                    })
+            })
         }
     }
+
     private func fadeSourceBadge(_ anchor: ReturnAnchor) {
         badgeFadeTimer?.invalidate()
         sourceBadgeAnchor = anchor; sourceBadgeOpacity = 1
@@ -510,13 +537,14 @@ actor ObservationWorker {
     }
     @objc private func workspaceActivated() { trackFocusedDisplay() }
     @objc private func spaceChanged() {
-        trackFocusedDisplay()
         panel.surface.spaceFeedback()
     }
     private func trackFocusedDisplay() {
         // With one screen there can be no migration, so avoid repeated AX/CG window queries.
-        guard appearanceBehavior?.followFocus != false, NSScreen.screens.count > 1, let id = platform?.foreground()?.displayID,
-              let screen = NSScreen.screens.first(where: { ($0.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber)?.uint32Value == id }) else { return }
+        guard appearanceBehavior?.followFocus != false, NSScreen.screens.count > 1, let currentDisplay else { return }
+        let proposed = platform?.foreground()?.displayID.map { String($0) }
+        guard let selected = panel.surface.selectFocusedDisplay(proposed,current:currentDisplay),
+              let screen = NSScreen.screens.first(where: { displayKey($0) == selected }) else { return }
         place(on: screen, animated: true)
     }
 
@@ -544,33 +572,34 @@ actor ObservationWorker {
         let placement: PetPlacement = nearest.1 < (appearanceBehavior?.edgeSnapDistance ?? 64) ? nearest.0 : .desktop
         petPlacement = placement
         companionPreferences.placement = placement
-        position(on: screen, center: center, placement: placement, animated: true, remember: true)
+        position(on: screen, center: center, placement: placement, animated: false, remember: true, dragCommit: true)
         saveCompanionPreferences()
         if previousPlacement != placement { appearanceEvent("placement") }
     }
     private func saveCompanionPreferences() {
         do { try JSONEncoder().encode(companionPreferences).write(to: companionPreferencesURL, options: .atomic) }
-        catch { setupMessage = localized("无法保存桌宠位置：\(error.localizedDescription)", "Could not save pet position: \(error.localizedDescription)") }
+        catch { setupSection = "appearance"; setupMessage = localized("无法保存桌宠位置：\(error.localizedDescription)", "Could not save pet position: \(error.localizedDescription)") }
     }
-    private func position(on screen: NSScreen, center: NSPoint, placement: PetPlacement, animated: Bool, remember: Bool = false) {
+    private func position(on screen: NSScreen, center: NSPoint, placement: PetPlacement, animated: Bool, remember: Bool = false, dragCommit: Bool = false) {
         currentDisplay = displayKey(screen)
         let area = screen.visibleFrame
         let size = CompanionGeometry.canvasSize
         let pet = CompanionGeometry.petFrame(placement: placement, petSize: petSize)
         var point = center
+        let inset = appearanceBehavior?.edgeInset.map { $0 * petSize } ?? 8
         switch placement {
         case .desktop:
             point.x = min(max(point.x, area.minX + size.width/2), area.maxX-size.width/2)
             point.y = min(max(point.y, area.minY + size.height/2), area.maxY-size.height/2)
-        case .left: point.x = area.minX + 8; point.y = min(max(point.y, area.minY+170), area.maxY-170)
-        case .right: point.x = area.maxX - 8; point.y = min(max(point.y, area.minY+170), area.maxY-170)
-        case .top: point.y = area.maxY - 8; point.x = min(max(point.x, area.minX+170), area.maxX-170)
-        case .bottom: point.y = area.minY + 8; point.x = min(max(point.x, area.minX+170), area.maxX-170)
+        case .left: point.x = area.minX + inset; point.y = min(max(point.y, area.minY+size.height/2), area.maxY-size.height/2)
+        case .right: point.x = area.maxX - inset; point.y = min(max(point.y, area.minY+size.height/2), area.maxY-size.height/2)
+        case .top: point.y = area.maxY - inset; point.x = min(max(point.x, area.minX+size.width/2), area.maxX-size.width/2)
+        case .bottom: point.y = area.minY + inset; point.x = min(max(point.x, area.minX+size.width/2), area.maxX-size.width/2)
         }
         if remember { companionPreferences.remember(center: point, in: area) }
         let frame = NSRect(x: point.x-pet.midX, y: point.y-pet.midY, width: size.width, height: size.height)
 
-        panel.transition(to: frame, placement: placement, animated: animated)
+        panel.surface.transition(to: frame, placement: placement, animated: animated, dragCommit: dragCommit)
     }
     private func displayKey(_ screen: NSScreen) -> String {
         (screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber)?.stringValue ?? "main"
@@ -756,21 +785,21 @@ actor ObservationWorker {
             } catch { fail("icon fixture: \(error)") }
         }
         if CommandLine.arguments.contains("--space-motion-check") {
-            panel.surface.prepareSpaceAppearance()
-            guard panel.surface.visualOpacity == 0,
-                  panel.surface.sceneLayer?.opacity == 0 else { fail("hidden Space first frame is not transparent") }
-            NSWorkspace.shared.notificationCenter.post(name: NSWorkspace.activeSpaceDidChangeNotification, object: NSWorkspace.shared)
-            try? await Task.sleep(nanoseconds: 100_000_000)
-            guard panel.surface.isSpaceFeedbackActive, panel.surface.visualOpacity > 0,
-                  panel.surface.visualOpacity < 1 else { fail("confirmed Space did not arrive") }
-            try? await Task.sleep(nanoseconds: 800_000_000)
-            guard !panel.surface.isSpaceFeedbackActive, panel.surface.visualOpacity == 1 else { fail("arrival did not finish") }
-            NSWorkspace.shared.notificationCenter.post(name: NSWorkspace.activeSpaceDidChangeNotification, object: NSWorkspace.shared)
-            try? await Task.sleep(nanoseconds: 80_000_000)
-            guard !panel.surface.isSpaceFeedbackActive, panel.surface.visualOpacity == 1 else { fail("already-visible Space replayed appearance") }
-            try? await Task.sleep(nanoseconds: 1_000_000_000)
-            guard !panel.surface.isSpaceFeedbackActive, panel.surface.visualOpacity == 1 else { fail("visible Space did not remain continuous") }
-            print("Char Space motion check passed: transparent preparation, confirmed arrival, no late visible replay")
+            let originalFrame = panel.frame
+            for index in 0..<40 {
+                if index % 2 == 0 { panel.surface.prepareSpaceAppearance() }
+                NSWorkspace.shared.notificationCenter.post(name:NSWorkspace.activeSpaceDidChangeNotification,object:NSWorkspace.shared)
+                NotificationCenter.default.post(name:NSWindow.didChangeOcclusionStateNotification,object:panel)
+                if index % 2 != 0 { panel.surface.prepareSpaceAppearance() }
+                try? await Task.sleep(nanoseconds:20_000_000)
+                guard panel.surface.visualOpacity == 1, panel.surface.sceneLayer?.opacity == 1,
+                      panel.surface.pet.motionScale == 1, panel.surface.pet.edgeRetraction == 0,
+                      panel.frame == originalFrame else { fail("Space notification replayed/hid/migrated the visible scene") }
+            }
+            try? await Task.sleep(nanoseconds:700_000_000)
+            NSWorkspace.shared.notificationCenter.post(name:NSWorkspace.activeSpaceDidChangeNotification,object:NSWorkspace.shared)
+            guard panel.surface.visualOpacity == 1, panel.frame == originalFrame else { fail("late workspace replayed appearance") }
+            print("Char Space motion check passed: 40 reordered notification cycles, continuous scene, no late replay")
             NSApp.terminate(nil); return
         }
         if CommandLine.arguments.contains("--orbit-path-check") {
@@ -886,21 +915,14 @@ actor ObservationWorker {
         }
         setPlacement(.desktop)
         try? await Task.sleep(nanoseconds: 450_000_000)
-        // A scene already visible after the system transition must never replay.
-        NSWorkspace.shared.notificationCenter.post(name: NSWorkspace.activeSpaceDidChangeNotification, object: NSWorkspace.shared)
-        guard !panel.surface.isSpaceFeedbackActive else { fail("visible Space replayed appearance") }
-        try? await Task.sleep(nanoseconds: 900_000_000)
-        panel.surface.prepareSpaceAppearance()
-        guard panel.surface.visualOpacity == 0, panel.surface.sceneLayer?.opacity == 0 else { fail("hidden Space first frame visible") }
-        NSWorkspace.shared.notificationCenter.post(name: NSWorkspace.activeSpaceDidChangeNotification, object: NSWorkspace.shared)
-        try? await Task.sleep(nanoseconds: 70_000_000)
-        guard panel.surface.isSpaceFeedbackActive, panel.surface.visualOpacity > 0, panel.surface.visualOpacity < 1 else { fail("Space notification arrival feedback") }
-        panel.surface.prepareSpaceAppearance()
-        guard !panel.surface.isSpaceFeedbackActive else { fail("second hidden cycle failed to interrupt arrival") }
-        panel.surface.spaceFeedback()
-        guard panel.surface.isSpaceFeedbackActive else { fail("second hidden cycle did not begin a fresh arrival") }
-        try? await Task.sleep(nanoseconds: 800_000_000)
-        guard !panel.surface.isSpaceFeedbackActive, panel.surface.pet.spaceTuck == 0, panel.surface.visualOpacity == 1, panel.surface.sceneLayer?.opacity == 1, panel.alphaValue == 1 else { fail("Space feedback completion") }
+        // System visibility cannot start another scene departure/arrival.
+        for _ in 0..<4 {
+            panel.surface.prepareSpaceAppearance()
+            NSWorkspace.shared.notificationCenter.post(name:NSWorkspace.activeSpaceDidChangeNotification,object:NSWorkspace.shared)
+            try? await Task.sleep(nanoseconds:70_000_000)
+            guard panel.surface.visualOpacity == 1, panel.surface.sceneLayer?.opacity == 1,
+                  panel.surface.pet.motionScale == 1, panel.surface.pet.edgeRetraction == 0, panel.alphaValue == 1 else { fail("Space notification replayed scene motion") }
+        }
         if let sample = Bundle.main.resourceURL?.appendingPathComponent("Skins/example.charpet"), let skinStore {
             do {
                 let defaultIcon = NSApp.applicationIconImage?.copy() as? NSImage

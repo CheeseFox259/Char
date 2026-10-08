@@ -6,7 +6,7 @@
 
 清单包含 `schemaVersion/id/name/canvasSize/anchor/clips/appIcon`；schemaVersion 固定为2，`features` 可选。七个基础动作仍必需；可添加英文标识命名动作（字母开头，后续字母/数字，共1–40字符）。所有逐帧动作都匹配基础画布；每组2–120帧、1–60fps。
 
-`features`字段：`variants`、`themes`、`defaultTheme`、`tracking`、`bubbles`、`sounds`、`bindings`、`behavior`、`hitRegions`、`script`、`loopingClips`。未知字段报错。路径均为安全相对路径；禁止绝对路径、反斜杠、空段、`.`、`..`及符号链接。
+`features`字段：`variants`、`themes`、`defaultTheme`、`tracking`、`bubbles`、`sounds`、`soundBindings`、`bindings`、`behavior`、`hitRegions`、`script`、`loopingClips`。未知字段报错。路径均为安全相对路径；禁止绝对路径、反斜杠、空段、`.`、`..`及符号链接。
 
 解析顺序：基础 → `features.variants[placement]` → 当前主题 → 主题的边缘变体。clips按动作名合并；anchor/rotation/mirrorX仅在显式出现时覆盖；tracking和bubbles整个对象替换。placement为desktop/left/right/top/bottom。变体中的anchor对idle、反馈和迁移全部有效；不要为了绕过宿主问题挤压所有姿态。
 
@@ -37,7 +37,25 @@ tracking使用透明PNG叠加在基础帧上。基础图需移除要独立移动
 }}
 ```
 
-head最多9方向：center必需，n/ne/e/se/s/sw/w/nw可选；缺方向用center。方向阈值为归一化gaze的±0.25。eyes最多8层；travelX/travelY为画布比例，0…0.15，默认0.025。PNG叠加层独立尺寸32…1024，rect决定显示区域。宿主将屏幕方向转回当前边缘和镜像的作者坐标；平滑gaze并量化缓存，停住鼠标不重复重绘。Reduce Motion暂停帧动画，保持静态跟随，不做夸张缩放。
+head最多9方向：center必需，n/ne/e/se/s/sw/w/nw可选；缺方向用center。方向阈值为归一化gaze的±0.25。eyes最多8层；travelX/travelY为画布比例，0…0.15，默认0.025。PNG叠加层独立尺寸32…1024，rect决定显示区域。eyes可声明clipRegion（同样的归一化rect/ellipse），宿主在未位移的眼眶区域裁切，再移动瞳孔；遮罩与trackingFrames共同变换，不随瞳孔平移。宿主将屏幕方向转回当前边缘和镜像的作者坐标；平滑gaze并量化缓存，停住鼠标不重复重绘。Reduce Motion暂停帧动画，保持静态跟随，不做夸张缩放。
+
+## 贴边边界光
+
+可选 `features.edgeBoundary` 声明桌宠探出位置的白色边界线；省略时不绘制。中间粗、两端渐细且渐隐，柔光向两侧扩散，不接收点击，不把形象被遮挡的部分重新露出。线固定在菜单栏/Dock以内的可用桌面边缘，不随悬停压缩拉伸；只在贴边姿态显示。
+
+| 字段 | 范围 / 默认 |
+| --- | --- |
+| width | 宠物大小的0.5…2倍；默认1.25 |
+| thickness | 48pt大小下0.5…3pt；默认1.2，随大小等比例变化 |
+| opacity | 0…1；默认0.55 |
+| glowOpacity | 0…0.3；默认0.12 |
+| glowRadius | 48pt大小下0…10pt；默认4，随大小等比例变化 |
+
+```json
+{"edgeBoundary":{"width":1.35,"thickness":1.4,"opacity":0.58,"glowOpacity":0.12,"glowRadius":4}}
+```
+
+此可选字段保持schemaVersion 2，需要配套新宿主；严格旧宿主会拒绝未知字段。Space可见性由macOS负责，宿主不重播进场或改变透明度；`spaceChanged`仍发给脚本，建议只更新记忆，不额外播放进场。焦点屏幕在系统转场稳定后持续确认，避免临时窗口几何导致往返迁移。
 
 ## 气泡皮肤
 
@@ -59,16 +77,33 @@ bubbles仅改变外观，Agent身份图标仍由集成插件提供。主题可�
 
 ## 音效与事件
 
-sounds是音效ID→对象。`file`接受wav/wave、aiff/aif/aifc、m4a、mp3、aac、caf、flac，音频扩展名不区分大小写。单文件≤8MiB，必须经当前macOS的NSSound实际解码且时长>0、≤30秒；扩展名在列表中不代表所有编码均可用。使用系统Core Audio，不附带额外解码器；OGG/Opus需先转为受支持格式。volume=0…1（默认1），cooldown=0.1…60秒（默认0.3）。音效ID与事件名一致时自动播放；其他ID用playSound。全局静音优先，切换形象停止旧音效，不允许播放包外文件。[Apple NSSound格式说明](https://developer.apple.com/documentation/appkit/nssound)。
+sounds是音效ID→对象。`file`接受wav/wave、aiff/aif/aifc、m4a、mp3、aac、caf、flac，音频扩展名不区分大小写。单文件≤8MiB，必须经当前macOS的NSSound实际解码且时长>0、≤30秒；扩展名在列表中不代表所有编码均可用。使用系统Core Audio，不附带额外解码器；OGG/Opus需先转为受支持格式。volume=0…1（默认1），cooldown=0…60秒（默认0.3）。音效ID与事件名一致时自动播放；click 仅桌宠点击自动发声，气泡点击默认静音；其他ID用playSound。全局静音优先，切换形象停止旧音效，不允许播放包外文件。[Apple NSSound格式说明](https://developer.apple.com/documentation/appkit/nssound)。
 
 ```json
 {"sounds":{"click":{"file":"audio/click.wav","volume":0.4,"cooldown":0.3}},
  "bindings":{"hoverEnter":[{"type":"playClip","value":"greet"}], "return":[{"type":"playSound","value":"click"}]}}
 ```
 
-`sounds.notification` 是新提醒的保留音效入口：仅在提醒经过过滤、路由器实际发出提示音时播放，运行中或普通状态变化不会触发。提醒音优先级：用户在设置中明确选择的音效 → 当前形象的 notification → 系统 Ping。形象音效在冷却中保持安静，不改播 Ping；未提供或无法播放时回退系统音。`sounds.click` 只负责点击，不能替代 notification；需要二者时可引用同一个文件。
+`sounds.notification` 保留为旧包的提醒音后备。新版支持 `soundBindings`：interaction（提问/审批/未分类停顿）、issue（失败/限流/上下文耗尽）、ended（轮次结束）、petClick（桌宠点击）→已声明音效ID。三类提醒分别覆盖：用户该类音频 → 当前形象对应绑定 → 旧 notification → 系统 Ping。未声明绑定才使用旧 notification；资源失效或播放失败回退系统音。提醒不使用互动冷却。
 
-事件：select、theme、hoverEnter、hoverLeave、dragStart、dragEnd、click、attention、return、placement。鼠标进入/离开只各发一次，不按动画帧触发。事件对象：name、placement、theme、hold（字符串true/false）；可选workEnd（插件工作端标识）、state。click/hover中的state=pet或bubble（气泡悬停带workEnd）；attention的state为running、pending或原生StopReason标识（如turnEnded、approval、failure等，仅对监控确实提供的状态）。不含消息正文、网页内容、凭证或来源token。
+单个声音声明 `file` 或 `files` 二选一；随机池 `files` 为1…24个不重复、安全相对路径，每次均匀随机选择，允许连续两次相同。连续点击立即打断上一条互动音；提醒音打断互动音，提醒期间的新点击不排队。提醒合并窗口为0.25秒，同批每类一次，依次interaction、issue、ended；播放前重验项是否仍有效。
+
+```json
+{"sounds":{
+  "ask":{"file":"audio/ask.mp3","volume":0.55,"cooldown":0},
+  "problem":{"file":"audio/problem.mp3"},
+  "done":{"file":"audio/done.mp3"},
+  "touch":{"files":["audio/a.mp3","audio/b.mp3"],"cooldown":0}
+},"soundBindings":{"interaction":"ask","issue":"problem","ended":"done","petClick":"touch"}}
+```
+
+**兼容性**：schemaVersion仍为2。旧单文件、未声明新字段的包在新宿主继续有效。使用soundBindings、files、cooldown=0、clipRegion或edgeInset的包要求2026-10-08体验重构后的宿主；旧宿主会严格拒绝新字段。本次不发布版本，分发时附带该宿主要求。
+
+事件：select、theme、hoverEnter、hoverLeave、dragStart、dragEnd、click、attention、attentionNotified、attentionEscalated、spaceChanged、return、placement。鼠标进入/离开只各发一次，不按动画帧触发。事件对象：name、placement、theme、hold（字符串true/false）；可选workEnd（插件工作端标识）、state。click/hover中的state=pet或bubble（气泡悬停带workEnd）；attention的state为running、pending或原生StopReason标识（如turnEnded、approval、failure等，仅对监控确实提供的状态）。不含消息正文、网页内容、凭证或来源token。
+
+`attentionNotified` 和 `attentionEscalated` 为实际提醒阶段，带 `notificationID`（工作端/原生会话/本次停顿身份）、reason（StopReason）、group（interaction/issue/ended）、stage（initial/escalation）及workEnd/state。原因变化仍使用同一停顿身份；恢复后再次停顿产生新身份。原有attention事件保留。静音仍发送新事件，但事件绑定和异步脚本响应均不发声，也不会解除静音后补播；静音会撤销已经在途的脚本发声许可。过期脚本的playClip不能覆盖之后发生的新交互。
+
+宿主维护内存中的提醒年龄：最早仍在等待的未查看项驱动聚合气泡；44pt到66pt，300秒的三次ease-out，达到上限仅一次再次提醒。查看/忽略/恢复后重新选择驱动项，新增项不重置年龄。折叠小泡保持紧凑，隐藏仍计龄，重启不回放。形象包无需自行计时。spaceChanged仅为表达通知，宿主的0.16秒恢复优先，不叠加包的arrive动作。
 
 bindings按事件名提供动作数组，每次最多16动作。playClip可播放额外命名动作；idle以及loopingClips中的动作循环，其他播放一次后恢复idle。迁移中宿主动作优先；新playClip替换旧动作，playClip idle可结束表情循环；当前姿态未声明的额外动作忽略。
 
@@ -113,6 +148,7 @@ behavior可选字段：
 | returnPolicy | user、original、latest、disabled；默认使用用户设置 |
 | followFocus | true/false；默认跟随工作焦点 |
 | edgeSnapDistance | 0…100pt；默认64，0禁用拖放吸边 |
+| edgeInset | 可用桌面边缘到角色锚点的距离，0…0.5倍桌宠尺寸；省略保留8pt；菲比使用0.20，36/48/88pt曝光比例一致 |
 | collision | clamp/free；默认free；clamp拖拽时角色保持在当前显示器可见区域，free允许拖越边界；落位仍遵循屏幕可见范围 |
 | bubbleDistance | 8…72pt；默认用户距离 |
 | bubbleCapacity | 3…20，进一步限制几何可容纳数量；不会强行塞入重叠气泡 |

@@ -10,7 +10,8 @@ The poller retains the newest event timestamp per native session even when adjac
 
 | Source | Structured signal | Event |
 | --- | --- | --- |
-| Claude project JSONL | `type=user` (non-meta) | running |
+| Claude project JSONL | `type=user` (non-meta, excluding local-command stdout) | running |
+| Claude project JSONL | native `<command-name>/exit</command-name>` or `/quit` envelope with command-message | closed |
 | Claude project JSONL | `type=assistant`, `message.stop_reason=end_turn` | turn ended |
 | Codex session JSONL | `event_msg.payload.type=task_started` | running |
 | Codex session JSONL | `event_msg.payload.type=task_complete` | turn ended |
@@ -77,3 +78,9 @@ None of the CLI observers requires tmux; Claude Code, Codex CLI and Pi running d
 ## Approved first-release boundary — 2026-10-04
 
 The user explicitly approved delivery with the confirmed signals in these matrices, with missing categories tracked in #5. Unavailable Codex failure/rate/context, Claude context exhaustion, and Pi independent approval/rate/context are deferred. A missing signal never becomes a fabricated unclassified stop. Optional native integration installation and live client acceptance remain separate from source coverage.
+
+## Native Claude exit regression (2026-10-08)
+
+The local `/exit` command and `<local-command-stdout>` are recorded as user messages. They previously restarted running state after a completed turn, and a click could only remove the old attention item, leaving the running session bubble. The observer now recognizes the native exit/quit command envelope as closed and ignores local stdout. A redacted poller→router fixture reproduces completion→exit→stdout and ensures acknowledgment removes the bubble. Ordinary prompts and custom slash commands remain running signals. This is a client envelope mapping, not semantic inference from conversation text.
+
+Abrupt termination without SessionEnd, an exit transcript envelope or authoritative process identity remains unobservable. Do not expire quiet sessions by a guessed timeout; long running work could be silent. Native user acceptance should exercise `/exit`, Ctrl+D and force quit separately and record which closure signal is available.

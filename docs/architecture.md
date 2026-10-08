@@ -1,6 +1,6 @@
 # 当前实现机制与性能摘要
 
-本文描述v1.0.0源码与运行机制；生产校验器是格式契约的实现。
+本文描述当前源码与运行机制；生产校验器是格式契约的实现。
 
 ## 模块地图
 
@@ -76,9 +76,9 @@ Ctrl+B仅在Hold有效时注册，冲突状态在设置呈现；结束Hold即释
 
 ## 窗口、命中与动效
 
-非激活透明NSPanel使用statusBar层级、加入Spaces及全屏辅助策略；菜单栏入口提供设置/回城/显示/静音/退出。macOS系统桌面转场速度不由Char修改。Space反馈由 NSWorkspace.activeSpaceDidChangeNotification 确认，遮挡变化只负责透明准备/显示协调；持续可见时保持现状，避免切换后迟到的离开/出现补播；隐藏时先透明准备再出现。普通遮挡/锁屏不作为 Space 证据。公开通知在切换后发出，不提前识别手势开始，。
+非激活透明NSPanel使用statusBar层级、加入Spaces及全屏辅助策略；菜单栏入口提供设置/回城/显示/静音/退出。macOS系统桌面转场速度不由Char修改。Space和遮挡通知不改变场景透明度、缩放或缩回；WindowServer显示当前画面，宿主不补播恢复。公开通知在切换后发出，只暂缓焦点屏幕选择，不提前识别手势开始。
 
-默认桌宠48pt，可调36–88；气泡固定44pt，间距默认20pt、可调8–72。几何根据轨道弦长计算容量，桌面整圆、四边内向弧；超容量保留最后折叠区，最多3个可点击小泡。无折叠禁止循环。滚轮策略区分普通刻度、无手势阶段的平滑鼠标事件束、触摸板距离累积和惯性。
+默认桌宠48pt，可调36–88；气泡基础44pt、等待时最长300秒增长到66pt，间距默认20pt、可调8–72。几何根据轨道弦长计算容量，桌面整圆、四边内向弧；超容量保留最后折叠区，最多3个可点击小泡。无折叠禁止循环。滚轮策略区分普通刻度、无手势阶段的平滑鼠标事件束、触摸板距离累积和惯性。
 
 气泡CGImage独立CALayer呈现，命中取当前presentation位置，不等动画完成。普通滚动240ms按单调 smoothstep 非线性角速度采样；折叠跨越先收小再转移/展开，避免开放边缘反向长弧。二维缩放读取hypot(m11,m12)，避免XYZ聚合导致小泡错误放大。新输入从当前呈现状态接续；过期隐藏回调按代次取消。
 
@@ -97,3 +97,13 @@ Ctrl+B仅在Hold有效时注册，冲突状态在设置呈现；结束Hold即释
 原生日志每次读取512KiB，完整行后解析UTF-8，最长16MiB；超长行安静跳过并输出不含正文/路径的诊断。积压分批立即续读，在消化完本批积压后才更新焦点与推进注意力时间，避免把已恢复的停顿误报。半行、轮转与截短保持代次语义。
 
 性能归属、最新版本测量和已知代价见[性能说明](performance.md)。发行从main与版本tag构建Universal ZIP/DMG和示例附件；ad hoc签名、未Apple公证，安装与权限见[发布指南](macos-release.md)。构建、回放、隔离UI和用户真实客户端使用分别记证据，不由架构描述宣称全环境可用。
+
+## 体验表达的深 module
+
+[AttentionFeedback](../Sources/CharCore/AttentionFeedback.swift)拥有停顿身份、首次逻辑提醒时间、原因变化去重、0.25秒类别合并和一次300秒提醒。AttentionRouter提供过滤后的记录，CompanionAudio负责播放前有效性检查、三类串行和互动抢占；形象事件与是否实际出声分离。bubble.scale(at:)以最早仍等待项驱动，年龄不改变布局。
+
+[CompanionPresentation](../Sources/CharCore/CompanionPresentation.swift)接收拖动提交、放置、可见性/Space和反馈，输出一个姿态。普通拖动立即保留位置，模式迁移使用包动作，Space期间保留当前画面，由系统负责可见性；焦点屏幕稳定后才跟随迁移。CompanionSurface应用统一scene变换、固定可用桌面mask与相同的命中换算；GraphicButton在真实尺寸的扩展位图中绘制，避免先裁掉旋转/锚点像素。向量默认形象与菲比共享此seam，分层跟随仍为原生，脚本仅处理有界事件。
+
+[AttentionArtwork](../Sources/CharPlatform/AttentionArtwork.swift)统一桌面与设置的状态图形；六类设置持久保存折叠状态，错误显示于所属分类。契约与取舍见[ADR0010](adr/0010-attention-feedback-and-companion-presentation.md)。
+
+Space/occlusion通知不修改桌宠场景透明度、缩放或缩回。CompanionPresentation仅据其稳定焦点屏幕选择，避免系统转场中的临时窗口位置启动跨屏迁移。可选edgeBoundary由原生adapter在固定桌面裁切层之外绘制柔光，不参与命中。

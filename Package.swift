@@ -29,7 +29,7 @@ let package = Package(
         .executableTarget(name: "CharPackageCheck", dependencies: ["CharCore", "CharPlatform"]),
         .executableTarget(name: "CharPluginCheck", dependencies: ["CharCore", "CharPluginHost"]),
         .executableTarget(name: "CharPluginChecks", dependencies: ["CharCore", "CharPluginHost"], path: "Tests/CharPluginChecks"),
-        .executableTarget(name: "CharCoreChecks", dependencies: ["CharCore"], path: "Tests/CharCoreChecks"),
+        .executableTarget(name: "CharCoreChecks", dependencies: ["CharCore"], path: "Tests/CharCoreChecks", resources: [.copy("Fixtures")]),
         .executableTarget(name: "CharObservationChecks", dependencies: ["CharObservations"], path: "Tests/CharObservationChecks"),
         .executableTarget(name: "CharPlatformChecks", dependencies: ["CharPlatform"], path: "Tests/CharPlatformChecks")
     ],

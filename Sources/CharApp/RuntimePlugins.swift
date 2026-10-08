@@ -106,11 +106,11 @@ extension CompanionRuntime {
             Task { await worker?.configure(configuration) }
             configureCapabilityHost()
             publish(forceRefresh: true)
-        } catch { setupMessage = localized("插件未重新加载：\(error)", "Could not reload plugins: \(error)") }
+        } catch { setupSection = "plugins"; setupMessage = localized("插件未重新加载：\(error)", "Could not reload plugins: \(error)") }
     }
     func setPlugin(_ id: String, enabled: Bool) {
         do { try pluginStore?.setEnabled(enabled, for: id); reloadPlugins() }
-        catch { setupMessage = localized("无法修改插件：\(error)", "Could not update plugin: \(error)") }
+        catch { setupSection = "plugins"; setupMessage = localized("无法修改插件：\(error)", "Could not update plugin: \(error)") }
     }
     func deletePlugin(_ id: String, cleanIntegration: Bool = false) {
         if cleanIntegration {
@@ -123,17 +123,17 @@ extension CompanionRuntime {
                     }
                     _ = try await host.lifecycle(effectiveCapabilityEntry(entry), method: "uninstall", params: ["retainSharedIntegration": shared])
                     try pluginStore?.remove(id: id); reloadPlugins()
-                } catch { setupMessage = localized("无法卸载插件：\(error)", "Could not uninstall plugin: \(error)") }
+                } catch { setupSection = "plugins"; setupMessage = localized("无法卸载插件：\(error)", "Could not uninstall plugin: \(error)") }
                 busy = false
             }
         } else {
             do { try pluginStore?.remove(id: id); reloadPlugins() }
-            catch { setupMessage = localized("无法删除插件：\(error)", "Could not delete plugin: \(error)") }
+            catch { setupSection = "plugins"; setupMessage = localized("无法删除插件：\(error)", "Could not delete plugin: \(error)") }
         }
     }
     func restorePlugins() {
         do { try pluginStore?.restoreBuiltIns(); reloadPlugins() }
-        catch { setupMessage = localized("无法恢复插件：\(error)", "Could not restore plugins: \(error)") }
+        catch { setupSection = "plugins"; setupMessage = localized("无法恢复插件：\(error)", "Could not restore plugins: \(error)") }
     }
     func importPlugin() {
         let picker = NSOpenPanel(); picker.canChooseDirectories = true; picker.canChooseFiles = false
@@ -151,7 +151,7 @@ extension CompanionRuntime {
                 }
                 try pluginStore?.importPackage(at: url, replacingExisting: true); reloadPlugins()
             }
-            catch { setupMessage = localized("导入失败：\(error)", "Import failed: \(error)") }
+            catch { setupSection = "plugins"; setupMessage = localized("导入失败：\(error)", "Import failed: \(error)") }
         }
     }
     func importSkin() {
@@ -169,16 +169,16 @@ extension CompanionRuntime {
                 }
                 if let skin = try skinStore?.importPackage(at: url) { try skinStore?.select(id: skin.id) }
                 refreshSkins()
-            } catch { setupMessage = localized("形象导入失败：\(error)", "Appearance import failed: \(error)") }
+            } catch { setupSection = "appearance"; setupMessage = localized("形象导入失败：\(error)", "Appearance import failed: \(error)") }
         }
     }
     func selectSkin(_ id: String) {
         do { try skinStore?.select(id: id); refreshSkins() }
-        catch { setupMessage = localized("无法选择形象：\(error)", "Could not select appearance: \(error)") }
+        catch { setupSection = "appearance"; setupMessage = localized("无法选择形象：\(error)", "Could not select appearance: \(error)") }
     }
     func deleteSkin(_ id: String) {
         do { try skinStore?.delete(id: id); refreshSkins() }
-        catch { setupMessage = localized("无法删除形象：\(error)", "Could not delete appearance: \(error)") }
+        catch { setupSection = "appearance"; setupMessage = localized("无法删除形象：\(error)", "Could not delete appearance: \(error)") }
     }
     func refreshSkins() {
         skins = skinStore?.skins ?? []

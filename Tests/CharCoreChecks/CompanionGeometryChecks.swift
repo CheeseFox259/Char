@@ -15,10 +15,10 @@ struct CompanionGeometryChecks {
             let physical: CGRect
             switch placement {
             case .desktop: physical = bounds
-            case .left: physical = CGRect(x: 30, y: 0, width: 310, height: 340)
-            case .right: physical = CGRect(x: 0, y: 0, width: 310, height: 340)
-            case .top: physical = CGRect(x: 0, y: 0, width: 340, height: 310)
-            case .bottom: physical = CGRect(x: 0, y: 30, width: 340, height: 310)
+            case .left: physical = CGRect(x: 30, y: 0, width: 390, height: 420)
+            case .right: physical = CGRect(x: 0, y: 0, width: 390, height: 420)
+            case .top: physical = CGRect(x: 0, y: 0, width: 420, height: 390)
+            case .bottom: physical = CGRect(x: 0, y: 30, width: 420, height: 390)
             }
             for count in 0...16 {
                 let slots = CompanionGeometry.layout(count: count, offset: -2, placement: placement, petSize: size, bubbleDistance: distance)
@@ -28,6 +28,12 @@ struct CompanionGeometryChecks {
                     try check(slot.miniFrames.allSatisfy(bounds.contains))
                     try check(physical.contains(slot.frame), "\(placement) bubble clipped by physical screen")
                     try check(slot.miniFrames.allSatisfy(physical.contains), "\(placement) mini clipped by physical screen")
+                    let grown = slot.frame.insetBy(dx: -20, dy: -20) // 66pt plus hover/glow clearance
+                    try check(physical.contains(grown), "\(placement) maximum bubble hover clipped")
+                    for other in slots where other.frame != slot.frame {
+                        try check(hypot(other.frame.midX-slot.frame.midX, other.frame.midY-slot.frame.midY) >= 84-0.001,
+                                  "maximum bubble hover targets overlap")
+                    }
                 }
             }
         }
@@ -90,21 +96,6 @@ struct CompanionGeometryChecks {
             }
             try checkEqual(reached, Set(0..<count))
         }
-        var space = CompanionSpaceLifecycle()
-        try check(!space.beginPreparedArrival(), "visible workspace changes cannot replay arrival")
-        try check(space.prepareHiddenAppearance())
-        try check(!space.prepareHiddenAppearance())
-        try check(space.beginPreparedArrival())
-        try check(!space.beginPreparedArrival(), "duplicate visible/workspace notifications are idempotent")
-        try check(space.prepareHiddenAppearance(), "a genuine second hide interrupts the active arrival")
-        try checkEqual(space.state, .prepared)
-        try check(!space.prepareHiddenAppearance(), "duplicate hidden callbacks preserve the prepared cycle")
-        try check(space.beginPreparedArrival(), "rapid hide/arrive/hide/show starts its new appearance")
-        try check(!space.beginPreparedArrival(), "workspace duplicates cannot restart the new arrival")
-        space.finishArrival()
-        try check(!space.beginPreparedArrival(), "late workspace notification cannot replay completed arrival")
-        try check(space.prepareHiddenAppearance(), "a new hide cycle can animate again")
-        space.finishArrival()
         for progress in stride(from: 0.0, through: 0.99, by: 0.01) {
             try check(CompanionGeometry.orbitProgress(progress + 0.01) >= CompanionGeometry.orbitProgress(progress), "orbit must remain monotone on reversal")
         }
@@ -122,10 +113,6 @@ struct CompanionGeometryChecks {
         try checkEqual(CompanionPlayback.edgeRotation(placement: .right), 90)
         try checkEqual(CompanionPlayback.edgeRotation(placement: .top), 180)
         try checkEqual(CompanionGeometry.normalizedOffset(-1, count: 7), 6)
-        try checkEqual(CompanionGeometry.spaceArrivalProgress(0), 0)
-        try checkEqual(CompanionGeometry.spaceArrivalProgress(1), 1)
-        try check(CompanionGeometry.spaceArrivalProgress(0.01) < 0.01, "Space response starts gently")
-        try check(CompanionGeometry.spaceArrivalProgress(0.15) < CompanionGeometry.arrivalProgress(0.15))
         try checkEqual(CompanionGeometry.arrivalProgress(0), 0)
         try checkEqual(CompanionGeometry.arrivalProgress(1), 1)
         try check(CompanionGeometry.arrivalProgress(0.5) > 1, "arrival has elastic overshoot")

@@ -16,23 +16,28 @@ public struct CharSettings: Equatable, Codable, Sendable {
     public var graceSeconds: TimeInterval
     public var soundEnabled: Bool
     public var audioFilePath: String?
+    public var attentionAudioPaths: [String: String]
+    public var collapsedSettingsSections: Set<String>
     public var launchAtLogin: Bool
     public var language: AppLanguage
 
     public init(filterSeconds: TimeInterval = 10, graceSeconds: TimeInterval = 300,
                 soundEnabled: Bool = true, audioFilePath: String? = nil, launchAtLogin: Bool = true, language: AppLanguage = .systemDefault,
-                originPolicy: OriginPolicy = .original, applicationOrigins: Bool = true) {
+                originPolicy: OriginPolicy = .original, applicationOrigins: Bool = true,
+                attentionAudioPaths: [String: String]? = nil, collapsedSettingsSections: Set<String> = ["general", "return", "plugins", "performance"]) {
         self.originPolicy = originPolicy; self.applicationOrigins = applicationOrigins
         self.filterSeconds = filterSeconds
         self.graceSeconds = graceSeconds
         self.soundEnabled = soundEnabled
         self.audioFilePath = audioFilePath
+        self.attentionAudioPaths = attentionAudioPaths ?? Dictionary(uniqueKeysWithValues: AttentionPresentationGroup.allCases.compactMap { group in audioFilePath.map { (group.rawValue, $0) } })
+        self.collapsedSettingsSections = collapsedSettingsSections
         self.launchAtLogin = launchAtLogin
         self.language = language
         self = normalized()
     }
 
-    private enum CodingKeys: String, CodingKey { case filterSeconds, graceSeconds, soundEnabled, audioFilePath, launchAtLogin, language, originPolicy, applicationOrigins }
+    private enum CodingKeys: String, CodingKey { case filterSeconds, graceSeconds, soundEnabled, audioFilePath, attentionAudioPaths, collapsedSettingsSections, launchAtLogin, language, originPolicy, applicationOrigins }
     public init(from decoder: Decoder) throws {
         let values = try decoder.container(keyedBy: CodingKeys.self)
         self.init(filterSeconds: try values.decode(TimeInterval.self, forKey: .filterSeconds),
@@ -42,7 +47,9 @@ public struct CharSettings: Equatable, Codable, Sendable {
                   launchAtLogin: try values.decode(Bool.self, forKey: .launchAtLogin),
                   language: try values.decodeIfPresent(AppLanguage.self, forKey: .language) ?? .systemDefault,
                   originPolicy: try values.decodeIfPresent(OriginPolicy.self, forKey: .originPolicy) ?? .original,
-                  applicationOrigins: try values.decodeIfPresent(Bool.self, forKey: .applicationOrigins) ?? true)
+                  applicationOrigins: try values.decodeIfPresent(Bool.self, forKey: .applicationOrigins) ?? true,
+                  attentionAudioPaths: try values.decodeIfPresent([String: String].self, forKey: .attentionAudioPaths),
+                  collapsedSettingsSections: try values.decodeIfPresent(Set<String>.self, forKey: .collapsedSettingsSections) ?? ["general", "return", "plugins", "performance"])
     }
 
     /// Invalid durations revert to their defaults. Zero is a valid immediate threshold.

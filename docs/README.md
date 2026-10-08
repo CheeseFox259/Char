@@ -26,4 +26,4 @@
 
 - [架构](architecture.md)、[领域术语](../CONTEXT.md)、[架构决定](adr)。
 - [新增客户端信号](new-agent-observation.md)、[准确导航边界](native-navigation-feasibility.md)、[Windows 可行性](windows-feasibility.md)。
-- [1.0.0 版本说明](release-notes-1.0.0.md)、[贡献指南](../CONTRIBUTING.md)、[安全与信任](../SECURITY.md)。
+- [1.2.0 版本说明](release-notes-1.2.0.md)、[1.1.0 版本说明](release-notes-1.1.0.md)、[1.0.0 版本说明](release-notes-1.0.0.md)、[贡献指南](../CONTRIBUTING.md)、[安全与信任](../SECURITY.md)。

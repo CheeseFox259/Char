@@ -46,7 +46,7 @@ The example is a schema illustration; ship actual frames for every path. Use [th
 
 ## Animation authoring
 
-`idle` loops continuously. Other clips play once and hold their last frame; Char changes back to idle when the interaction finishes. Frame lookup uses seconds since the clip started. Negative/nonfinite time uses frame zero. The renderer applies the app's placement, scale and Reduce Motion policy; imported artwork must not change bubble size or hit targets.
+`idle` loops continuously. Other clips play once and hold their last frame; Char changes back to idle when the interaction finishes. Frame lookup uses seconds since the clip started. Negative/nonfinite time uses frame zero. The renderer applies the app's placement, scale and Reduce Motion policy; imported artwork must not change host reminder growth or bubble hit targets. Host bubbles grow from 44pt to 66pt over five minutes; miniature entries retain compact sizes.
 
 The idle sequence should include breathing, squash/stretch with elastic recovery, a small tilt and a blink. Keep the first and last pose compatible so wrapping is unobtrusive. `press` gives tactile compression; `return` gives a short rebound; `depart` ends transparent/small and `arrive` starts transparent/small, ending at rest. For edge clips, author movement toward/away from the **bottom** of the canvas; the companion renderer can orient it for the selected edge. Keep the anchor stable across every frame and leave padding for overshoot and feet.
 
@@ -70,3 +70,5 @@ Selecting, importing or restoring an appearance updates the running application 
 The project logo and pristine installation use the built-in right-edge icon. Char automatically synchronizes a selected appearance's icon into a writable ad hoc installation using a staged, re-signed, strictly verified bundle and a pristine Release backup. Default selection restores the original artwork. This can change Accessibility trust; Developer ID signatures are not silently replaced. Details, failure handling and user checks are in the [外观 API](appearance-api.md#安装图标与预算).
 
 分层形象可用动作的 `trackingFrames` 与 `tracking.states` 同步身体、头部、瞳孔、表情与透明度，详细契约和示例见[外观 API](appearance-api.md#分层动画的同帧同步)。
+
+可选 `features.edgeBoundary` 为贴边位置提供白色渐变边界与柔光，字段/范围见[外观API](appearance-api.md#贴边边界光)。省略时无边界光；使用此字段的包要求配套新版宿主。

@@ -1,11 +1,11 @@
 # 菲比示例素材说明
 
-本示例包括用户提供的角色参考图、从参考制作的形象动画、图标、点击音效，以及可复现的生成代码。
+本示例包括用户提供的角色参考图、从参考制作的形象动画、图标、提醒与互动音效，以及可复现的生成代码。
 
-## 点击音效
+## 提醒与互动音效
 
 - 提供项目：Genius-Society / Phoebe Chubby，https://github.com/Genius-Society/phoebe_chubby
-- 原文件：https://github.com/Genius-Society/phoebe_chubby/blob/main/audio/phoebe_chubby_4.mp3
+- 原文件：该项目 audio 目录的18条MP3；保留原文件名。提醒使用 phoebe_0、phoeba_chubby_1、phoebe_chubby_4，其余15条用于随机互动。
 - Char 修改：原样提供 MP3，不剪辑或转码音频；播放音量与冷却由包清单声明。
 - 上游许可：Creative Commons Attribution-NonCommercial-ShareAlike 4.0 International（CC BY-NC-SA 4.0），https://creativecommons.org/licenses/by-nc-sa/4.0/ 。保留署名、仅限非商业使用，改编遵循相同许可。上游许可全文见仓库 `audio/LICENSE-CC-BY-NC-SA-4.0.txt`，发行附件中为 `FEIBI-AUDIO-LICENSE.txt`。
 - 上游语音来源记录：https://github.com/Genius-Society/phoebe_chubby#voice-sources--语音来源 。上游注明《鸣潮》角色相关版权属于 KURO GAMES；此处不声明官方合作或额外授权。

@@ -32,7 +32,7 @@ extension CompanionRuntime {
             nativeRuntimeURL = environment["CHAR_NATIVE_ROOT"].map { URL(fileURLWithPath: $0) }
             capabilityHost = CapabilityHost(environment: environment)
             configureCapabilityHost()
-        } catch { setupMessage = localized("插件宿主无法初始化：\(error)", "Could not initialize plugin host: \(error)") }
+        } catch { setupSection = "plugins"; setupMessage = localized("插件宿主无法初始化：\(error)", "Could not initialize plugin host: \(error)") }
     }
     func configureCapabilityHost() {
         capabilityRevision += 1; let revision = capabilityRevision

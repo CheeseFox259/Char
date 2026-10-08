@@ -35,7 +35,7 @@ extension CompanionRuntime {
             }
             let first = samples.first!, last = samples.last!
             let cpu = (last["cpu_seconds"]!-first["cpu_seconds"]!)/(last["time"]!-first["time"]!)*100
-            phases.append(["phase":phase,"cpu_percent":cpu,"samples":samples,
+            phases.append(["phase":phase,"cpu_percent":cpu,"samples":samples,"image_cache_bytes":skinStore.cachedImageBytes,
                 "footprint_average_mib":samples.reduce(0) { $0+($1["footprint_mib"] ?? 0) }/Double(samples.count)])
         }
         let output = URL(fileURLWithPath: destination)

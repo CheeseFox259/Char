@@ -181,6 +181,7 @@ func testStructuredClassificationAndSuppression() throws {
     try check(remote?.isLocalRoot == false, "Codex remote not suppressed")
 }
 
+try testClaudeExitCannotLeaveRunningBubble()
 try testStartupAndAppends()
 try testCodexIdentityAndBatch()
 try testCodexQuestionResumesOnMatchingOutput()
@@ -192,7 +193,7 @@ try testPiHookClassification()
 try testExpandedSharedStreamPipeline()
 try testNewAgentHooksAndKimiWire()
 try testKimiWireWaitsForLateClientBinding()
-print("CharObservations: 11 contract checks passed")
+print("CharObservations: 12 contract checks passed, including Claude native exit/stdout closure")
 
 try testFileCursorPartialTruncationAndRotation()
 try testKimiCursorPartialTruncationAndReplacement()

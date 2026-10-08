@@ -48,6 +48,24 @@ import CharPlatform
     try rejects { var clips = $0["clips"] as! [String:Any]; var idle = clips["idle"] as! [String:Any]; idle["trackingFrames"] = [["opacity":0]]; clips["idle"] = idle; $0["clips"] = clips }
     try rejects { var clips = $0["clips"] as! [String:Any]; var idle = clips["idle"] as! [String:Any]; idle["trackingFrames"] = [["state":"absent"],["state":"absent"]]; clips["idle"] = idle; $0["clips"] = clips }
     try rejects { var clips = $0["clips"] as! [String:Any]; var idle = clips["idle"] as! [String:Any]; idle["trackingFrames"] = [["transform":[1,0,0,1]],["opacity":2]]; clips["idle"] = idle; $0["clips"] = clips }
+    var pooled = try JSONSerialization.jsonObject(with: original) as! [String:Any]
+    var pooledFeatures = pooled["features"] as! [String:Any]
+    pooledFeatures["sounds"] = ["interaction":["files":["tone.wav"],"cooldown":0,"volume":0.4]]
+    pooledFeatures["soundBindings"] = ["interaction":"interaction", "petClick":"interaction"]
+    pooledFeatures["edgeBoundary"] = ["width":1.3,"thickness":1.2,"opacity":0.55,"glowOpacity":0.12,"glowRadius":4]
+    pooled["features"] = pooledFeatures
+    try JSONSerialization.data(withJSONObject: pooled).write(to: jsonURL)
+    let pooledManifest = try PetSkinStore.validatePackage(at: package)
+    assert(pooledManifest.features?.sounds?["interaction"]?.paths == ["tone.wav"])
+    assert(pooledManifest.features?.edgeBoundary?.width == 1.3)
+    try original.write(to: jsonURL)
+    try rejects { var f = $0["features"] as! [String:Any]; f["sounds"] = ["bad":["file":"tone.wav","files":["tone.wav"]]]; $0["features"] = f }
+    try rejects { var f = $0["features"] as! [String:Any]; f["sounds"] = ["bad":["files":[]]]; $0["features"] = f }
+    try rejects { var f = $0["features"] as! [String:Any]; f["soundBindings"] = ["issue":"missing"]; $0["features"] = f }
+    try rejects { var f = $0["features"] as! [String:Any]; f["sounds"] = ["bad":["files":["../escape.wav"]]]; $0["features"] = f }
+    try rejects { var f = $0["features"] as! [String:Any]; f["edgeBoundary"] = ["glowOpacity":0.8]; $0["features"] = f }
+    try rejects { var f = $0["features"] as! [String:Any]; f["edgeBoundary"] = ["width":4]; $0["features"] = f }
+    try rejects { var f = $0["features"] as! [String:Any]; f["edgeBoundary"] = ["unknown":1]; $0["features"] = f }
     let timeline = PetSkinAnimation(frames:["a","b","c"],fps:30)
     assert(timeline.frameIndex(elapsed:0,looping:false) == 0)
     assert(timeline.frameIndex(elapsed:1.0/30,looping:false) == 1)

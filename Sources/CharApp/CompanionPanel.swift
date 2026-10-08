@@ -75,16 +75,12 @@ import CharPlatform
     var orbitOffset: Int { offset }
     var isClockRunning: Bool { clock != nil }
     private var scrollPolicy = CompanionScrollPolicy()
-    private var spaceAt: TimeInterval?
-    private var spaceChangeObserved = false
-    private var visibilityRestoreAt: TimeInterval?
-    private var spaceLifecycle = CompanionSpaceLifecycle()
+    private var presentation = CompanionPresentation()
     private var occlusionObserver: NSObjectProtocol?
     private var lastPointer: NSPoint?
     var capacity: Int { runtime.appearanceCapacity(for: placement) }
     var canCycle: Bool { runtime.snapshot.bubbles.count > capacity }
     var reducesMotionForDiagnostics: Bool { reducedMotion }
-    var isSpaceFeedbackActive: Bool { spaceAt != nil }
     private(set) var visualOpacity: CGFloat = 1
     private var overflowArtwork: NSImage?
     private var overflowCount = -1
@@ -94,27 +90,25 @@ import CharPlatform
     private var displayOptionsObserver: NSObjectProtocol?
     private var clock: Timer?
     private let epoch = ProcessInfo.processInfo.systemUptime
-    private var feedbackAt: TimeInterval?
-    private struct Transition {
-        let frame: NSRect
-        let placement: PetPlacement
-        let started: TimeInterval
-        let reduced: Bool
-        let playback: CompanionPlayback
-        let initialOpacity: CGFloat
-        let initialScale: CGFloat
-        let initialRetraction: CGFloat
-        var arrived = false
-    }
-    private var movement: Transition?
     private var placement: PetPlacement = .desktop
-    var sceneLayer: CALayer? { layer }
+    private let scene = CALayer()
+    private let desktopContent = CALayer()
+    private let edgeBoundary = CompanionEdgeBoundary()
+    private var lastFocusedDisplay: String?
+    private let desktopMask = CAShapeLayer()
+    private var desktopClip = NSRect.zero
+    var sceneLayer: CALayer? { scene }
     init(runtime: CompanionRuntime) {
         self.runtime = runtime
         pet = GraphicButton(kind: .pet, runtime: runtime)
         buttons = WorkEnd.allCases.map { GraphicButton(kind: .bubble($0), runtime: runtime) }
         super.init(frame: NSRect(origin: .zero, size: CompanionGeometry.canvasSize))
         wantsLayer = true
+        scene.frame = bounds; scene.actions = ["transform": NSNull(), "opacity": NSNull()]
+        desktopContent.frame = bounds; desktopContent.mask = desktopMask
+        desktopContent.addSublayer(scene)
+        layer?.addSublayer(desktopContent); layer?.addSublayer(edgeBoundary.layer)
+        desktopMask.actions = ["path": NSNull()]
         overflow.contentsScale = 2
         overflow.actions = ["contents": NSNull(), "bounds": NSNull(), "position": NSNull(), "opacity": NSNull()]
         sceneLayer?.addSublayer(overflow)
@@ -154,47 +148,26 @@ import CharPlatform
             MainActor.assumeIsolated { self?.occlusionChanged() }
         }
     }
+    private func trace(_ event: String) {
+        guard runtime.presentationTracing || ProcessInfo.processInfo.environment["CHAR_PRESENTATION_TRACE"] == "1" else { return }
+        let data = Data("[CharPresentation] \(ProcessInfo.processInfo.systemUptime) \(event) visible=\(window?.occlusionState.contains(.visible) == true) moving=\(presentation.isMoving) opacity=\(visualOpacity) scale=\(pet.motionScale) retraction=\(pet.edgeRetraction) frame=\(window?.frame ?? .zero)\n".utf8)
+        FileHandle.standardError.write(data); runtime.recordPresentationTrace(data)
+    }
     private func occlusionChanged() {
-        guard let window, movement == nil else { return }
-        if window.occlusionState.contains(.visible) {
-            if spaceChangeObserved { beginSpaceArrival() }
-            else if spaceLifecycle.state == .prepared {
-                // Occlusion can also be lock/sleep or ordinary coverage. Give the
-                // workspace notification one short ordering window, then restore.
-                visibilityRestoreAt = ProcessInfo.processInfo.systemUptime + 0.16
-                ensureClock()
-            }
-        } else { prepareSpaceAppearance() }
+        guard let window else { return }
+        trace("occlusion")
+        presentation.visibilityChanged(window.occlusionState.contains(.visible), at: ProcessInfo.processInfo.systemUptime)
+        updatePresentation(); ensureClock()
     }
-    /// Prepare while hidden, before the window can be composited on the new Space.
     func prepareSpaceAppearance() {
-        guard spaceLifecycle.prepareHiddenAppearance() else { return }
-        spaceAt = nil; visibilityRestoreAt = nil
-        visualOpacity = 0; pet.spaceTuck = reducedMotion ? 0 : 1
-        if placement != .desktop { pet.edgeRetraction = reducedMotion ? 0 : pet.frame.width / 2 + 8 }
-        applySharedTransform()
-    }
-    private func beginSpaceArrival() {
-        guard window?.occlusionState.contains(.visible) == true,
-              spaceLifecycle.beginPreparedArrival() else { return }
-        startSpaceArrival()
-    }
-    private func startSpaceArrival() {
-        visibilityRestoreAt = nil
-        spaceAt = ProcessInfo.processInfo.systemUptime
-        pet.spaceTuck = reducedMotion ? 0 : 1; visualOpacity = 0
-        applySharedTransform(); pet.refreshPetArtwork(); ensureClock()
-    }
-    private func finishSpaceMotion() {
-        spaceAt = nil; spaceChangeObserved = false
-        visibilityRestoreAt = nil; spaceLifecycle.finishArrival()
-        pet.spaceTuck = 0; pet.edgeRetraction = 0; visualOpacity = 1
+        presentation.visibilityChanged(false, at: ProcessInfo.processInfo.systemUptime)
+        updatePresentation()
     }
     required init?(coder: NSCoder) { nil }
     private(set) var refreshCount = 0
     func refresh() {
         refreshCount += 1
-        if movement == nil { placement = runtime.petPlacement }
+        if !presentation.isMoving { placement = runtime.petPlacement }
         layoutVisibleBubbles()
         setAccessibilityLabel(runtime.localized("Agent 气泡，滚动或使用上一组和下一组操作", "Agent orbit, scroll or use next and previous actions to cycle bubbles"))
         setAccessibilityCustomActions([
@@ -255,6 +228,7 @@ import CharPlatform
     }
     override func hitTest(_ point: NSPoint) -> NSView? {
         let local = convert(point, from: superview)
+        if desktopClip != .zero && !desktopClip.contains(local) { return nil }
         for button in ([pet] + buttons).reversed() where !button.isHidden {
             if button.containsSurfacePoint(local) { return button }
         }
@@ -338,35 +312,54 @@ import CharPlatform
         }
     }
     func spaceFeedback() {
-        // A Space notification is delivered after the system transition. Never
-        // replay departure/arrival on a scene that is already fully visible.
-        guard movement == nil, spaceLifecycle.state == .prepared else { return }
-        spaceChangeObserved = true; visibilityRestoreAt = nil
-        beginSpaceArrival(); ensureClock()
+        trace("workspace")
+        presentation.spaceChanged(at: ProcessInfo.processInfo.systemUptime)
+        presentation.visibilityChanged(window?.occlusionState.contains(.visible) == true, at: ProcessInfo.processInfo.systemUptime)
+        runtime.appearanceEvent("spaceChanged")
+        updatePresentation(); ensureClock()
     }
-    func returnFeedback() { pet.feedbackClip = "return"; feedbackAt = ProcessInfo.processInfo.systemUptime; ensureClock() }
-    func appearanceFeedback(_ clip: String) {
-        if clip == "idle" { feedbackAt = nil; pet.feedbackElapsed = nil }
-        else { pet.feedbackClip = clip; feedbackAt = ProcessInfo.processInfo.systemUptime }
-        ensureClock()
-    }
-    func pressFeedback() { pet.feedbackClip = "press"; feedbackAt = ProcessInfo.processInfo.systemUptime; ensureClock() }
-    func transition(to frame: NSRect, placement: PetPlacement, animated: Bool) {
-        guard animated else {
-            movement = nil; finishSpaceMotion(); self.placement = placement
-            window?.setFrame(frame, display: true); pet.motionScale = 1; pet.edgeRetraction = 0; layoutVisibleBubbles(); applySharedTransform(); return
+    func selectFocusedDisplay(_ proposed: String?, current: String) -> String? {
+        if proposed != lastFocusedDisplay {
+            lastFocusedDisplay = proposed; trace("focus-display proposed=\(proposed ?? "unknown") current=\(current)")
         }
-        // Replacing this value interrupts both phases; there are no stale completion callbacks.
-        let next = Transition(frame: frame, placement: placement, started: ProcessInfo.processInfo.systemUptime,
-                              reduced: reducedMotion,
-                              playback: CompanionPlayback(departure: runtime.customPetClipDuration(clip: self.placement == .desktop ? "depart" : "edgeHide",placement: self.placement),
-                                                          arrival: runtime.customPetClipDuration(clip: placement == .desktop ? "arrive" : "edgePeek",placement: placement)),
-                              initialOpacity: visualOpacity, initialScale: pet.motionScale * (1 - pet.spaceTuck * 0.45),
-                              initialRetraction: pet.edgeRetraction)
-        finishSpaceMotion()
-        movement = next
-        visualOpacity = next.initialOpacity; pet.motionScale = next.initialScale; pet.edgeRetraction = next.initialRetraction
-        ensureClock()
+        let selected = presentation.focusedDisplay(proposed,current:current,at:ProcessInfo.processInfo.systemUptime)
+        if let selected { trace("display-commit target=\(selected)") }
+        return selected
+    }
+    func returnFeedback() { appearanceFeedback("return") }
+    func appearanceFeedback(_ clip: String) {
+        let duration = runtime.appearanceFeatures?.loopingClips?.contains(clip) == true ? nil : runtime.customPetClipDuration(clip: clip) ?? 0.65
+        presentation.feedback(clip, duration: duration, at: ProcessInfo.processInfo.systemUptime)
+        updatePresentation(); ensureClock()
+    }
+    func pressFeedback() { appearanceFeedback("press") }
+    func beginDrag() {
+        trace("drag-start")
+        presentation.beginDrag(at: ProcessInfo.processInfo.systemUptime)
+        runtime.appearanceEventRevision += 1; updatePresentation()
+    }
+    func transition(to frame: NSRect, placement: PetPlacement, animated: Bool, dragCommit: Bool = false) {
+        let playback = CompanionPlayback(departure: runtime.customPetClipDuration(clip: self.placement == .desktop ? "depart" : "edgeHide", placement: self.placement),
+                                         arrival: runtime.customPetClipDuration(clip: placement == .desktop ? "arrive" : "edgePeek", placement: placement))
+        runtime.appearanceEventRevision += 1
+        if dragCommit {
+            trace("drag-commit")
+            presentation.commitDrag(from: window?.frame ?? frame, to: frame, placement: placement, playback: playback, at: ProcessInfo.processInfo.systemUptime)
+        } else {
+            presentation.move(to: frame, placement: placement, animated: animated, playback: playback, at: ProcessInfo.processInfo.systemUptime)
+        }
+        updatePresentation(); ensureClock()
+    }
+    private func updatePresentation() {
+        let pose = presentation.sample(at: ProcessInfo.processInfo.systemUptime, reduced: reducedMotion)
+        if !pet.isDragging, pose.frame != .zero, window?.frame != pose.frame { window?.setFrame(pose.frame, display: true) }
+        if placement != pose.placement { placement = pose.placement; lastLayout = nil; layoutVisibleBubbles() }
+        visualOpacity = CGFloat(pose.opacity); pet.motionScale = CGFloat(pose.scale); pet.spaceTuck = 0
+        pet.edgeRetraction = CGFloat(pose.retraction); pet.clip = pose.clip; pet.clipElapsed = pose.clip == "idle" ? pet.elapsed : pose.clipElapsed
+        pet.feedbackElapsed = pose.feedbackElapsed
+        if let clip = pose.feedbackClip { pet.feedbackClip = clip }
+        applySharedTransform()
+        updateDesktopClip()
     }
     private func ensureClock() {
         guard clock == nil else { return }
@@ -379,60 +372,9 @@ import CharPlatform
         guard window?.isVisible == true else { return }
         let now = ProcessInfo.processInfo.systemUptime
         let reduce = reducedMotion
-        let wasAnimating = movement != nil || feedbackAt != nil || spaceAt != nil
         pet.elapsed = reduce ? 0 : now - epoch
-        pet.clip = "idle"
-        pet.clipElapsed = pet.elapsed
-        pet.feedbackElapsed = feedbackAt.map { reduce ? 0 : now - $0 }
-        if let feedbackAt, runtime.appearanceFeatures?.loopingClips?.contains(pet.feedbackClip) != true, now - feedbackAt > (runtime.customPetClipDuration(clip: pet.feedbackClip) ?? 0.65) { self.feedbackAt = nil; pet.feedbackElapsed = nil }
-        if var motion = movement {
-            if spaceAt != nil { finishSpaceMotion() }
-            // A placement transition interrupts feedback; its authored departure/arrival wins.
-            feedbackAt = nil; pet.feedbackElapsed = nil
-            let elapsed = now - motion.started
-            let playback = motion.reduced ? CompanionPlayback(departure: 0.056, arrival: 0.104) : motion.playback
-            let arriving = playback.isArriving(at: elapsed)
-            let phase = playback.progress(at: elapsed)
-            let t = min(elapsed / playback.duration, 1)
-            pet.clip = arriving ? (motion.placement == .desktop ? "arrive" : "edgePeek") : (placement == .desktop ? "depart" : "edgeHide")
-            pet.clipElapsed = reduce ? 0 : playback.clipElapsed(at: elapsed)
-            if !arriving {
-                let withdrawal = CGFloat(CompanionGeometry.departureProgress(phase))
-                visualOpacity = motion.initialOpacity * (1 - withdrawal)
-                pet.motionScale = motion.reduced || placement != .desktop ? 1 : motion.initialScale * (1 - 0.8 * withdrawal)
-                pet.edgeRetraction = motion.reduced || placement == .desktop ? 0 : motion.initialRetraction + (38 - motion.initialRetraction) * withdrawal
-            } else {
-                if !motion.arrived {
-                    window?.setFrame(motion.frame, display: true)
-                    placement = motion.placement; layoutVisibleBubbles(); motion.arrived = true
-                }
-                visualOpacity = CGFloat(CompanionGeometry.orbitProgress(min(1, phase * 1.8)))
-                pet.motionScale = motion.reduced || placement != .desktop ? 1 : CGFloat(0.2 + 0.8 * CompanionGeometry.arrivalProgress(phase))
-                pet.edgeRetraction = motion.reduced || placement == .desktop ? 0 : CGFloat(38 * (1 - CompanionGeometry.arrivalProgress(phase)))
-            }
-            movement = t == 1 ? nil : motion
-            if t == 1 { visualOpacity = 1; pet.motionScale = 1; pet.edgeRetraction = 0 }
-        }
-        if let restore = visibilityRestoreAt, now >= restore, !spaceChangeObserved {
-            finishSpaceMotion(); applySharedTransform()
-        }
-        if let start = spaceAt, movement == nil {
-            let elapsed = now - start
-            if spaceLifecycle.state == .arriving {
-                let duration = reduce ? 0.16 : 0.48
-                if elapsed >= duration { finishSpaceMotion() }
-                else {
-                    let progress = elapsed / duration
-                    pet.spaceTuck = reduce ? 0 : CGFloat(max(-0.10, 1 - CompanionGeometry.spaceArrivalProgress(progress)))
-                    visualOpacity = CGFloat(CompanionGeometry.orbitProgress(min(1, progress * 2.2)))
-                    pet.edgeRetraction = placement == .desktop || reduce ? 0 : pet.spaceTuck * (pet.frame.width / 2 + 8)
-                    // Space restores the whole scene. Package arrival clips also
-                    // hide/fade the artwork, doubling the invisible interval.
-                    // Keep the idle clock; migration still uses authored clips.
-                    pet.clip = "idle"; pet.clipElapsed = pet.elapsed
-                }
-            }
-        }
+        updatePresentation()
+        updateBubbleGrowth()
         // AppKit hitTest alone does not forward events through a transparent NSWindow.
         if let window {
             let local = convert(window.convertPoint(fromScreen: NSEvent.mouseLocation), from: nil)
@@ -469,7 +411,7 @@ import CharPlatform
         }
         pet.refreshPetArtwork()
         if lastReduced != reduce { configureIdle() }
-        if wasAnimating || lastReduced != reduce { applySharedTransform() }
+        applySharedTransform()
         lastReduced = reduce
         // Keep the single lightweight clock for pointer passthrough; Reduce Motion freezes drawing.
     }
@@ -512,6 +454,31 @@ import CharPlatform
         sceneLayer?.opacity = Float(visualOpacity)
         CATransaction.commit()
     }
+    private func updateDesktopClip() {
+        guard let window, let screen = window.screen else { return }
+        let area = screen.visibleFrame
+        let rect = NSRect(x: area.minX-window.frame.minX, y: area.minY-window.frame.minY, width: area.width, height: area.height).intersection(bounds)
+        if rect != desktopClip { desktopClip = rect; desktopMask.path = CGPath(rect: rect, transform: nil) }
+        var center = CGPoint(x:pet.frame.midX,y:pet.frame.midY)
+        switch placement {
+        case .left: center.x = area.minX-window.frame.minX
+        case .right: center.x = area.maxX-window.frame.minX
+        case .top: center.y = area.maxY-window.frame.minY
+        case .bottom: center.y = area.minY-window.frame.minY
+        case .desktop: break
+        }
+        edgeBoundary.update(style:placement == .desktop ? nil : runtime.appearanceFeatures?.edgeBoundary,
+                            petSize:runtime.petSize,center:center,vertical:placement == .left || placement == .right,
+                            opacity:Float(visualOpacity))
+    }
+    private func updateBubbleGrowth() {
+        let now = Date()
+        for button in buttons {
+            guard case let .bubble(end) = button.kind else { continue }
+            let scale = button.miniature ? 1 : runtime.snapshot.bubbles.first { $0.workEnd == end }?.scale(at: now) ?? 1
+            if button.setAgeScale(scale) { lastPointer = nil }
+        }
+    }
     private func updateOverflowArtwork() {
         guard !overflow.isHidden else { return }
         let count = max(0, runtime.snapshot.bubbles.count - (capacity - 1))
@@ -539,6 +506,8 @@ import CharPlatform
     let graphicLayer = CALayer()
     private let textureLayer = CALayer()
     let statusLayer = CALayer()
+    private let ageLayer = CALayer()
+    private var ageScale: CGFloat = 1
     private let hoverLayer = CALayer()
     private let hoverPulseLayer = CALayer()
     private let hoverHalo = CALayer()
@@ -554,7 +523,12 @@ import CharPlatform
     private var renderedImage: CGImage?
     var artworkCGImage: CGImage? { renderedImage }
     var artworkPixelData: Data? { renderedImage?.dataProvider?.data as Data? }
-    var presentationFrame: NSRect { graphicLayer.presentation()?.frame ?? graphicLayer.frame }
+    var presentationFrame: NSRect {
+        let graphic = graphicLayer.presentation() ?? graphicLayer
+        guard renderedWorkEnd != nil else { return graphic.frame }
+        let age = ageLayer.presentation() ?? ageLayer
+        return age.convert(age.bounds, to: graphic.superlayer)
+    }
     unowned let runtime: CompanionRuntime
     private struct ArtworkKey: Equatable {
         let workEnd: WorkEnd
@@ -756,9 +730,8 @@ import CharPlatform
     var clip = "idle"
     var clipElapsed: TimeInterval = 0
     func containsInteractivePoint(_ point: NSPoint) -> Bool {
-        guard bounds.contains(point) else { return false }
         if case .pet = kind {
-            guard let regions = runtime.appearanceFeatures?.hitRegions else { return true }
+            guard let regions = runtime.appearanceFeatures?.hitRegions else { return bounds.contains(point) }
             // Hit regions use the drawn canvas and the same anchor/orientation as the artwork.
             let a = NSPoint(x: bounds.midX,y: bounds.midY), g = runtime.authoredGaze(NSPoint(x: point.x-a.x,y: point.y-a.y),placement: placement)
             let size = runtime.customPetSize, anchor = runtime.customPetAnchor(for: placement)
@@ -770,6 +743,7 @@ import CharPlatform
         return x * x + y * y <= 1
     }
     override func scrollWheel(with event: NSEvent) { superview?.scrollWheel(with: event) }
+    var isDragging: Bool { didDrag && dragStart != nil }
     private var dragStart: NSPoint?
     private var initialOrigin: NSPoint?
     private var didDrag = false
@@ -778,17 +752,16 @@ import CharPlatform
         super.init(frame: .zero)
         wantsLayer = true
         graphicLayer.bounds = NSRect(x: 0, y: 0, width: 44, height: 44)
-        hoverLayer.frame = graphicLayer.bounds
-        hoverPulseLayer.frame = graphicLayer.bounds
-        textureLayer.frame = graphicLayer.bounds
+        updateArtworkBounds()
         textureLayer.contentsScale = 2
         statusLayer.frame = textureLayer.bounds; statusLayer.contentsScale = 2
         statusLayer.anchorPoint = NSPoint(x: 31 / 44.0, y: 7.5 / 44.0)
         statusLayer.position = NSPoint(x: 31, y: 7.5)
-        graphicLayer.addSublayer(hoverLayer); hoverLayer.addSublayer(hoverPulseLayer)
+        graphicLayer.addSublayer(ageLayer)
+        ageLayer.addSublayer(hoverLayer); hoverLayer.addSublayer(hoverPulseLayer)
         hoverPulseLayer.addSublayer(textureLayer); textureLayer.addSublayer(statusLayer); layer?.addSublayer(graphicLayer)
         let actions: [String: CAAction] = ["contents": NSNull(), "bounds": NSNull(), "position": NSNull(), "transform": NSNull(), "opacity": NSNull()]
-        graphicLayer.actions = actions; textureLayer.actions = actions; statusLayer.actions = actions; hoverLayer.actions = actions
+        ageLayer.actions = actions; graphicLayer.actions = actions; textureLayer.actions = actions; statusLayer.actions = actions; hoverLayer.actions = actions
         hoverPulseLayer.actions = actions; hoverHalo.actions = actions
         setAccessibilityRole(.button)
         switch kind {
@@ -855,7 +828,7 @@ import CharPlatform
         guard case .pet = kind, let start = dragStart, let origin = initialOrigin else { return }
         let point = NSEvent.mouseLocation
         let dx = point.x - start.x, dy = point.y - start.y
-        if abs(dx) + abs(dy) > 3 && !didDrag { didDrag = true; runtime.appearanceEvent("dragStart") }
+        if abs(dx) + abs(dy) > 3 && !didDrag { didDrag = true; (superview as? CompanionSurface)?.beginDrag(); runtime.appearanceEvent("dragStart") }
         if didDrag {
             var target = NSPoint(x: origin.x+dx,y: origin.y+dy)
             if runtime.appearanceBehavior?.collision == "clamp", let window, let screen = NSScreen.screens.first(where: { $0.frame.contains(point) }) {
@@ -912,14 +885,19 @@ import CharPlatform
 
     override var wantsUpdateLayer: Bool { true }
     override func updateLayer() { if case .pet = kind { refreshPetArtwork() } else { refreshArtwork() } }
+    private func updateArtworkBounds() {
+        ageLayer.bounds = graphicLayer.bounds
+        ageLayer.position = NSPoint(x: graphicLayer.bounds.midX, y: graphicLayer.bounds.midY)
+        hoverLayer.frame = graphicLayer.bounds; hoverPulseLayer.frame = graphicLayer.bounds
+        textureLayer.frame = renderedWorkEnd == nil
+            ? graphicLayer.bounds.insetBy(dx: -graphicLayer.bounds.width, dy: -graphicLayer.bounds.width)
+            : graphicLayer.bounds
+    }
     override func layout() {
         super.layout()
         if !externalArtwork {
             graphicLayer.bounds = bounds; graphicLayer.position = NSPoint(x: bounds.midX, y: bounds.midY)
-            hoverLayer.frame = graphicLayer.bounds
-            hoverPulseLayer.frame = graphicLayer.bounds
-            textureLayer.frame = graphicLayer.bounds
-            refreshPetArtwork()
+            updateArtworkBounds(); refreshPetArtwork()
         }
     }
     func detachArtwork() { graphicLayer.removeFromSuperlayer() }
@@ -930,8 +908,8 @@ import CharPlatform
     func containsSurfacePoint(_ point: NSPoint) -> Bool {
         guard !isHidden else { return false }
         if externalArtwork {
-            let artwork = graphicLayer.presentation() ?? graphicLayer
-            if let surface = artwork.superlayer?.superlayer {
+            let artwork = renderedWorkEnd == nil ? (graphicLayer.presentation() ?? graphicLayer) : (ageLayer.presentation() ?? ageLayer)
+            if let surface = graphicLayer.superlayer?.superlayer {
                 // Artwork is hosted by the shared scene, including its current
                 // Space/migration transform. Convert through that layer tree.
                 let p = artwork.convert(point, from: surface)
@@ -949,13 +927,20 @@ import CharPlatform
             x: bounds.minX+(point.x-frame.minX)/frame.width*bounds.width,
             y: bounds.minY+(point.y-frame.minY)/frame.height*bounds.height))
     }
+    @discardableResult func setAgeScale(_ value: Double) -> Bool {
+        let scale = CGFloat((min(1.5, max(1, value))*1000).rounded(.down)/1000)
+        guard scale != ageScale else { return false }
+        ageScale = scale
+        CATransaction.begin(); CATransaction.setDisableActions(true)
+        ageLayer.setAffineTransform(CGAffineTransform(scaleX: scale, y: scale))
+        CATransaction.commit()
+        return true
+    }
     func presentPetFrame(_ frame: NSRect) {
         CATransaction.begin(); CATransaction.setDisableActions(true)
         graphicLayer.bounds = NSRect(origin: .zero, size: frame.size)
         graphicLayer.position = NSPoint(x: frame.midX, y: frame.midY)
-        hoverLayer.frame = graphicLayer.bounds
-        hoverPulseLayer.frame = graphicLayer.bounds
-        textureLayer.frame = graphicLayer.bounds
+        updateArtworkBounds()
         CATransaction.commit()
         refreshPetArtwork()
     }
@@ -974,9 +959,7 @@ import CharPlatform
         let targetScale: CGFloat = visible ? frame.width/44 : 0.01
         CATransaction.begin(); CATransaction.setDisableActions(true)
         graphicLayer.bounds = NSRect(x: 0, y: 0, width: 44, height: 44)
-        hoverLayer.frame = graphicLayer.bounds
-        hoverPulseLayer.frame = graphicLayer.bounds
-        textureLayer.frame = graphicLayer.bounds
+        updateArtworkBounds()
         graphicLayer.position = target
         graphicLayer.setAffineTransform(CGAffineTransform(scaleX: targetScale, y: targetScale))
         graphicLayer.opacity = visible ? 1 : 0
@@ -1054,8 +1037,14 @@ import CharPlatform
             customImageIdentity = nil; petArtworkKey = key
         }
         renderedImage = autoreleasepool {
-            BubbleDrawing.raster(size:bounds.size) { drawPet() }.cgImage(forProposedRect:nil,context:nil,hints:nil)
+            let padding = bounds.width
+            let image = BubbleDrawing.raster(size: NSSize(width: bounds.width+padding*2, height: bounds.height+padding*2)) {
+                let offset = NSAffineTransform(); offset.translateX(by: padding, yBy: padding); offset.concat()
+                drawPet()
+            }
+            return image.cgImage(forProposedRect:nil,context:nil,hints:nil)
         }
+        textureLayer.frame = bounds.insetBy(dx: -bounds.width, dy: -bounds.width)
         textureLayer.contents = renderedImage
     }
     func configureIdle(reduced: Bool) {
@@ -1171,13 +1160,11 @@ import CharPlatform
             : status.group == .issue ? .systemOrange : status.group == .interaction ? .systemBlue : .systemGreen
         let state = status.pending ? "pending" : status.group == nil ? "running" : status.group == .issue ? "issue" : status.group == .interaction ? "interaction":"ended"
         let color = runtime.appearanceColor(runtime.bubbleStyle?.statusColors?[state],fallback: fallback)
-        let badge = NSRect(x: 18,y: 0,width: 26,height: 15)
-        color.withAlphaComponent(status.past ? 0.45 : 1).setFill()
-        NSBezierPath(roundedRect: badge, xRadius: 7.5, yRadius: 7.5).fill()
-        symbol(status.pending ? "ellipsis" : status.group?.symbol ?? "circle.fill",
-               in: NSRect(x: badge.minX + 3, y: 3, width: 9, height: 9), color: .white)
-        number(status.count, rect: NSRect(x: badge.minX + 12, y: 1, width: 12, height: 13), color: .white, size: 10)
+        let font = runtime.bubbleStyle?.fontName.flatMap { NSFont(name: $0, size: runtime.bubbleStyle?.fontSize ?? 10) }
+            ?? NSFont.monospacedDigitSystemFont(ofSize: runtime.bubbleStyle?.fontSize ?? 10, weight: .semibold)
+        AttentionArtwork.draw(group: status.group, pending: status.pending, count: status.count, past: status.past, color: color, font: font)
     }
+
     private func symbol(_ name: String, in rect: NSRect, color: NSColor) {
         let key = "\(name)/\(rect.height)/\(color.description)"
         if symbolImages[key] == nil {

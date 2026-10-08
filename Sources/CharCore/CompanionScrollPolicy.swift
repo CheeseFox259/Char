@@ -52,6 +52,16 @@ public enum AttentionPresentationGroup: String, CaseIterable, Sendable {
         switch self { case .interaction: return "需关注"; case .issue: return "发生问题"; case .ended: return "轮次结束" }
     }
     public var symbol: String {
-        switch self { case .interaction: return "ellipsis.bubble.fill"; case .issue: return "exclamationmark"; case .ended: return "checkmark" }
+        switch self { case .interaction: return "questionmark.bubble.fill"; case .issue: return "exclamationmark.triangle.fill"; case .ended: return "checkmark.circle.fill" }
     }
+}
+
+/// Shared graphical semantics; shape conveys state independently of color.
+public enum CompanionSymbols {
+    public static let resumed = "arrow.clockwise"
+    public static let pending = "ellipsis"
+    public static let running = "play.fill"
+    public static let exactReturn = "arrow.uturn.backward.circle.fill"
+    public static let applicationReturn = "macwindow"
+    public static let unavailable = "xmark.circle.fill"
 }

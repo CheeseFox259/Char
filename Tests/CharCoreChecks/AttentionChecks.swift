@@ -2,6 +2,53 @@ import Foundation
 import CharCore
 
 struct AttentionChecks {
+    func testDistinctReasonFeedback() throws {
+        let r = router(filter: 0)
+        r.ingest([event("question", 0, .stopped(.question)), event("failure", 0, .stopped(.failure)), event("end", 0, .stopped(.turnEnded))])
+        r.advance(to: time(0)); r.advance(to: time(0.25))
+        try checkEqual(r.drainEffects().count, 3)
+    }
+    func testWaitingGrowthAndSingleEscalation() throws {
+        let r = router(filter: 0)
+        r.ingest([event("old", 0, .stopped(.question))]); r.advance(to: time(0))
+        r.advance(to: time(0.25)); _ = r.drainEffects()
+        try checkEqual(r.snapshot.bubbles.first!.scale(at: time(0)), 1)
+        try check(abs(r.snapshot.bubbles.first!.scale(at: time(60)) - 1.244) < 0.000001)
+        r.ingest([event("new", 60, .stopped(.failure))]); r.advance(to: time(60)); r.advance(to: time(60.25)); _ = r.drainEffects()
+        try checkEqual(r.snapshot.bubbles.first!.oldestWaiting?.key, key("old"))
+        r.advance(to: time(299)); try check(r.drainEffects().isEmpty)
+        try check(r.snapshot.bubbles.first!.scale(at: time(299)) < 1.5)
+        r.advance(to: time(300)); r.advance(to: time(300.25))
+        try checkEqual(r.drainEffects().flatMap(\.notices).map(\.stage), [.escalation])
+        r.advance(to: time(301)); try check(r.drainEffects().isEmpty)
+        try checkEqual(r.snapshot.bubbles.first!.scale(at: time(301)), 1.5)
+        r.ignoreNext(for: .claudeCode)
+        try checkEqual(r.snapshot.bubbles.first!.oldestWaiting?.key, key("new"))
+        r.ingest([event("new", 302, .running)]); r.advance(to: time(400))
+        try checkEqual(r.snapshot.bubbles.first!.scale(at: time(400)), 1)
+        try check(r.drainEffects().isEmpty)
+        let muted = router(filter: 0, sound: false)
+        muted.ingest([event("muted", 0, .stopped(.approval))]); muted.advance(to: time(0)); muted.advance(to: time(300))
+        try checkEqual(muted.snapshot.bubbles.first!.scale(at: time(300)), 1.5)
+        muted.updateSettings(CharSettings(filterSeconds: 0)); muted.advance(to: time(301)); muted.advance(to: time(302))
+        let spent = muted.drainEffects().flatMap(\.notices)
+        try checkEqual(spent.map(\.stage), [.escalation])
+        try check(spent.allSatisfy { !$0.audible }, "unmuting must not replay a spent escalation")
+        muted.advance(to: time(303)); try check(muted.drainEffects().isEmpty)
+    }
+
+    func testReasonChangesAndFreshStopResetFeedback() throws {
+        let r = router(filter: 0)
+        r.ingest([event("a", 0, .stopped(.question))]); r.advance(to: time(0)); r.advance(to: time(0.25)); _ = r.drainEffects()
+        r.ingest([event("a", 1, .stopped(.failure))]); r.advance(to: time(1)); r.advance(to: time(1.25))
+        try checkEqual(r.drainEffects().flatMap(\.notices).map(\.reason), [.failure])
+        try checkEqual(r.nextVisit(for: .claudeCode)?.firstNotifiedAt, time(0))
+        r.ingest([event("a", 2, .stopped(.failure))]); r.advance(to: time(3)); try check(r.drainEffects().isEmpty)
+        r.ingest([event("a", 4, .running), event("a", 5, .stopped(.approval))]); r.advance(to: time(5)); r.advance(to: time(5.25))
+        try checkEqual(r.drainEffects().flatMap(\.notices).map(\.reason), [.approval])
+        try checkEqual(r.nextVisit(for: .claudeCode)?.firstNotifiedAt, time(5))
+        r.ingest([event("a", 6, .closed)]); r.advance(to: time(400)); try check(r.drainEffects().isEmpty)
+    }
     private let epoch = Date(timeIntervalSince1970: 1_000)
     private func time(_ seconds: Double) -> Date { epoch.addingTimeInterval(seconds) }
     private func key(_ id: String, _ end: WorkEnd = .claudeCode) -> SessionKey { SessionKey(workEnd: end, nativeID: id) }
@@ -121,6 +168,8 @@ struct AttentionChecks {
         r.ingest([event("a", 12, .stopped(.failure)), event("a", 12, .stopped(.failure))])
         r.advance(to: time(12))
         try checkEqual(r.snapshot.bubbles.first?.count, 1)
+        try checkEqual(r.nextVisit(for: .claudeCode)?.isPast, true)
+        r.advance(to: time(22))
         try checkEqual(r.nextVisit(for: .claudeCode)?.reason, .failure)
         try checkEqual(r.nextVisit(for: .claudeCode)?.isPast, false)
         try checkEqual(r.nextVisit(for: .claudeCode)?.stoppedAt, time(12))
@@ -149,13 +198,15 @@ struct AttentionChecks {
         waiting(r)
         try check(r.drainEffects().isEmpty)
         r.advance(to: time(10.25))
-        try checkEqual(r.drainEffects(), [.playSound])
+        try checkEqual(r.drainEffects().map { $0.notices.map(\.reason) }, [[.question, .approval]])
         r.advance(to: time(20))
         try check(r.drainEffects().isEmpty)
         let muted = router(sound: false)
         waiting(muted)
         muted.advance(to: time(20))
-        try check(muted.drainEffects().isEmpty)
+        let mutedNotices = muted.drainEffects().flatMap(\.notices)
+        try checkEqual(mutedNotices.count, 2)
+        try check(mutedNotices.allSatisfy { !$0.audible })
         let removed = router()
         waiting(removed)
         removed.ignoreNext(for: .claudeCode); removed.ignoreNext(for: .codexDesktop)
@@ -170,7 +221,7 @@ struct AttentionChecks {
         waiting(changed)
         changed.updateSettings(CharSettings(soundEnabled: false))
         changed.advance(to: time(11))
-        try check(changed.drainEffects().isEmpty)
+        try check(changed.drainEffects().flatMap(\.notices).allSatisfy { !$0.audible })
     }
 
     func testSleepCompleteBatchUsesFinalState() throws {
@@ -181,7 +232,7 @@ struct AttentionChecks {
         try checkEqual(r.nextVisit(for: .claudeCode)?.key, key("still"))
         try checkEqual(r.snapshot.bubbles.first?.count, 1)
         r.advance(to: time(100.25))
-        try checkEqual(r.drainEffects(), [.playSound])
+        try checkEqual(r.drainEffects().map { $0.notices.map(\.reason) }, [[.approval]])
     }
 
     func testSuccessfulVisitsDismissOnlyClickedItemAndKeepFirstAnchor() throws {
@@ -279,6 +330,7 @@ struct AttentionChecks {
         _ = r.drainEffects()
         r.advance(to: time(679))
         try check(r.snapshot.hold != nil)
+        _ = r.drainEffects() // Any unrelated waiting-item escalation precedes Hold expiry.
         r.advance(to: time(680))
         try check(r.snapshot.hold == nil)
         try check(r.drainEffects().isEmpty)
